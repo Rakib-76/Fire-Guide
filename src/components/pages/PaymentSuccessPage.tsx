@@ -1,10 +1,11 @@
 import { useMemo, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Check } from "lucide-react";
 import {
   readPaymentReturnContext,
   clearPaymentReturnContext,
 } from "../../lib/paymentAppUrls";
+import { markCustomQuoteRequestPaidLocally } from "../../lib/customQuotePaymentLocal";
 
 const GREEN = "#7ED321";
 const NAVY = "#004A73";
@@ -14,32 +15,63 @@ function formatMoney(n: number): string {
   return `£ ${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/** Stripe / gateway often appends one of these on redirect to success_url */
-function transactionIdFromSearchParams(searchParams: URLSearchParams): string | null {
-  const keys = [
-    "session_id",
-    "payment_intent",
-    "payment_intent_id",
-    "checkout_session_id",
-    "stripe_session",
-    "transaction_id",
-    "tx_ref",
-  ];
-  for (const key of keys) {
-    const v = searchParams.get(key)?.trim();
+/** Lowercase keys → value (Stripe / gateways vary in casing). */
+function searchParamsLowercaseMap(search: string): Map<string, string> {
+  const m = new Map<string, string>();
+  const q = search.startsWith("?") ? search.slice(1) : search;
+  try {
+    new URLSearchParams(q).forEach((v, k) => {
+      const t = v.trim();
+      if (t) m.set(k.toLowerCase(), t);
+    });
+  } catch {
+    /* ignore */
+  }
+  return m;
+}
+
+const TX_QUERY_KEYS = [
+  "session_id",
+  "checkout_session_id",
+  "stripe_session",
+  "payment_intent",
+  "payment_intent_id",
+  "transaction_id",
+  "tx_ref",
+  "txn_id",
+  "ref",
+];
+
+/** Known query keys; also finds `cs_*` / `pi_*` values whatever the key name. */
+function transactionIdFromReturnUrl(search: string): string | null {
+  const lower = searchParamsLowercaseMap(search);
+  for (const key of TX_QUERY_KEYS) {
+    const v = lower.get(key);
     if (v) return v;
+  }
+  const q = search.startsWith("?") ? search.slice(1) : search;
+  try {
+    const sp = new URLSearchParams(q);
+    const stripeLike = /^cs_(live|test)_[A-Za-z0-9]+$|^pi_[A-Za-z0-9]+$|^seti_[A-Za-z0-9]+$/;
+    for (const [, value] of sp) {
+      const t = value.trim();
+      if (stripeLike.test(t)) return t;
+    }
+  } catch {
+    /* ignore */
   }
   return null;
 }
 
 function pickAmount(
-  searchParams: URLSearchParams,
+  search: string,
   key: string,
   fromCtx: number | undefined,
   demo: number
 ): number {
-  const raw = searchParams.get(key);
-  if (raw !== null && raw !== "") {
+  const lower = searchParamsLowercaseMap(search);
+  const raw = lower.get(key.toLowerCase());
+  if (raw !== undefined && raw !== "") {
     const n = Number(raw);
     if (Number.isFinite(n)) return n;
   }
@@ -49,9 +81,22 @@ function pickAmount(
 
 export default function PaymentSuccessPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const search = location.search ?? "";
 
   const ctx = useMemo(() => readPaymentReturnContext(), []);
+
+  useEffect(() => {
+    const c = readPaymentReturnContext();
+    if (c?.quoteRequestId != null && Number.isFinite(c.quoteRequestId) && c.quoteRequestId > 0) {
+      markCustomQuoteRequestPaidLocally(c.quoteRequestId);
+    } else if (c?.orderIds?.length) {
+      for (const oid of c.orderIds) {
+        const m = /^Quote #(\d+)$/i.exec(String(oid).trim());
+        if (m) markCustomQuoteRequestPaidLocally(parseInt(m[1], 10));
+      }
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -59,12 +104,22 @@ export default function PaymentSuccessPage() {
     };
   }, []);
 
-  const transactionId =
-    transactionIdFromSearchParams(searchParams) ||
-    (ctx?.transactionId && ctx.transactionId.length > 0 ? ctx.transactionId : null) ||
-    (ctx != null ? "—" : "12345");
+  const transactionId = useMemo(() => {
+    const fromUrl =
+      transactionIdFromReturnUrl(search) ||
+      (typeof window !== "undefined" && window.location.search && window.location.search !== search
+        ? transactionIdFromReturnUrl(window.location.search)
+        : null);
+    const fromCtx =
+      ctx?.transactionId && String(ctx.transactionId).trim().length > 0
+        ? String(ctx.transactionId).trim()
+        : null;
+    return fromUrl || fromCtx || (ctx != null ? "Pending" : "12345");
+  }, [search, ctx]);
 
-  const orderIdsParam = searchParams.get("order_ids");
+  const lowerSearch = useMemo(() => searchParamsLowercaseMap(search), [search]);
+  const orderIdsParam =
+    lowerSearch.get("order_ids") ?? lowerSearch.get("orderids") ?? null;
   const fromParam =
     orderIdsParam?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
   const orderIds =
@@ -74,16 +129,11 @@ export default function PaymentSuccessPage() {
         ? ctx.orderIds
         : ["IC-1234", "IC-5678"];
 
-  const amountPaid = pickAmount(searchParams, "amount_paid", ctx?.amountPaid, 3000);
-  const totalAmount = pickAmount(searchParams, "total", ctx?.totalAmount, 5000);
-  const paidIncentives = pickAmount(
-    searchParams,
-    "incentives",
-    ctx?.paidIncentives,
-    1000
-  );
-  const paidBalance = pickAmount(searchParams, "balance", ctx?.paidBalance, 1000);
-  const paidOnline = pickAmount(searchParams, "online", ctx?.paidOnline, 3000);
+  const amountPaid = pickAmount(search, "amount_paid", ctx?.amountPaid, 3000);
+  const totalAmount = pickAmount(search, "total", ctx?.totalAmount, 5000);
+  const paidIncentives = pickAmount(search, "incentives", ctx?.paidIncentives, 1000);
+  const paidBalance = pickAmount(search, "balance", ctx?.paidBalance, 1000);
+  const paidOnline = pickAmount(search, "online", ctx?.paidOnline, 3000);
 
   const orderLine =
     orderIds.length > 0

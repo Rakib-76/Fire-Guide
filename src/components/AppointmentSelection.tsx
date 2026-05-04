@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { fetchProfessionalProfileAvailableDates, ProfessionalProfileAvailableDateItem } from "../api/availableDatesService";
 import { getBlockedBookingDaysListForProfessional } from "../api/professionalsService";
-import { getApiToken } from "../lib/auth";
+import { normalizeSlotForBookingComparison, parseBookingDateKey } from "../lib/bookingSlotNormalize";
 import type { BookingData } from "./BookingFlow";
 
 /** Parse API date string to YYYY-MM-DD. Handles "2026-03-28 00:00:00" and "2026-03-28T00:00:00.000000Z". */
@@ -54,14 +54,33 @@ interface AppointmentSelectionProps {
   onBack: () => void;
 }
 
-/** Normalize slot string for comparison (e.g. "09:00 AM" and "9:00 AM" -> same key). */
-function normalizeSlotForComparison(slot: string): string {
-  const match = slot.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!match) return slot.trim();
-  const hour = parseInt(match[1], 10);
-  const min = match[2];
-  const ampm = match[3].toUpperCase();
-  return `${hour}:${min} ${ampm}`;
+function readSessionBookedSlotKeysByDate(professionalId: number): Record<string, string[]> {
+  try {
+    const raw = sessionStorage.getItem(`fireguide_session_booked_slots_${professionalId}`);
+    const arr = JSON.parse(raw || "[]") as { date?: string; time?: string }[];
+    const rec: Record<string, string[]> = {};
+    for (const x of arr) {
+      if (!x?.date || !x?.time) continue;
+      const dk = parseBookingDateKey(x.date);
+      const tk = normalizeSlotForBookingComparison(x.time);
+      if (!rec[dk]) rec[dk] = [];
+      if (!rec[dk].includes(tk)) rec[dk].push(tk);
+    }
+    return rec;
+  } catch {
+    return {};
+  }
+}
+
+function mergeBookedSlotRecords(
+  fromApi: Record<string, string[]>,
+  fromSession: Record<string, string[]>
+): Record<string, string[]> {
+  const out: Record<string, string[]> = { ...fromApi };
+  for (const [d, list] of Object.entries(fromSession)) {
+    out[d] = [...new Set([...(out[d] || []), ...list])];
+  }
+  return out;
 }
 
 export function AppointmentSelection({
@@ -79,40 +98,68 @@ export function AppointmentSelection({
   const [availableDatesData, setAvailableDatesData] = useState<ProfessionalProfileAvailableDateItem[]>([]);
   const [isLoadingAvailableDates, setIsLoadingAvailableDates] = useState(false);
   const [blockedDatesSet, setBlockedDatesSet] = useState<Set<string>>(new Set());
+  /** Blocked days returned inside POST available-date (blocked_ranges / notice), merged into calendar. */
+  const [blockedDatesFromAvailabilityApi, setBlockedDatesFromAvailabilityApi] = useState<Set<string>>(new Set());
+  /** Normalized slot keys already taken per YYYY-MM-DD (API + this browser session after a successful booking). */
+  const [bookedSlotKeysByDate, setBookedSlotKeysByDate] = useState<Record<string, string[]>>({});
+  const [availabilityRefreshTick, setAvailabilityRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        setAvailabilityRefreshTick((t) => t + 1);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
 
   // Fetch available dates for this professional when we have professional_id
   useEffect(() => {
     if (professionalId == null || Number.isNaN(Number(professionalId))) {
       setAvailableDatesData([]);
+      setBlockedDatesFromAvailabilityApi(new Set());
+      setBookedSlotKeysByDate({});
       return;
     }
     let cancelled = false;
     const load = async () => {
       setIsLoadingAvailableDates(true);
       try {
-        const data = await fetchProfessionalProfileAvailableDates(Number(professionalId));
-        if (!cancelled) setAvailableDatesData(data ?? []);
+        const { dates, blockedCalendarDates, bookedSlotKeysByDate: apiBooked } =
+          await fetchProfessionalProfileAvailableDates(Number(professionalId));
+        if (!cancelled) {
+          setAvailableDatesData(dates ?? []);
+          setBlockedDatesFromAvailabilityApi(new Set(blockedCalendarDates ?? []));
+          const sessionBooked = readSessionBookedSlotKeysByDate(Number(professionalId));
+          setBookedSlotKeysByDate(mergeBookedSlotRecords(apiBooked ?? {}, sessionBooked));
+        }
       } catch (err) {
-        if (!cancelled) setAvailableDatesData([]);
+        if (!cancelled) {
+          setAvailableDatesData([]);
+          setBlockedDatesFromAvailabilityApi(new Set());
+          setBookedSlotKeysByDate({});
+        }
       } finally {
         if (!cancelled) setIsLoadingAvailableDates(false);
       }
     };
     load();
-    return () => { cancelled = true; };
-  }, [professionalId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [professionalId, availabilityRefreshTick]);
 
-  // Fetch blocked booking days: professional_id sent dynamically; api_token sent when user is logged in.
+  // Fetch blocked booking days: POST booking-days-list with { professional_id } only.
   useEffect(() => {
     if (professionalId == null || Number.isNaN(Number(professionalId))) {
       setBlockedDatesSet(new Set());
       return;
     }
-    const apiToken = getApiToken();
     let cancelled = false;
     const load = async () => {
       try {
-        const list = await getBlockedBookingDaysListForProfessional(Number(professionalId), apiToken);
+        const list = await getBlockedBookingDaysListForProfessional(Number(professionalId));
         if (cancelled) return;
         const set = new Set<string>();
         for (const item of list ?? []) {
@@ -165,7 +212,8 @@ export function AppointmentSelection({
       const date = new Date(year, month, day);
       const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       const notPast = date >= today;
-      const isBlocked = blockedDatesSet.has(dateStr);
+      const isBlocked =
+        blockedDatesSet.has(dateStr) || blockedDatesFromAvailabilityApi.has(dateStr);
       const isAvailable = notPast && !isBlocked;
 
       days.push({
@@ -186,13 +234,19 @@ export function AppointmentSelection({
     "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM"
   ];
 
-  // For the selected date, which slots are available (from API)? Missing slots will be disabled.
-  const availableSlotsForSelectedDate = React.useMemo(() => {
+  // For the selected date, which slots the API lists as bookable (before removing taken times).
+  const availableSlotsForSelectedDate = useMemo(() => {
     if (!selectedDate) return new Set<string>();
-    const entry = availableDatesData.find((d) => d.date === selectedDate);
+    const entry = availableDatesData.find((d) => parseDateOnly(d.date) === parseDateOnly(selectedDate));
     if (!entry || !entry.slots || !Array.isArray(entry.slots)) return new Set<string>();
-    return new Set(entry.slots.map((s) => normalizeSlotForComparison(s)));
+    return new Set(entry.slots.map((s) => normalizeSlotForBookingComparison(s)));
   }, [selectedDate, availableDatesData]);
+
+  const bookedSlotsForSelectedDate = useMemo(() => {
+    if (!selectedDate) return new Set<string>();
+    const keys = bookedSlotKeysByDate[selectedDate] ?? bookedSlotKeysByDate[parseDateOnly(selectedDate)] ?? [];
+    return new Set(keys);
+  }, [selectedDate, bookedSlotKeysByDate]);
 
   const handleContinue = () => {
     if (selectedDate && selectedTime) {
@@ -386,7 +440,10 @@ export function AppointmentSelection({
                         </Label>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                           {timeSlots.map((slot) => {
-                            const isAvailable = availableSlotsForSelectedDate.has(normalizeSlotForComparison(slot));
+                            const slotKey = normalizeSlotForBookingComparison(slot);
+                            const isAvailable =
+                              availableSlotsForSelectedDate.has(slotKey) &&
+                              !bookedSlotsForSelectedDate.has(slotKey);
                             return (
                               <button
                                 key={slot}

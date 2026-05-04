@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { 
   LayoutDashboard,
@@ -17,14 +17,23 @@ import {
   Briefcase,
   TrendingUp,
   FileText,
-  MessageCircle
+  MessageCircle,
+  MessageSquare,
+  Loader2
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { getProfessionalBookings, ProfessionalBookingItem } from "../api/bookingService";
 import { getApiToken, getProfessionalId } from "../lib/auth";
-import { getProfileCompletionPercentage, ProfileCompletionDetails, getDashboardSummary, DashboardSummaryData } from "../api/professionalsService";
+import {
+  getProfileCompletionPercentage,
+  ProfileCompletionDetails,
+  getDashboardSummary,
+  DashboardSummaryData,
+  getProfessionalContactAdminMessages,
+  type ProfessionalAdminContactMessageItem,
+} from "../api/professionalsService";
 import { getPaymentInvoices, PaymentInvoiceItem } from "../api/paymentService";
 import { ProfessionalBookings } from "./ProfessionalBookings";
 import { ProfessionalPayments } from "./ProfessionalPayments";
@@ -37,19 +46,53 @@ import { ProfessionalAvailabilityContent } from "./ProfessionalAvailabilityConte
 import { ProfessionalCustomQuoteContent } from "./ProfessionalCustomQuoteContent";
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
 import { setCompleteProfileReminderFlag } from "../lib/professionalProfileReminder";
+import { toast } from "sonner";
+import {
+  loadProfessionalNotificationSeenKeys,
+  subscribeProfessionalNotificationSeen,
+  subscribeProfessionalNotificationMutated,
+} from "../lib/professionalNotificationSeen";
+import {
+  fetchNotifications,
+  getProfessionalNotificationDedupeKey,
+  type NotificationApiItem,
+} from "../api/notificationsService";
 
 interface ProfessionalDashboardProps {
   onLogout: () => void;
   onNavigateToReports: () => void;
 }
 
-type ProfessionalView = "dashboard" | "profile" | "pricing-overview" | "availability" | "bookings" | "payments" | "custom-quote" | "verification" | "settings" | "notifications";
+type ProfessionalView =
+  | "dashboard"
+  | "profile"
+  | "pricing-overview"
+  | "availability"
+  | "bookings"
+  | "payments"
+  | "custom-quote"
+  | "verification"
+  | "admin-messages"
+  | "settings"
+  | "notifications";
 
 export function ProfessionalDashboard({ onLogout, onNavigateToReports }: ProfessionalDashboardProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { view } = useParams<{ view?: string }>();
-  const validViews: ProfessionalView[] = ["dashboard", "profile", "pricing-overview", "availability", "bookings", "payments", "custom-quote", "verification", "settings", "notifications"];
+  const validViews: ProfessionalView[] = [
+    "dashboard",
+    "profile",
+    "pricing-overview",
+    "availability",
+    "bookings",
+    "payments",
+    "custom-quote",
+    "verification",
+    "admin-messages",
+    "settings",
+    "notifications",
+  ];
   
   // Determine current view from URL parameter, default to "dashboard"
   // Legacy routes: "pricing" → pricing-overview; "block-booking-day" → availability (blocking lives there now)
@@ -65,6 +108,68 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
   
   const [activeMenu, setActiveMenu] = useState<ProfessionalView>(currentViewFromUrl);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [adminContactMessages, setAdminContactMessages] = useState<ProfessionalAdminContactMessageItem[]>([]);
+  const [isLoadingAdminContactMessages, setIsLoadingAdminContactMessages] = useState(false);
+
+  const [headerNotificationFeed, setHeaderNotificationFeed] = useState<NotificationApiItem[]>([]);
+  const [headerNotificationTick, setHeaderNotificationTick] = useState(0);
+
+  const professionalSeenKeys = useMemo(() => {
+    void headerNotificationTick;
+    return loadProfessionalNotificationSeenKeys();
+  }, [headerNotificationFeed, headerNotificationTick]);
+
+  const unreadProfessionalNotificationCount = useMemo(() => {
+    return headerNotificationFeed.reduce((acc, n) => {
+      if (n.is_read) return acc;
+      if (professionalSeenKeys.has(getProfessionalNotificationDedupeKey(n))) return acc;
+      return acc + 1;
+    }, 0);
+  }, [headerNotificationFeed, professionalSeenKeys]);
+
+  const refreshHeaderNotificationFeed = useCallback(async () => {
+    const token = getApiToken();
+    if (!token) {
+      setHeaderNotificationFeed([]);
+      return;
+    }
+    try {
+      const res = await fetchNotifications({ api_token: token });
+      setHeaderNotificationFeed(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setHeaderNotificationFeed([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshHeaderNotificationFeed();
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshHeaderNotificationFeed();
+      }
+    }, 90_000);
+    const onFocus = () => void refreshHeaderNotificationFeed();
+    window.addEventListener("focus", onFocus);
+    const unsubSeen = subscribeProfessionalNotificationSeen(() => {
+      setHeaderNotificationTick((t) => t + 1);
+    });
+    const unsubMut = subscribeProfessionalNotificationMutated(() => {
+      void refreshHeaderNotificationFeed();
+    });
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+      unsubSeen();
+      unsubMut();
+    };
+  }, [refreshHeaderNotificationFeed]);
+
+  useEffect(() => {
+    if (activeMenu === "notifications") {
+      void refreshHeaderNotificationFeed();
+    }
+  }, [activeMenu, refreshHeaderNotificationFeed]);
+
   // Sync state with URL parameter when it changes (including on mount and URL changes)
   useEffect(() => {
     setActiveMenu(currentViewFromUrl);
@@ -83,6 +188,49 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
       navigate("/professional/dashboard/availability", { replace: true });
     }
   }, [view, navigate]);
+
+  // Admin messages — POST /contact-professional/get when this section is open
+  useEffect(() => {
+    if (activeMenu !== "admin-messages") return;
+
+    let cancelled = false;
+
+    const load = async () => {
+      const token = getApiToken();
+      if (!token) {
+        setAdminContactMessages([]);
+        setIsLoadingAdminContactMessages(false);
+        toast.error("Please log in to view admin messages.");
+        return;
+      }
+
+      setIsLoadingAdminContactMessages(true);
+      try {
+        const response = await getProfessionalContactAdminMessages({ api_token: token });
+        if (cancelled) return;
+        setAdminContactMessages(Array.isArray(response.data) ? response.data : []);
+      } catch (error: unknown) {
+        if (!cancelled) {
+          console.error("Error fetching admin messages:", error);
+          setAdminContactMessages([]);
+          const msg =
+            error && typeof error === "object" && "message" in error
+              ? String((error as { message?: string }).message)
+              : "Failed to load admin messages.";
+          toast.error(msg);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingAdminContactMessages(false);
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMenu]);
   
   // Handler to update both state and URL
   const handleViewChange = (view: ProfessionalView) => {
@@ -103,6 +251,7 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
     { id: "payments" as ProfessionalView, label: "Payments", icon: CreditCard },
     { id: "custom-quote" as ProfessionalView, label: "Custom Quote", icon: MessageCircle },
     { id: "verification" as ProfessionalView, label: "Verification Status", icon: ShieldCheck },
+    { id: "admin-messages" as ProfessionalView, label: "Admin-Message", icon: MessageSquare },
     { id: "notifications" as ProfessionalView, label: "Notifications", icon: Bell },
     { id: "settings" as ProfessionalView, label: "Settings", icon: Settings },
   ];
@@ -117,16 +266,15 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
       setIsLoadingDashboardSummary(true);
       const apiToken = getApiToken();
       if (!apiToken) {
-        console.warn("No API token available for fetching dashboard summary");
+        setDashboardSummary(null);
         return;
       }
 
-      const response = await getDashboardSummary(apiToken);
-      if (response.status === "success" && response.data) {
-        setDashboardSummary(response.data);
-      }
-    } catch (err: any) {
+      const summary = await getDashboardSummary(apiToken);
+      setDashboardSummary(summary);
+    } catch (err: unknown) {
       console.error("Error fetching dashboard summary:", err);
+      setDashboardSummary(null);
     } finally {
       setIsLoadingDashboardSummary(false);
     }
@@ -137,9 +285,10 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
     {
       title: "Upcoming Jobs",
       value: dashboardSummary?.upcoming_jobs?.count?.toString() || "0",
-      change: dashboardSummary?.upcoming_jobs?.this_week 
-        ? `+${dashboardSummary.upcoming_jobs.this_week} this week` 
-        : "+0 this week",
+      change:
+        dashboardSummary?.upcoming_jobs?.this_week != null
+          ? `+${dashboardSummary.upcoming_jobs.this_week} this week`
+          : "+0 this week",
       icon: Briefcase,
       color: "blue",
       bgColor: "bg-blue-100",
@@ -409,6 +558,93 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
     }
   }, [activeMenu]);
 
+  const formatAdminMessageTimestamp = (dateString: string): string => {
+    try {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+      if (diffInSeconds < 60) {
+        return `${diffInSeconds} second${diffInSeconds !== 1 ? "s" : ""} ago`;
+      }
+      if (diffInSeconds < 3600) {
+        const minutes = Math.floor(diffInSeconds / 60);
+        return `${minutes} minute${minutes !== 1 ? "s" : ""} ago`;
+      }
+      if (diffInSeconds < 86400) {
+        const hours = Math.floor(diffInSeconds / 3600);
+        return `${hours} hour${hours !== 1 ? "s" : ""} ago`;
+      }
+      if (diffInSeconds < 604800) {
+        const days = Math.floor(diffInSeconds / 86400);
+        return `${days} day${days !== 1 ? "s" : ""} ago`;
+      }
+      return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const adminMessageRowKey = (item: ProfessionalAdminContactMessageItem, index: number): string => {
+    if (typeof item.id === "number" && item.id > 0) return `id:${item.id}`;
+    const stamp = item.created_at || "";
+    const head = (item.message || "").slice(0, 80);
+    return `h:${stamp}|${head}|${index}`;
+  };
+
+  const renderAdminMessages = () => (
+    <div>
+      <div className="mb-8">
+        <h1 className="text-[#0A1A2F] mb-2 text-2xl md:text-3xl font-semibold tracking-tight">Admin-Message</h1>
+        <p className="text-gray-600">Messages from the Fire Guide team about your account or jobs.</p>
+      </div>
+
+      <Card className="border-0 shadow-md">
+        <CardHeader>
+          <CardTitle>Your messages</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoadingAdminContactMessages ? (
+            <div className="text-center py-12 text-gray-500">
+              <Loader2 className="w-8 h-8 mx-auto mb-3 text-gray-400 animate-spin" />
+              <p className="text-sm">Loading messages...</p>
+            </div>
+          ) : adminContactMessages.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+              <p className="text-sm">No admin messages yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {[...adminContactMessages]
+                .sort((a, b) => {
+                  const ta = new Date(a.created_at || 0).getTime();
+                  const tb = new Date(b.created_at || 0).getTime();
+                  return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+                })
+                .map((row, index) => (
+                  <div
+                    key={adminMessageRowKey(row, index)}
+                    className="flex items-start gap-4 p-4 border rounded-lg hover:border-red-200 hover:bg-red-50/50 transition-all"
+                  >
+                    <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <MessageSquare className="w-6 h-6 text-red-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-gray-900">{row.title || "Admin message"}</h4>
+                      <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap break-words">{row.message || ""}</p>
+                      {row.created_at ? (
+                        <p className="text-xs text-gray-500 mt-2">{formatAdminMessageTimestamp(row.created_at)}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+
   const renderContent = () => {
     switch (activeMenu) {
       case "dashboard":
@@ -421,6 +657,8 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
         return <ProfessionalCustomQuoteContent />;
       case "verification":
         return <ProfessionalVerification />;
+      case "admin-messages":
+        return renderAdminMessages();
       case "settings":
         return <ProfessionalSettings />;
       case "notifications":
@@ -457,7 +695,7 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
               return () => handleViewChange("bookings");
             } else if (stat.title === "Total Earnings") {
               return () => handleViewChange("payments");
-            } else if (stat.title === "Alls Reports") {
+            } else if (stat.title === "All Reports") {
               return onNavigateToReports;
             }
             return undefined;
@@ -474,7 +712,9 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
                   <div>
                     <p className="text-sm text-gray-600 mb-1">{stat.title}</p>
                     <p className="text-3xl text-[#0A1A2F] mb-1">{stat.value}</p>
-                    <p className={`text-sm ${stat.textColor}`}>{stat.change}</p>
+                    {"change" in stat && stat.change ? (
+                      <p className={`text-sm ${stat.textColor}`}>{stat.change}</p>
+                    ) : null}
                   </div>
                   <div className={`w-12 h-12 ${stat.iconBg} rounded-lg flex items-center justify-center`}>
                     <stat.icon className="w-6 h-6 text-white" />
@@ -732,12 +972,25 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
           {/* Right - Action Icons */}
           <div className="flex items-center gap-3">
             <button
-              className="relative text-white hover:text-red-500 transition-colors"
-              onClick={() => handleViewChange("notifications")}
-              aria-label="Notifications"
+              type="button"
+              className="relative text-white hover:text-red-500 transition-colors overflow-visible p-1.5 shrink-0"
+              onClick={() => {
+                void refreshHeaderNotificationFeed();
+                handleViewChange("notifications");
+              }}
+              aria-label={`Notifications${unreadProfessionalNotificationCount > 0 ? `, ${unreadProfessionalNotificationCount} unread` : ""}`}
             >
-              <Bell className="w-5 h-5" />
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full"></span>
+              <span className="relative inline-flex h-9 w-9 items-center justify-center">
+                <Bell className="h-5 w-5" aria-hidden />
+                {unreadProfessionalNotificationCount > 0 && (
+                  <span
+                    className="absolute -right-0.5 -top-0.5 z-10 flex h-[1.375rem] min-w-[1.375rem] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold leading-none text-white shadow-sm ring-2 ring-white tabular-nums sm:h-6 sm:min-w-6 sm:text-xs"
+                    aria-hidden
+                  >
+                    {unreadProfessionalNotificationCount > 99 ? "99+" : unreadProfessionalNotificationCount}
+                  </span>
+                )}
+              </span>
             </button>
             <button
               className="text-white hover:text-red-500 transition-colors"
@@ -789,6 +1042,11 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
                 >
                   <item.icon className="w-5 h-5" />
                   <span>{item.label}</span>
+                  {item.id === "notifications" && unreadProfessionalNotificationCount > 0 && (
+                    <Badge className="ml-auto bg-red-600 text-white min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full text-xs tabular-nums border-0">
+                      {unreadProfessionalNotificationCount > 99 ? "99+" : unreadProfessionalNotificationCount}
+                    </Badge>
+                  )}
                 </button>
               ))}
             </nav>

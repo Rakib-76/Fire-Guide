@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from "react";
+import axios from "axios";
 import { getApiToken } from "../lib/auth";
-import { getAdminReviewsList } from "../api/adminService";
-import { Search, Star, CheckCircle, XCircle, Eye, Flag, AlertTriangle, MessageSquare, Mail } from "lucide-react";
+import {
+  approveAdminReview,
+  createContactCustomerMessage,
+  createContactProfessionalMessage,
+  getAdminReviewsList,
+  rejectAdminReview,
+  type AdminReviewListItem,
+} from "../api/adminService";
+import { Search, Star, CheckCircle, XCircle, Eye, Flag, AlertTriangle, MessageSquare, Mail, User } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card, CardContent } from "./ui/card";
@@ -26,12 +34,16 @@ export function AdminReviews() {
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [responseModalOpen, setResponseModalOpen] = useState(false);
+  const [customerContactModalOpen, setCustomerContactModalOpen] = useState(false);
   const [selectedReview, setSelectedReview] = useState<any>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [adminResponse, setAdminResponse] = useState("");
+  const [customerContactMessage, setCustomerContactMessage] = useState("");
 
   type ReviewDisplay = {
     id: number;
+    /** From list API `professional_id` — used by POST /contact-professional/create */
+    professionalId: number | null;
     customer: string;
     customerEmail: string;
     professional: string;
@@ -49,6 +61,26 @@ export function AdminReviews() {
   };
 
   const [reviews, setReviews] = useState<ReviewDisplay[]>([]);
+  const [approvingReviewId, setApprovingReviewId] = useState<number | null>(null);
+  const [rejectingReviewId, setRejectingReviewId] = useState<number | null>(null);
+  const [sendingContactMessage, setSendingContactMessage] = useState(false);
+  const [sendingCustomerContactMessage, setSendingCustomerContactMessage] = useState(false);
+
+  const coerceProfessionalId = (item: AdminReviewListItem): number | null => {
+    const tryNum = (raw: unknown): number | null => {
+      if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+      if (typeof raw === "string") {
+        const n = parseInt(raw, 10);
+        if (!Number.isNaN(n) && n > 0) return n;
+      }
+      return null;
+    };
+    return (
+      tryNum(item.professional_id) ??
+      tryNum(item.professional_user_id) ??
+      tryNum(item.professional?.id)
+    );
+  };
 
   const formatReviewDate = (iso: string) => {
     try {
@@ -67,6 +99,7 @@ export function AdminReviews() {
         if (res.success && Array.isArray(res.data)) {
           const mapped: ReviewDisplay[] = res.data.map((item) => ({
             id: item.id,
+            professionalId: coerceProfessionalId(item),
             customer: item.reviewer_name || "",
             customerEmail: item.reviewer_email || "",
             professional: item.professional_name || "",
@@ -89,13 +122,13 @@ export function AdminReviews() {
           });
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const filteredReviews = reviews.filter((review) => {
     const matchesSearch = review.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         review.professional.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         review.text.toLowerCase().includes(searchTerm.toLowerCase());
+      review.professional.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      review.text.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFilter = filterStatus === "all" || review.status === filterStatus;
     return matchesSearch && matchesFilter;
   });
@@ -114,24 +147,103 @@ export function AdminReviews() {
         {[1, 2, 3, 4, 5].map((star) => (
           <Star
             key={star}
-            className={`w-5 h-5 ${
-              star <= rating
-                ? "fill-yellow-400 text-yellow-400"
-                : "text-gray-300"
-            }`}
+            className={`w-5 h-5 ${star <= rating
+              ? "fill-yellow-400 text-yellow-400"
+              : "text-gray-300"
+              }`}
           />
         ))}
       </div>
     );
   };
 
-  const handleApprove = (review: any) => {
-    toast.success(`Review from ${review.customer} has been approved and is now public`);
+  const isReviewModerationSuccess = (res: { success?: boolean; status?: string | boolean; message?: string }) => {
+    if (res.success === true) return true;
+    if (res.status === true || res.status === "success") return true;
+    const msg = typeof res.message === "string" ? res.message.toLowerCase() : "";
+    if (msg.includes("success") || msg.includes("approved") || msg.includes("reject")) return true;
+    return false;
   };
 
-  const handleReject = (review: any) => {
-    setSelectedReview(review);
-    setRejectModalOpen(true);
+  const handleApprove = async (review: ReviewDisplay) => {
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Please log in again to approve reviews.");
+      return;
+    }
+    setApprovingReviewId(review.id);
+    try {
+      const res = await approveAdminReview({ api_token: token, id: review.id });
+      if (isReviewModerationSuccess(res)) {
+        if (review.status === "pending") {
+          setStats((s) => ({
+            total: s.total,
+            pending: Math.max(0, s.pending - 1),
+            approved: s.approved + 1,
+            rejected: s.rejected,
+          }));
+        }
+        setReviews((prev) =>
+          prev.map((r) => (r.id === review.id ? { ...r, status: "approved" } : r))
+        );
+        toast.success(res.message || `Review from ${review.customer} has been approved.`);
+        setViewModalOpen(false);
+      } else {
+        toast.error(res.message || "Could not approve this review.");
+      }
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e) && e.response?.data) {
+        const d = e.response.data as { message?: string };
+        if (d.message) {
+          toast.error(d.message);
+          return;
+        }
+      }
+      toast.error(e instanceof Error ? e.message : "Could not approve this review.");
+    } finally {
+      setApprovingReviewId(null);
+    }
+  };
+
+  const handleReject = async (review: ReviewDisplay) => {
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Please log in again to reject reviews.");
+      return;
+    }
+    setRejectingReviewId(review.id);
+    try {
+      const res = await rejectAdminReview({ api_token: token, id: review.id });
+      if (isReviewModerationSuccess(res)) {
+        if (review.status === "pending") {
+          setStats((s) => ({
+            total: s.total,
+            pending: Math.max(0, s.pending - 1),
+            approved: s.approved,
+            rejected: s.rejected + 1,
+          }));
+        }
+        setReviews((prev) =>
+          prev.map((r) => (r.id === review.id ? { ...r, status: "rejected" } : r))
+        );
+        toast.success(res.message || `Review from ${review.customer} has been rejected.`);
+        setViewModalOpen(false);
+        setRejectModalOpen(false);
+      } else {
+        toast.error(res.message || "Could not reject this review.");
+      }
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e) && e.response?.data) {
+        const d = e.response.data as { message?: string };
+        if (d.message) {
+          toast.error(d.message);
+          return;
+        }
+      }
+      toast.error(e instanceof Error ? e.message : "Could not reject this review.");
+    } finally {
+      setRejectingReviewId(null);
+    }
   };
 
   const handleViewDetails = (review: any) => {
@@ -141,27 +253,120 @@ export function AdminReviews() {
 
   const handleAddResponse = (review: any) => {
     setSelectedReview(review);
+    setAdminResponse("");
+    setCustomerContactModalOpen(false);
     setResponseModalOpen(true);
   };
 
-  const confirmRejection = () => {
-    if (!rejectionReason) {
-      toast.error("Please provide a rejection reason");
-      return;
-    }
-    toast.success(`Review rejected. ${selectedReview?.customer} has been notified.`);
-    setRejectModalOpen(false);
+  const handleContactCustomer = (review: any) => {
+    setSelectedReview(review);
+    setCustomerContactMessage("");
+    setResponseModalOpen(false);
+    setCustomerContactModalOpen(true);
+  };
+
+  /** Used if the reject Dialog below is uncommented — calls same API as `handleReject` (body: api_token + id only). */
+  const confirmRejection = async () => {
+    if (!selectedReview) return;
+    await handleReject(selectedReview);
     setRejectionReason("");
   };
 
-  const submitResponse = () => {
+  const isContactApiSuccess = (res: {
+    success?: boolean;
+    status?: string | boolean;
+    message?: string;
+  }) => {
+    if (res.success === true) return true;
+    if (res.status === true || res.status === "success") return true;
+    const msg = typeof res.message === "string" ? res.message.toLowerCase() : "";
+    if (msg.includes("success") || msg.includes("sent")) return true;
+    return false;
+  };
+
+  const submitResponse = async () => {
     if (!adminResponse.trim()) {
-      toast.error("Please enter a response");
+      toast.error("Please enter a message");
       return;
     }
-    toast.success(`Response sent to ${selectedReview?.professional}`);
-    setResponseModalOpen(false);
-    setAdminResponse("");
+    if (!selectedReview?.professionalId) {
+      toast.error("Professional ID is missing for this review. It cannot be sent until the list API includes professional_id.");
+      return;
+    }
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Please log in again.");
+      return;
+    }
+    setSendingContactMessage(true);
+    try {
+      const res = await createContactProfessionalMessage({
+        api_token: token,
+        professional_id: selectedReview.professionalId,
+        message: adminResponse.trim(),
+      });
+      if (isContactApiSuccess(res)) {
+        toast.success(res.message || `Message sent to ${selectedReview.professional}.`);
+        setResponseModalOpen(false);
+        setAdminResponse("");
+      } else {
+        toast.error(res.message || "Could not send message.");
+      }
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e) && e.response?.data) {
+        const d = e.response.data as { message?: string };
+        if (d.message) {
+          toast.error(d.message);
+          return;
+        }
+      }
+      toast.error(e instanceof Error ? e.message : "Could not send message.");
+    } finally {
+      setSendingContactMessage(false);
+    }
+  };
+
+  const submitCustomerContact = async () => {
+    if (!customerContactMessage.trim()) {
+      toast.error("Please enter a message");
+      return;
+    }
+    const customerEmail = (selectedReview?.customerEmail ?? "").trim();
+    if (!customerEmail) {
+      toast.error("Reviewer email is missing for this review. Cannot send message.");
+      return;
+    }
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Please log in again.");
+      return;
+    }
+    setSendingCustomerContactMessage(true);
+    try {
+      const res = await createContactCustomerMessage({
+        api_token: token,
+        customer_email: customerEmail,
+        message: customerContactMessage.trim(),
+      });
+      if (isContactApiSuccess(res)) {
+        toast.success(res.message || `Message sent to ${selectedReview.customer}.`);
+        setCustomerContactModalOpen(false);
+        setCustomerContactMessage("");
+      } else {
+        toast.error(res.message || "Could not send message.");
+      }
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e) && e.response?.data) {
+        const d = e.response.data as { message?: string };
+        if (d.message) {
+          toast.error(d.message);
+          return;
+        }
+      }
+      toast.error(e instanceof Error ? e.message : "Could not send message.");
+    } finally {
+      setSendingCustomerContactMessage(false);
+    }
   };
 
   return (
@@ -202,27 +407,34 @@ export function AdminReviews() {
       {/* Filters */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
+          <div className="flex w-full items-center gap-4">
+
+            {/* 🔍 Search */}
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <Input
-                placeholder="Search reviews by customer, professional, or content..."
+                placeholder="Search reviews by customer , professioal or content..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="pl-10 w-full h-11"
               />
             </div>
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-full md:w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="rejected">Rejected</SelectItem>
-              </SelectContent>
-            </Select>
+
+            {/* 🔽 Filter */}
+            <div className="w-[180px]">
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-full h-11 px-4">
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
           </div>
         </CardContent>
       </Card>
@@ -243,8 +455,8 @@ export function AdminReviews() {
                           review.status === "approved"
                             ? "bg-green-100 text-green-700"
                             : review.status === "pending"
-                            ? "bg-yellow-100 text-yellow-700"
-                            : "bg-red-100 text-red-700"
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-red-100 text-red-700"
                         }
                       >
                         {review.status}
@@ -323,19 +535,21 @@ export function AdminReviews() {
                       <Button
                         size="sm"
                         className="bg-green-600 hover:bg-green-700"
-                        onClick={() => handleApprove(review)}
+                        disabled={approvingReviewId === review.id || rejectingReviewId === review.id}
+                        onClick={() => void handleApprove(review)}
                       >
                         <CheckCircle className="w-4 h-4 mr-2" />
-                        Approve
+                        {approvingReviewId === review.id ? "Approving…" : "Approve"}
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
                         className="text-red-600 border-red-600 hover:bg-red-50"
-                        onClick={() => handleReject(review)}
+                        disabled={rejectingReviewId === review.id || approvingReviewId === review.id}
+                        onClick={() => void handleReject(review)}
                       >
                         <XCircle className="w-4 h-4 mr-2" />
-                        Reject
+                        {rejectingReviewId === review.id ? "Rejecting…" : "Reject"}
                       </Button>
                     </>
                   )}
@@ -347,10 +561,7 @@ export function AdminReviews() {
                     <MessageSquare className="w-4 h-4 mr-2" />
                     Contact Professional
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                  >
+                  <Button variant="outline" size="sm" onClick={() => handleContactCustomer(review)}>
                     <Mail className="w-4 h-4 mr-2" />
                     Contact Customer
                   </Button>
@@ -388,8 +599,8 @@ export function AdminReviews() {
                   selectedReview?.status === "approved"
                     ? "bg-green-100 text-green-700"
                     : selectedReview?.status === "pending"
-                    ? "bg-yellow-100 text-yellow-700"
-                    : "bg-red-100 text-red-700"
+                      ? "bg-yellow-100 text-yellow-700"
+                      : "bg-red-100 text-red-700"
                 }
               >
                 {selectedReview?.status}
@@ -441,13 +652,14 @@ export function AdminReviews() {
               <>
                 <Button
                   className="bg-green-600 hover:bg-green-700"
-                  onClick={() => {
-                    handleApprove(selectedReview);
-                    setViewModalOpen(false);
-                  }}
+                  disabled={
+                    !!selectedReview &&
+                    (approvingReviewId === selectedReview.id || rejectingReviewId === selectedReview.id)
+                  }
+                  onClick={() => selectedReview && void handleApprove(selectedReview)}
                 >
                   <CheckCircle className="w-4 h-4 mr-2" />
-                  Approve Review
+                  {selectedReview && approvingReviewId === selectedReview.id ? "Approving…" : "Approve Review"}
                 </Button>
               </>
             )}
@@ -455,7 +667,7 @@ export function AdminReviews() {
         </DialogContent>
       </Dialog>
 
-      {/* Reject Modal */}
+      {/* Reject Modal — commented out (do not remove). Uncomment block + `setRejectModalOpen(true)` in `handleReject` to restore.
       <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -511,6 +723,7 @@ export function AdminReviews() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      */}
 
       {/* Admin Response Modal */}
       <Dialog open={responseModalOpen} onOpenChange={setResponseModalOpen}>
@@ -530,6 +743,15 @@ export function AdminReviews() {
               <p className="text-sm text-gray-600">Professional</p>
               <p className="font-medium text-gray-900">{selectedReview?.professional}</p>
               <p className="text-sm text-gray-600">{selectedReview?.professionalEmail}</p>
+              {selectedReview?.professionalId != null && (
+                <p className="text-xs text-gray-500 mt-2">Professional ID: {selectedReview.professionalId}</p>
+              )}
+              {selectedReview != null && selectedReview.professionalId == null && (
+                <p className="text-xs text-amber-700 mt-2">
+                  No professional ID on this review record — sending is disabled until the reviews list API includes{" "}
+                  <code className="text-[11px]">professional_id</code>.
+                </p>
+              )}
             </div>
 
             <div className="p-4 border rounded-lg">
@@ -560,9 +782,78 @@ export function AdminReviews() {
             <Button variant="outline" onClick={() => setResponseModalOpen(false)}>
               Cancel
             </Button>
-            <Button className="bg-blue-600 hover:bg-blue-700" onClick={submitResponse}>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={sendingContactMessage || !selectedReview?.professionalId}
+              onClick={() => void submitResponse()}
+            >
               <Mail className="w-4 h-4 mr-2" />
-              Send Message
+              {sendingContactMessage ? "Sending…" : "Send Message"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Contact Customer Modal */}
+      <Dialog open={customerContactModalOpen} onOpenChange={setCustomerContactModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-2xl text-[#0A1A2F] flex items-center gap-2">
+              <User className="w-6 h-6 text-blue-600" />
+              Contact Customer
+            </DialogTitle>
+            <DialogDescription>
+              Send a message to {selectedReview?.customer} about this review
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <p className="text-sm text-gray-600">Customer</p>
+              <p className="font-medium text-gray-900">{selectedReview?.customer}</p>
+              <p className="text-sm text-gray-600">{selectedReview?.customerEmail}</p>
+              {(selectedReview?.customerEmail ?? "").trim() ? (
+                <p className="text-xs text-gray-500 mt-2">Will send to: {(selectedReview?.customerEmail ?? "").trim()}</p>
+              ) : (
+                <p className="text-xs text-amber-700 mt-2">
+                  No <code className="text-[11px]">reviewer_email</code> on this review — sending is disabled.
+                </p>
+              )}
+            </div>
+
+            <div className="p-4 border rounded-lg">
+              <p className="text-sm text-gray-600 mb-2">Review Reference</p>
+              <div className="flex items-center gap-2 mb-2">
+                {renderStars(selectedReview?.rating || 0)}
+              </div>
+              <p className="text-sm text-gray-900">{selectedReview?.text}</p>
+            </div>
+
+            <div>
+              <Label htmlFor="admin-customer-message">Your Message *</Label>
+              <Textarea
+                id="admin-customer-message"
+                value={customerContactMessage}
+                onChange={(e) => setCustomerContactMessage(e.target.value)}
+                placeholder="Type your message to the customer..."
+                className="mt-2"
+                rows={5}
+              />
+              <p className="text-xs text-gray-500 mt-1">This message will be sent via email to the customer</p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCustomerContactModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={sendingCustomerContactMessage || !(selectedReview?.customerEmail ?? "").trim()}
+              onClick={() => void submitCustomerContact()}
+            >
+              <Mail className="w-4 h-4 mr-2" />
+              {sendingCustomerContactMessage ? "Sending…" : "Send Message"}
             </Button>
           </DialogFooter>
         </DialogContent>

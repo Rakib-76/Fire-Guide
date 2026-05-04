@@ -1347,8 +1347,9 @@ export interface ProfessionalExtinguisherTypePriceCreateResponse {
 }
 
 /**
- * Create/update professional extinguisher type price (Select Extinguisher Type).
- * POST /professional-extinguisher/type-price-create  Body: { api_token, extinguisher_type_id, type: "extinguisher_type", price }
+ * Create/update professional extinguisher type price (Select Extinguisher Type — same options as `fetchExtinguisherServiceOptions(..., "metarials")`).
+ * POST /professional-extinguisher/type-price-create
+ * Body: `{ api_token, extinguisher_type_id, type: "metarials", price }` — must match admin `saveAdminExtinguisherTypePrice` and wise-price `"metarials"`; `"extinguisher"` is only for count on `/professional-extinguisher-wise/price-create`.
  */
 export const saveProfessionalExtinguisherTypePrice = async (
   apiToken: string,
@@ -1357,7 +1358,7 @@ export const saveProfessionalExtinguisherTypePrice = async (
 ): Promise<ProfessionalExtinguisherTypePriceCreateResponse> => {
   const response = await apiClient.post<ProfessionalExtinguisherTypePriceCreateResponse>(
     '/professional-extinguisher/type-price-create',
-    { api_token: apiToken, extinguisher_type_id, type: "extinguisher_type", price }
+    { api_token: apiToken, extinguisher_type_id, type: "metarials", price }
   );
   return response.data;
 };

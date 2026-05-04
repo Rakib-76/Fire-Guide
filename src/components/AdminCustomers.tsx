@@ -210,27 +210,34 @@ export function AdminCustomers() {
       {/* Filters */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
+          <div className="flex w-full items-center gap-4">
+
+            {/* 🔍 Search */}
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <Input
                 placeholder="Search customers by name or email..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="pl-10 w-full h-11"
               />
             </div>
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-full md:w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-                <SelectItem value="suspend">Suspended</SelectItem>
-              </SelectContent>
-            </Select>
+
+            {/* 🔽 Filter */}
+            <div className="w-[180px]">
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-full h-11 px-4">
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="suspend">Suspended</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
           </div>
         </CardContent>
       </Card>
@@ -259,88 +266,88 @@ export function AdminCustomers() {
                     </td>
                   </tr>
                 ) : (
-                filteredCustomers.map((customer) => (
-                  <tr key={customer.id} className="hover:bg-gray-50">
-                    <td className="p-4">
-                      <div>
-                        <p className="font-medium text-gray-900">{customer.name}</p>
-                        <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                          <Calendar className="w-3 h-3" />
-                          Joined {customer.joinDate}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <div className="space-y-1">
-                        <p className="text-sm text-gray-600 flex items-center gap-2">
-                          <Mail className="w-4 h-4" />
-                          {customer.email}
-                        </p>
-                        <p className="text-sm text-gray-600 flex items-center gap-2">
-                          <Phone className="w-4 h-4" />
-                          {customer.phone}
-                        </p>
-                        <p className="text-sm text-gray-600 flex items-center gap-2">
-                          <MapPin className="w-4 h-4" />
-                          {customer.location}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <div className="space-y-1">
-                        <p className="text-sm text-gray-900">
-                          <span className="font-semibold">{customer.totalBookings}</span> bookings
-                        </p>
-                        <p className="text-sm text-gray-900">
-                          <span className="font-semibold">£{Number(customer.totalSpent).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span> spent
-                        </p>
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <p className="text-sm text-gray-900">{customer.lastBooking}</p>
-                    </td>
-                    <td className="p-4">
-                      <Badge
-                        className={
-                          customer.status === "active"
-                            ? "bg-green-100 text-green-700"
-                            : customer.status === "suspend"
-                              ? "bg-red-100 text-red-700"
-                              : "bg-gray-100 text-gray-700"
-                        }
-                      >
-                        {customer.status === "suspend" ? "suspended" : customer.status}
-                      </Badge>
-                    </td>
-                    <td className="p-4">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-9 w-9" disabled={statusUpdatingId === customer.id}>
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleViewDetails(customer)}>
-                            <Eye className="w-4 h-4 mr-2" />
-                            View Details
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-green-600" onClick={() => handleSetActive(customer)}>
-                            <CheckCircle className="w-4 h-4 mr-2" />
-                            Active Account
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-gray-700" onClick={() => handleSetInactive(customer)}>
-                            <Circle className="w-4 h-4 mr-2" />
-                            Inactive Account
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-yellow-600" onClick={() => handleSuspendAccount(customer)}>
-                            <Ban className="w-4 h-4 mr-2" />
-                            Suspend Account
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </td>
-                  </tr>
-                ))
+                  filteredCustomers.map((customer) => (
+                    <tr key={customer.id} className="hover:bg-gray-50">
+                      <td className="p-4">
+                        <div>
+                          <p className="font-medium text-gray-900">{customer.name}</p>
+                          <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+                            <Calendar className="w-3 h-3" />
+                            Joined {customer.joinDate}
+                          </p>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="space-y-1">
+                          <p className="text-sm text-gray-600 flex items-center gap-2">
+                            <Mail className="w-4 h-4" />
+                            {customer.email}
+                          </p>
+                          <p className="text-sm text-gray-600 flex items-center gap-2">
+                            <Phone className="w-4 h-4" />
+                            {customer.phone}
+                          </p>
+                          <p className="text-sm text-gray-600 flex items-center gap-2">
+                            <MapPin className="w-4 h-4" />
+                            {customer.location}
+                          </p>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="space-y-1">
+                          <p className="text-sm text-gray-900">
+                            <span className="font-semibold">{customer.totalBookings}</span> bookings
+                          </p>
+                          <p className="text-sm text-gray-900">
+                            <span className="font-semibold">£{Number(customer.totalSpent).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span> spent
+                          </p>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <p className="text-sm text-gray-900">{customer.lastBooking}</p>
+                      </td>
+                      <td className="p-4">
+                        <Badge
+                          className={
+                            customer.status === "active"
+                              ? "bg-green-100 text-green-700"
+                              : customer.status === "suspend"
+                                ? "bg-red-100 text-red-700"
+                                : "bg-gray-100 text-gray-700"
+                          }
+                        >
+                          {customer.status === "suspend" ? "suspended" : customer.status}
+                        </Badge>
+                      </td>
+                      <td className="p-4">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-9 w-9" disabled={statusUpdatingId === customer.id}>
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleViewDetails(customer)}>
+                              <Eye className="w-4 h-4 mr-2" />
+                              View Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-green-600" onClick={() => handleSetActive(customer)}>
+                              <CheckCircle className="w-4 h-4 mr-2" />
+                              Active Account
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-gray-700" onClick={() => handleSetInactive(customer)}>
+                              <Circle className="w-4 h-4 mr-2" />
+                              Inactive Account
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-yellow-600" onClick={() => handleSuspendAccount(customer)}>
+                              <Ban className="w-4 h-4 mr-2" />
+                              Suspend Account
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
@@ -351,91 +358,91 @@ export function AdminCustomers() {
             {customersLoading ? (
               <div className="p-8 text-center text-gray-500">Loading customers...</div>
             ) : (
-            filteredCustomers.map((customer) => (
-              <div key={customer.id} className="p-4 space-y-3">
-                {/* Customer Name & Status */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-gray-900 truncate">{customer.name}</h3>
-                    <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                      <Calendar className="w-3 h-3 flex-shrink-0" />
-                      <span>Joined {customer.joinDate}</span>
-                    </p>
+              filteredCustomers.map((customer) => (
+                <div key={customer.id} className="p-4 space-y-3">
+                  {/* Customer Name & Status */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-gray-900 truncate">{customer.name}</h3>
+                      <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                        <Calendar className="w-3 h-3 flex-shrink-0" />
+                        <span>Joined {customer.joinDate}</span>
+                      </p>
+                    </div>
+                    <Badge
+                      className={
+                        customer.status === "active"
+                          ? "bg-green-100 text-green-700 flex-shrink-0"
+                          : customer.status === "suspend"
+                            ? "bg-red-100 text-red-700 flex-shrink-0"
+                            : "bg-gray-100 text-gray-700 flex-shrink-0"
+                      }
+                    >
+                      {customer.status === "suspend" ? "suspended" : customer.status}
+                    </Badge>
                   </div>
-                  <Badge
-                    className={
-                      customer.status === "active"
-                        ? "bg-green-100 text-green-700 flex-shrink-0"
-                        : customer.status === "suspend"
-                          ? "bg-red-100 text-red-700 flex-shrink-0"
-                          : "bg-gray-100 text-gray-700 flex-shrink-0"
-                    }
-                  >
-                    {customer.status === "suspend" ? "suspended" : customer.status}
-                  </Badge>
-                </div>
 
-                {/* Contact Information */}
-                <div className="space-y-2">
-                  <div className="flex items-start gap-2">
-                    <Mail className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-gray-600 break-all">{customer.email}</p>
+                  {/* Contact Information */}
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2">
+                      <Mail className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-sm text-gray-600 break-all">{customer.email}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                      <p className="text-sm text-gray-600">{customer.phone}</p>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-sm text-gray-600">{customer.location}</p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                    <p className="text-sm text-gray-600">{customer.phone}</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-gray-600">{customer.location}</p>
-                  </div>
-                </div>
 
-                {/* Stats & Last Booking */}
-                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                  <div className="space-y-1">
-                    <p className="text-xs text-gray-500">Bookings & Spend</p>
-                    <p className="text-sm text-gray-900">
-                      <span className="font-semibold">{customer.totalBookings}</span> bookings • <span className="font-semibold">£{Number(customer.totalSpent).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
-                    </p>
+                  {/* Stats & Last Booking */}
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                    <div className="space-y-1">
+                      <p className="text-xs text-gray-500">Bookings & Spend</p>
+                      <p className="text-sm text-gray-900">
+                        <span className="font-semibold">{customer.totalBookings}</span> bookings • <span className="font-semibold">£{Number(customer.totalSpent).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">Last Booking</p>
+                      <p className="text-sm text-gray-900">{customer.lastBooking}</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500">Last Booking</p>
-                    <p className="text-sm text-gray-900">{customer.lastBooking}</p>
-                  </div>
-                </div>
 
-                {/* Actions */}
-                <div className="pt-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="w-full">
-                        <MoreVertical className="w-4 h-4 mr-2" />
-                        Actions
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                      <DropdownMenuItem onClick={() => handleViewDetails(customer)}>
-                        <Eye className="w-4 h-4 mr-2" />
-                        View Details
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="text-green-600" onClick={() => handleSetActive(customer)}>
-                        <CheckCircle className="w-4 h-4 mr-2" />
-                        Active Account
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="text-gray-700" onClick={() => handleSetInactive(customer)}>
-                        <Circle className="w-4 h-4 mr-2" />
-                        Inactive Account
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="text-yellow-600" onClick={() => handleSuspendAccount(customer)}>
-                        <Ban className="w-4 h-4 mr-2" />
-                        Suspend Account
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {/* Actions */}
+                  <div className="pt-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="w-full">
+                          <MoreVertical className="w-4 h-4 mr-2" />
+                          Actions
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuItem onClick={() => handleViewDetails(customer)}>
+                          <Eye className="w-4 h-4 mr-2" />
+                          View Details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-green-600" onClick={() => handleSetActive(customer)}>
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Active Account
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-gray-700" onClick={() => handleSetInactive(customer)}>
+                          <Circle className="w-4 h-4 mr-2" />
+                          Inactive Account
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-yellow-600" onClick={() => handleSuspendAccount(customer)}>
+                          <Ban className="w-4 h-4 mr-2" />
+                          Suspend Account
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
-              </div>
-            ))
+              ))
             )}
           </div>
 

@@ -29,18 +29,53 @@ interface CustomerPaymentsProps {
   payments: Payment[];
 }
 
+function paymentStatusLabel(status: Payment["status"]): string {
+  switch (status) {
+    case "paid":
+      return "Paid";
+    case "unpaid":
+      return "Unpaid";
+    case "refunded":
+      return "Refunded";
+    default:
+      return "Pending";
+  }
+}
+
 // Transform API payment to local Payment format
 const transformApiPayment = (apiPayment: CustomerPaymentItem): Payment => {
+  const p = apiPayment.payment;
+  const svc = apiPayment.service;
+  const serviceLabel =
+    (svc?.service_name && String(svc.service_name).trim()) ||
+    (svc?.name && String(svc.name).trim()) ||
+    "Fire Safety Service";
+  const priceRaw =
+    p != null && p.price != null && String(p.price).trim() !== ""
+      ? p.price
+      : svc?.price ?? "0";
+  const amountNum = parseFloat(String(priceRaw).replace(/[^0-9.-]/g, "")) || 0;
+
+  let status: Payment["status"];
+  if (p == null) {
+    status = "unpaid";
+  } else {
+    const s = String(p.status || "").toLowerCase();
+    if (s === "paid") status = "paid";
+    else if (s === "refunded") status = "refunded";
+    else status = "pending";
+  }
+
   return {
     id: apiPayment.booking_id.toString(),
     date: apiPayment.selected_date,
-    service: apiPayment.service?.service_name || 'Fire Safety Service',
-    amount: `£${parseFloat(apiPayment.payment?.price || '0').toFixed(2)}`,
-    status: apiPayment.payment?.status === 'paid' ? 'paid' : 'pending',
+    service: serviceLabel,
+    amount: `£${amountNum.toFixed(2)}`,
+    status,
     invoiceNumber: `INV-${apiPayment.booking_id}`,
     bookingRef: `FG-${apiPayment.booking_id}`,
-    paymentMethod: 'Visa ending 4242',
-    professional: apiPayment.professional?.name || 'Professional',
+    paymentMethod: "Visa ending 4242",
+    professional: apiPayment.professional?.name || "Professional",
   };
 };
 
@@ -161,14 +196,18 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
     return payments.length;
   }, [paymentsSummary, payments]);
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: Payment["status"]) => {
     switch (status) {
       case "paid":
-        return "bg-green-100 text-green-800";
+        return "border-transparent bg-green-100 text-green-800";
+      case "unpaid":
+        return "border-transparent bg-red-600 text-white";
       case "pending":
-        return "bg-yellow-100 text-yellow-800";
+        return "border-transparent bg-yellow-100 text-yellow-800";
+      case "refunded":
+        return "border-transparent bg-gray-100 text-gray-800";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "border-transparent bg-gray-100 text-gray-800";
     }
   };
 
@@ -232,7 +271,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       doc.setFont('helvetica', 'bold');
       doc.text(invoiceDate, pageWidth - 14, 38, { align: 'right' });
       doc.text(payment.invoiceNumber, pageWidth - 14, 46, { align: 'right' });
-      doc.text(payment.status === 'paid' ? 'Paid' : 'Pending', pageWidth - 14, 54, { align: 'right' });
+      doc.text(paymentStatusLabel(payment.status), pageWidth - 14, 54, { align: 'right' });
       
       // Customer/Professional info (left side)
       doc.setFont('helvetica', 'bold');
@@ -290,7 +329,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
         payment.amount, // AMOUNT
         `-£${commission.toFixed(2)}`, // COMMISSION (negative, will be styled in red)
         `£${earnings.toFixed(2)}`, // EARNINGS (will be styled in green)
-        payment.status === 'paid' ? 'Paid' : 'Pending' // STATUS
+        paymentStatusLabel(payment.status) // STATUS
       ]];
       
       autoTable(doc, {
@@ -338,7 +377,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       doc.setTextColor(...grayColor);
       doc.text('Payment Method: ' + payment.paymentMethod, 14, paymentInfoY + 8);
       doc.text('Date: ' + invoiceDate, 14, paymentInfoY + 15);
-      doc.text('Status: ' + (payment.status === 'paid' ? 'Paid' : 'Pending'), 14, paymentInfoY + 22);
+      doc.text("Status: " + paymentStatusLabel(payment.status), 14, paymentInfoY + 22);
       
       // Total Amount box
       const totalY = paymentInfoY + 35;
@@ -498,7 +537,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
           payment.amount,
           `-£${paymentCommission.toFixed(2)}`,
           `£${paymentEarnings.toFixed(2)}`,
-          payment.status === 'paid' ? 'Paid' : 'Pending'
+          paymentStatusLabel(payment.status),
         ];
       });
       
@@ -626,6 +665,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="unpaid">Unpaid</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                 </SelectContent>
               </Select>
@@ -682,11 +722,9 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
                         <h3 className="text-[#0A1A2F] mb-1">{payment.service}</h3>
                         <p className="text-sm text-gray-600">Invoice: {payment.invoiceNumber}</p>
                       </div>
-                      {payment.status === "paid" && (
-                        <Badge className={getStatusColor(payment.status)}>
-                          Paid
-                        </Badge>
-                      )}
+                      <Badge variant="secondary" className={getStatusColor(payment.status)}>
+                        {paymentStatusLabel(payment.status)}
+                      </Badge>
                     </div>
 
                     <div className="grid md:grid-cols-2 gap-3 text-sm">
@@ -743,44 +781,6 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
           ))}
         </div>
       )}
-
-      {/* Payment Methods */}
-      <Card>
-        <CardContent className="p-6">
-          <h3 className="text-[#0A1A2F] mb-4">Saved Payment Methods</h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-4 border rounded-lg">
-              <div className="flex items-center gap-3">
-                <CreditCard className="w-5 h-5 text-gray-400" />
-                <div>
-                  <p className="font-medium">Visa ending in 4242</p>
-                  <p className="text-sm text-gray-600">Expires 12/2025</p>
-                </div>
-                <Badge variant="outline" className="ml-2">Default</Badge>
-              </div>
-              <Button variant="ghost" size="sm">Edit</Button>
-            </div>
-
-            <div className="flex items-center justify-between p-4 border rounded-lg">
-              <div className="flex items-center gap-3">
-                <CreditCard className="w-5 h-5 text-gray-400" />
-                <div>
-                  <p className="font-medium">Mastercard ending in 5555</p>
-                  <p className="text-sm text-gray-600">Expires 08/2026</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="ghost" size="sm">Set Default</Button>
-                <Button variant="ghost" size="sm" className="text-red-600">Remove</Button>
-              </div>
-            </div>
-          </div>
-
-          <Button variant="outline" className="w-full mt-4">
-            Add New Payment Method
-          </Button>
-        </CardContent>
-      </Card>
     </div>
   );
 });

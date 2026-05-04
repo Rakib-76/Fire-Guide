@@ -150,8 +150,8 @@ export function AdminBookings() {
       customerEmail: b.email ?? "—",
       customerPhone: b.phone ?? "—",
       professional: b.professional_name ?? "—",
-      professionalEmail: "—",
-      professionalPhone: "—",
+      professionalEmail: b.professional_email ?? "—",
+      professionalPhone: b.professional_phone ?? "—",
       professionalImage: "",
       professionalType: "individual",
       service: b.service_name ?? "—",
@@ -172,8 +172,8 @@ export function AdminBookings() {
 
   const filteredBookings = bookings.filter((booking) => {
     const matchesSearch = booking.reference.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         booking.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         booking.professional.toLowerCase().includes(searchTerm.toLowerCase());
+      booking.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      booking.professional.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFilter = filterStatus === "all" || booking.status === filterStatus;
     return matchesSearch && matchesFilter;
   });
@@ -301,28 +301,35 @@ export function AdminBookings() {
       {/* Filters */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
+          <div className="flex w-full items-center gap-4">
+
+            {/* 🔍 Search */}
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <Input
-                placeholder="Search by reference, customer, or professional..."
+                placeholder="Search reference, customer, or professional...."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="pl-10 w-full h-11"
               />
             </div>
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-full md:w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="confirmed">Confirmed</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
+
+            {/* 🔽 Filter */}
+            <div className="w-[180px]">
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-full h-11 px-4">
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="confirmed">Confirmed</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
           </div>
         </CardContent>
       </Card>
@@ -336,74 +343,75 @@ export function AdminBookings() {
             </CardContent>
           </Card>
         ) : (
-        filteredBookings.map((booking) => (
-          <Card key={booking.id}>
-            <CardContent className="p-6">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg text-[#0A1A2F]">{booking.reference}</h3>
-                        <Badge className={getStatusColor(booking.status)}>
-                          {getStatusIcon(booking.status)}
-                          <span className="ml-1">{booking.status}</span>
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-gray-600">Created {booking.createdAt}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
+          filteredBookings.map((booking) => (
+            <Card key={booking.id}>
+              <CardContent className="p-6">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-start justify-between mb-3">
                       <div>
-                        <p className="text-sm text-gray-600">Customer</p>
-                        <p className="font-medium text-gray-900">{booking.customer}</p>
-                        <p className="text-sm text-gray-500">{booking.customerEmail}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Professional</p>
-                        <p className="font-medium text-gray-900">{booking.professional}</p>
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-lg text-[#0A1A2F]">{booking.reference}</h3>
+                          <Badge className={getStatusColor(booking.status)}>
+                            {getStatusIcon(booking.status)}
+                            <span className="ml-1">{booking.status}</span>
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-600">Created {booking.createdAt}</p>
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <div>
-                        <p className="text-sm text-gray-600">Service</p>
-                        <p className="font-medium text-gray-900">{booking.service}</p>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <div>
+                          <p className="text-sm text-gray-600">Customer</p>
+                          <p className="font-medium text-gray-900">{booking.customer}</p>
+                          <p className="text-sm text-gray-500">{booking.customerEmail}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Professional</p>
+                          <p className="font-medium text-gray-900">{booking.professional}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Appointment</p>
-                        <p className="font-medium text-gray-900 flex items-center gap-2">
-                          <Calendar className="w-4 h-4" />
-                          {booking.date} at {booking.time}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Location</p>
-                        <p className="text-sm text-gray-900">{booking.location}</p>
+
+                      <div className="space-y-2">
+                        <div>
+                          <p className="text-sm text-gray-600">Service</p>
+                          <p className="font-medium text-gray-900">{booking.service}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Appointment</p>
+                          <p className="font-medium text-gray-900 flex items-center gap-2">
+                            <Calendar className="w-4 h-4" />
+                            {booking.date} at {booking.time}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Location</p>
+                          <p className="text-sm text-gray-900">{booking.location}</p>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex lg:flex-col items-center lg:items-end gap-4">
-                  <div className="text-center lg:text-right">
-                    <p className="text-sm text-gray-600">Amount</p>
-                    <p className="text-2xl text-[#0A1A2F] font-semibold">£{booking.amount}</p>
-                  </div>
-                  
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        <MoreVertical className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleViewDetails(booking)}>
-                        <Eye className="w-4 h-4 mr-2" />
-                        View Full Details
-                      </DropdownMenuItem>
+                  <div className="flex lg:flex-col items-center lg:items-end gap-4">
+                    <div className="text-center lg:text-right">
+                      <p className="text-sm text-gray-600">Amount</p>
+                      <p className="text-2xl text-[#0A1A2F] font-semibold">£{booking.amount}</p>
+                    </div>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleViewDetails(booking)}>
+                          <Eye className="w-4 h-4 mr-2" />
+                          View Full Details
+                        </DropdownMenuItem>
+                        {/* Hidden: confirm / reschedule / cancel from card menu (restore if needed)
                       {booking.status === "pending" && (
                         <DropdownMenuItem className="text-green-600" onClick={() => handleConfirmBooking(booking)}>
                           <CheckCircle className="w-4 h-4 mr-2" />
@@ -422,13 +430,14 @@ export function AdminBookings() {
                           </DropdownMenuItem>
                         </>
                       )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                      */}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))
+              </CardContent>
+            </Card>
+          ))
         )}
       </div>
 
@@ -503,11 +512,10 @@ export function AdminBookings() {
                     <img
                       src={selectedBooking.professionalImage}
                       alt={selectedBooking.professional}
-                      className={`w-12 h-12 object-cover ${
-                        selectedBooking.professionalType === "individual"
-                          ? "rounded-full"
-                          : "rounded-lg"
-                      }`}
+                      className={`w-12 h-12 object-cover ${selectedBooking.professionalType === "individual"
+                        ? "rounded-full"
+                        : "rounded-lg"
+                        }`}
                     />
                   ) : (
                     <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
@@ -597,6 +605,7 @@ export function AdminBookings() {
             <Button variant="outline" onClick={() => setDetailsModalOpen(false)}>
               Close
             </Button>
+            {/* Cancel Booking from details modal — hidden by request
             {(selectedBooking?.status === "confirmed" || selectedBooking?.status === "pending") && (
               <Button className="bg-red-600 hover:bg-red-700" onClick={() => {
                 setDetailsModalOpen(false);
@@ -605,6 +614,7 @@ export function AdminBookings() {
                 Cancel Booking
               </Button>
             )}
+            */}
           </DialogFooter>
         </DialogContent>
       </Dialog>

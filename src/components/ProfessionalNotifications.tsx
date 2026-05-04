@@ -5,8 +5,21 @@ import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { toast } from "sonner";
-import { fetchNotifications, fetchUnreadNotifications, fetchBookingsNotifications, fetchPaymentsNotifications, fetchReviewsNotifications, fetchSystemNotifications, markAllNotificationsAsRead, markNotificationAsRead, deleteAllNotifications, deleteNotification as deleteNotificationAPI } from "../api/notificationsService";
+import {
+  fetchNotifications,
+  fetchUnreadNotifications,
+  fetchBookingsNotifications,
+  fetchPaymentsNotifications,
+  // fetchReviewsNotifications,
+  fetchSystemNotifications,
+  markAllNotificationsAsRead,
+  markNotificationAsRead,
+  // deleteAllNotifications,
+  deleteNotification as deleteNotificationAPI,
+  getProfessionalNotificationDedupeKey,
+} from "../api/notificationsService";
 import { getApiToken } from "../lib/auth";
+import { mergeProfessionalNotificationSeenKeys, emitProfessionalNotificationsMutated } from "../lib/professionalNotificationSeen";
 
 interface Notification {
   id: number;
@@ -88,9 +101,10 @@ export function ProfessionalNotifications() {
       } else if (activeTab === "payment") {
         console.log("Fetching payments notifications...");
         response = await fetchPaymentsNotifications({ api_token: apiToken });
-      } else if (activeTab === "review") {
-        console.log("Fetching reviews notifications...");
-        response = await fetchReviewsNotifications({ api_token: apiToken });
+      // Reviews tab hidden — restore when re-enabling the Reviews tab trigger below.
+      // } else if (activeTab === "review") {
+      //   console.log("Fetching reviews notifications...");
+      //   response = await fetchReviewsNotifications({ api_token: apiToken });
       } else if (activeTab === "system") {
         console.log("Fetching system notifications...");
         response = await fetchSystemNotifications({ api_token: apiToken });
@@ -98,66 +112,34 @@ export function ProfessionalNotifications() {
         console.log("Fetching unread notifications...");
         response = await fetchUnreadNotifications({ api_token: apiToken });
       } else if (activeTab === "all") {
-        // For "all" tab, fetch notifications from all categories and combine them
-        console.log("Fetching all notifications from all categories...");
-        const results = await Promise.allSettled([
-          fetchBookingsNotifications({ api_token: apiToken }),
-          fetchPaymentsNotifications({ api_token: apiToken }),
-          fetchReviewsNotifications({ api_token: apiToken }),
-          fetchSystemNotifications({ api_token: apiToken }),
-        ]);
-        
-        // Combine all notifications from different categories (only successful responses)
-        const allNotifications: any[] = [];
-        results.forEach((result) => {
-          if (result.status === 'fulfilled' && result.value?.data) {
-            allNotifications.push(...result.value.data);
-          }
-        });
-        
-        // Create a combined response
-        response = {
-          status: true,
-          data: allNotifications,
-        };
+        // Single feed: POST /notifications { api_token }
+        response = await fetchNotifications({ api_token: apiToken });
       } else {
-        // Fallback: fetch all notifications
-        console.log("Fetching all notifications...");
         response = await fetchNotifications({ api_token: apiToken });
       }
-      
-      console.log("API Response:", response);
-      console.log("Response status:", response.status);
-      console.log("Response data:", response.data);
-      console.log("Data length:", response.data?.length);
-      console.log("Data type:", typeof response.data);
-      console.log("Is array:", Array.isArray(response.data));
-      
-      // Check if response is valid - handle both boolean true and string "success"
+
+      const dataArray = response?.data && Array.isArray(response.data) ? response.data : [];
+
       if (response && (response.status === true || response.status === "success" || response.status === "true")) {
-        // Check if data exists and is an array
-        if (response.data && Array.isArray(response.data)) {
-          if (response.data.length > 0) {
-            // Map API response to component interface
-            const mappedNotifications: Notification[] = response.data.map((item) => {
-              console.log("Mapping item:", item);
+        if (dataArray.length > 0) {
+            const mappedNotifications: Notification[] = dataArray.map((item) => {
               return {
                 id: item.id,
                 type: mapCategoryToType(item.category),
                 title: item.title,
                 message: item.content,
                 timestamp: formatTimestamp(item.created_at),
-                read: item.is_read,
+                read: Boolean(item.is_read),
                 priority: item.priority,
               };
             });
-            
-            console.log("Mapped notifications:", mappedNotifications);
             
             if (activeTab === "all") {
               // For "all" tab, update both allNotifications and notifications
               setAllNotifications(mappedNotifications);
               setNotifications(mappedNotifications);
+              mergeProfessionalNotificationSeenKeys(dataArray.map((item) => getProfessionalNotificationDedupeKey(item)));
+              emitProfessionalNotificationsMutated();
             } else {
               // For other tabs, update the specific category in allNotifications
               // and set notifications to the current tab's data
@@ -177,33 +159,26 @@ export function ProfessionalNotifications() {
                 return [...filtered, ...mappedNotifications];
               });
             }
-          } else {
-            console.log("Response data is an empty array");
+        } else {
             setNotifications([]);
             if (activeTab === "all") {
               setAllNotifications([]);
             }
-          }
-        } else {
-          console.error("Response data is not an array:", response.data);
-          toast.error("Invalid response format: data is not an array");
-          setNotifications([]);
         }
       } else {
-        console.error("Invalid response structure:", response);
-        console.error("Response status value:", response.status, "Type:", typeof response.status);
-        toast.error(response.message || "Failed to load notifications");
+        toast.error(response?.message || "Failed to load notifications");
         setNotifications([]);
+        if (activeTab === "all") {
+          setAllNotifications([]);
+        }
       }
     } catch (error: any) {
       console.error("Error fetching notifications:", error);
-      console.error("Error details:", {
-        message: error.message,
-        response: error.response,
-        data: error.data
-      });
       toast.error(error.message || "Failed to load notifications");
       setNotifications([]);
+      if (activeTab === "all") {
+        setAllNotifications([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -267,6 +242,8 @@ export function ProfessionalNotifications() {
         setNotifications(notifications.map(notif =>
           notif.id === id ? { ...notif, read: true } : notif
         ));
+        mergeProfessionalNotificationSeenKeys([`id:${id}`]);
+        emitProfessionalNotificationsMutated();
         toast.success(response.message || "Marked as read");
       } else {
         toast.error(response.message || "Failed to mark notification as read");
@@ -295,6 +272,8 @@ export function ProfessionalNotifications() {
         // Update local state directly without reloading - mark all unread as read
         setAllNotifications(allNotifications.map(notif => ({ ...notif, read: true })));
         setNotifications(notifications.map(notif => ({ ...notif, read: true })));
+        mergeProfessionalNotificationSeenKeys(allNotifications.map((n) => `id:${n.id}`));
+        emitProfessionalNotificationsMutated();
         toast.success(response.message || "All notifications marked as read");
       } else {
         toast.error(response.message || "Failed to mark all notifications as read");
@@ -326,6 +305,7 @@ export function ProfessionalNotifications() {
         // Update local state directly without reloading
         setAllNotifications(allNotifications.filter(notif => notif.id !== id));
         setNotifications(notifications.filter(notif => notif.id !== id));
+        emitProfessionalNotificationsMutated();
         toast.success(response.message || "Notification deleted");
       } else {
         toast.error(response.message || "Failed to delete notification");
@@ -336,10 +316,11 @@ export function ProfessionalNotifications() {
     }
   };
 
+  /* Clear All button hidden on professional notifications — restore with the button below.
   const clearAll = async () => {
     try {
       const apiToken = getApiToken();
-      
+
       if (!apiToken) {
         toast.error("Authentication token not found. Please log in again.");
         return;
@@ -347,13 +328,13 @@ export function ProfessionalNotifications() {
 
       console.log("Deleting all notifications...");
       const response = await deleteAllNotifications({ api_token: apiToken });
-      
+
       console.log("Delete all notifications response:", response);
-      
+
       if (response.status === true) {
-        // Update local state directly without reloading
         setAllNotifications([]);
         setNotifications([]);
+        emitProfessionalNotificationsMutated();
         toast.success(response.message || "All notifications cleared");
       } else {
         toast.error(response.message || "Failed to delete all notifications");
@@ -363,6 +344,7 @@ export function ProfessionalNotifications() {
       toast.error(error.message || "Failed to delete all notifications");
     }
   };
+  */
 
   const filterNotifications = (type: string) => {
     // For "all" tab, use allNotifications; for others, use notifications
@@ -410,17 +392,17 @@ export function ProfessionalNotifications() {
                 <CheckCircle className="w-4 h-4 mr-2" />
                 Mark All as Read
               </Button>
-              <Button variant="outline" onClick={clearAll} className="text-sm">
+              {/* <Button variant="outline" onClick={clearAll} className="text-sm">
                 <Trash2 className="w-4 h-4 mr-2" />
                 Clear All
-              </Button>
+              </Button> */}
             </>
           )}
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 md:grid-cols-6 gap-1">
+        <TabsList className="grid w-full grid-cols-3 md:grid-cols-5 gap-1">
           <TabsTrigger value="all" className="relative text-xs md:text-sm">
             All
             {allNotifications.length > 0 && (
@@ -443,9 +425,9 @@ export function ProfessionalNotifications() {
           <TabsTrigger value="payment" className="text-xs md:text-sm">
             Payments
           </TabsTrigger>
-          <TabsTrigger value="review" className="text-xs md:text-sm">
+          {/* <TabsTrigger value="review" className="text-xs md:text-sm">
             Reviews
-          </TabsTrigger>
+          </TabsTrigger> */}
           <TabsTrigger value="system" className="text-xs md:text-sm">
             System
           </TabsTrigger>

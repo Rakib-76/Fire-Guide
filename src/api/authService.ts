@@ -201,7 +201,8 @@ export interface CustomerNotificationItem {
   created_at: string;
   type?: string;
   read?: boolean;
-  [key: string]: any;
+  is_read?: number | boolean;
+  [key: string]: unknown;
 }
 
 export interface GetCustomerNotificationsRequest {
@@ -214,46 +215,229 @@ export interface GetCustomerNotificationsResponse {
   data: CustomerNotificationItem[];
 }
 
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return x != null && typeof x === "object" && !Array.isArray(x);
+}
+
+/** Pull a notifications array from common API envelope shapes. */
+export function extractCustomerNotificationsArray(payload: unknown): unknown[] {
+  if (payload == null) return [];
+  if (Array.isArray(payload)) return payload;
+  if (!isRecord(payload)) return [];
+  const data = payload.data;
+  if (Array.isArray(data)) return data;
+  if (isRecord(data) && Array.isArray(data.data)) return data.data;
+  if (Array.isArray(payload.notifications)) return payload.notifications;
+  return [];
+}
+
+function strField(r: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = r[k];
+    if (v != null && String(v).trim() !== "") return String(v);
+  }
+  return "";
+}
+
+function normalizeCustomerNotificationRow(row: unknown): CustomerNotificationItem | null {
+  if (!isRecord(row)) return null;
+  const idRaw = row.id ?? row.notification_id;
+  let id = typeof idRaw === "number" && Number.isFinite(idRaw) ? idRaw : parseInt(String(idRaw ?? ""), 10);
+  if (!Number.isFinite(id) || id <= 0) {
+    id = 0;
+  }
+  const title = strField(row, "title", "subject", "heading", "name", "type");
+  const message = strField(row, "message", "body", "description", "content", "text", "details");
+  const created_at = strField(row, "created_at", "updated_at", "date", "sent_at", "createdAt");
+  const read =
+    row.read === true ||
+    row.read === 1 ||
+    row.is_read === true ||
+    row.is_read === 1 ||
+    row.is_read === "1";
+  return {
+    ...row,
+    id,
+    title: title || "Notification",
+    message,
+    created_at,
+    read: Boolean(read),
+    is_read: row.is_read as number | boolean | undefined,
+  } as CustomerNotificationItem;
+}
+
+/** Stable key for seen-state + React lists when `id` is missing or duplicated. */
+export function getCustomerNotificationDedupeKey(item: CustomerNotificationItem, _index?: number): string {
+  const id = typeof item.id === "number" ? item.id : parseInt(String(item.id), 10);
+  if (Number.isFinite(id) && id > 0) {
+    return `id:${id}`;
+  }
+  const stamp = item.created_at || "";
+  const head = `${item.title || ""}|${(item.message || "").slice(0, 120)}`;
+  return `h:${stamp}|${head}`;
+}
+
+function parseCustomerNotificationsPayload(payload: unknown): CustomerNotificationItem[] {
+  const raw = extractCustomerNotificationsArray(payload);
+  const out: CustomerNotificationItem[] = [];
+  raw.forEach((row) => {
+    const n = normalizeCustomerNotificationRow(row);
+    if (n) out.push(n);
+  });
+  return out;
+}
+
+function messageFromPayload(payload: unknown, fallback: string): string {
+  if (!isRecord(payload)) return fallback;
+  const m = payload.message;
+  return typeof m === "string" && m.trim() ? m : fallback;
+}
+
 /**
- * Get customer notifications
- * BaseURL: https://fireguide.attoexasolutions.com/api/user_dashboard/get_all_notification
- * Method: POST
- * @param data - API token
- * @returns Promise with the API response
+ * Customer notification feed — POST /notifications with `{ api_token }`.
+ * Tolerates `{ data: Notification[] }` or Laravel `{ data: { data: [] } }`.
  */
 export const getCustomerNotifications = async (
   data: GetCustomerNotificationsRequest
 ): Promise<GetCustomerNotificationsResponse> => {
   try {
-    const response = await apiClient.post<GetCustomerNotificationsResponse>(
-      '/user_dashboard/get_all_notification',
-      {
-        api_token: data.api_token,
-      }
-    );
-    console.log('POST /user_dashboard/get_all_notification - Response:', response.data);
-    return response.data;
+    const response = await apiClient.post<unknown>("/notifications", {
+      api_token: data.api_token,
+    });
+    const body = response.data;
+    const list = parseCustomerNotificationsPayload(body);
+    return {
+      status: true,
+      message: messageFromPayload(body, "OK"),
+      data: list,
+    };
   } catch (error) {
-    console.error('Error fetching customer notifications:', error);
+    console.error("Error fetching customer notifications:", error);
     if (axios.isAxiosError(error)) {
       if (error.response) {
         throw {
           status: false,
-          message: error.response.data?.message || 'Failed to fetch notifications',
-          error: error.response.data?.error || 'Unknown error',
+          message: error.response.data?.message || "Failed to fetch notifications",
+          error: error.response.data?.error || "Unknown error",
         };
       } else if (error.request) {
         throw {
           status: false,
-          message: 'Network error. Please check your connection.',
-          error: 'Network error',
+          message: "Network error. Please check your connection.",
+          error: "Network error",
         };
       }
     }
     throw {
       status: false,
-      message: 'An unexpected error occurred',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message: "An unexpected error occurred",
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+};
+
+/** Admin → customer messages — POST /contact-customer/get with `{ api_token }`. */
+export interface CustomerAdminContactMessageItem {
+  id: number;
+  message: string;
+  created_at: string;
+  title?: string;
+  [key: string]: unknown;
+}
+
+export interface GetCustomerContactMessagesRequest {
+  api_token: string;
+}
+
+export interface GetCustomerContactMessagesResponse {
+  status: boolean;
+  message: string;
+  data: CustomerAdminContactMessageItem[];
+}
+
+function extractCustomerContactMessagesArray(payload: unknown): unknown[] {
+  if (payload == null) return [];
+  if (Array.isArray(payload)) return payload;
+  if (!isRecord(payload)) return [];
+  const data = payload.data;
+  if (Array.isArray(data)) return data;
+  if (isRecord(data) && Array.isArray(data.data)) return data.data;
+  if (Array.isArray(payload.messages)) return payload.messages;
+  if (isRecord(data) && typeof data.message === "string") {
+    return [data];
+  }
+  return [];
+}
+
+function normalizeCustomerAdminContactMessageRow(row: unknown): CustomerAdminContactMessageItem | null {
+  if (!isRecord(row)) return null;
+  const idRaw = row.id ?? row.message_id;
+  let id = typeof idRaw === "number" && Number.isFinite(idRaw) ? idRaw : parseInt(String(idRaw ?? ""), 10);
+  if (!Number.isFinite(id) || id <= 0) {
+    id = 0;
+  }
+  const message = strField(row, "message", "body", "content", "text", "note", "admin_message");
+  const title = strField(row, "title", "subject", "heading") || "Admin message";
+  const created_at = strField(row, "created_at", "updated_at", "date", "sent_at", "createdAt");
+  return {
+    ...row,
+    id,
+    title,
+    message,
+    created_at,
+  } as CustomerAdminContactMessageItem;
+}
+
+function parseCustomerContactMessagesPayload(payload: unknown): CustomerAdminContactMessageItem[] {
+  const raw = extractCustomerContactMessagesArray(payload);
+  const out: CustomerAdminContactMessageItem[] = [];
+  raw.forEach((row) => {
+    const n = normalizeCustomerAdminContactMessageRow(row);
+    if (n && (n.message.trim() !== "" || n.id > 0)) {
+      out.push(n);
+    }
+  });
+  return out;
+}
+
+/**
+ * Customer inbox for messages sent by admin — POST /contact-customer/get.
+ */
+export const getCustomerContactAdminMessages = async (
+  data: GetCustomerContactMessagesRequest
+): Promise<GetCustomerContactMessagesResponse> => {
+  try {
+    const response = await apiClient.post<unknown>("/contact-customer/get", {
+      api_token: data.api_token,
+    });
+    const body = response.data;
+    const list = parseCustomerContactMessagesPayload(body);
+    return {
+      status: true,
+      message: messageFromPayload(body, "OK"),
+      data: list,
+    };
+  } catch (error) {
+    console.error("Error fetching admin messages:", error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          status: false,
+          message: error.response.data?.message || "Failed to load admin messages",
+          error: error.response.data?.error || "Unknown error",
+        };
+      } else if (error.request) {
+        throw {
+          status: false,
+          message: "Network error. Please check your connection.",
+          error: "Network error",
+        };
+      }
+    }
+    throw {
+      status: false,
+      message: "An unexpected error occurred",
+      error: error instanceof Error ? error.message : "Unknown error",
     };
   }
 };
@@ -1173,7 +1357,7 @@ export interface CustomerAllBookingItem {
   last_name: string;
   email: string;
   phone: string;
-  price: string;
+  price: string | number;
   property_address: string;
   longitude: string;
   latitude: string;
@@ -1183,6 +1367,10 @@ export interface CustomerAllBookingItem {
   ref_code: string;
   additional_notes: string;
   status: string;
+  /** When true (or 1 / "1"), customer has paid — hide Pay / Cancel. */
+  is_paid?: boolean | number | string | null;
+  /** Some payloads use payment_status instead of is_paid. */
+  payment_status?: string | null;
   created_at: string;
   updated_at: string;
   professional: {
@@ -1382,13 +1570,17 @@ export interface CustomerPaymentItem {
   };
   service: {
     id: number;
-    service_name: string;
-    price: string;
+    /** Present on some API responses */
+    service_name?: string;
+    /** Alternate field from `get_payments` */
+    name?: string;
+    price?: string | number;
   };
+  /** When `null`, no payment record exists yet — UI treats as unpaid. */
   payment: {
     status: string;
-    price: string;
-  };
+    price?: string | number;
+  } | null;
 }
 
 // Customer payments response interface

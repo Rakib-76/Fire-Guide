@@ -211,7 +211,8 @@ export function CustomerDetailsForm({
       const bookingPayload: ProfessionalBookingStoreRequest = {
         service_id: serviceId,
         selected_date: selectedDate,
-        selected_time: selectedTime,
+        // Backend (e.g. PHP Carbon) expects 12-hour time *with* AM/PM — 24h like "14:00:00" causes "A meridian could not be found".
+        selected_time: selectedTime.trim(),
         first_name: formData.firstName,
         last_name: formData.lastName,
         email: formData.email,
@@ -241,6 +242,17 @@ export function CustomerDetailsForm({
 
       const response = await storeProfessionalBooking(bookingPayload);
       if (response.status === "success") {
+        try {
+          const sid = professionalId;
+          if (sid != null && !Number.isNaN(Number(sid))) {
+            const key = `fireguide_session_booked_slots_${sid}`;
+            const prev = JSON.parse(sessionStorage.getItem(key) || "[]") as { date: string; time: string }[];
+            prev.push({ date: selectedDate, time: selectedTime.trim() });
+            sessionStorage.setItem(key, JSON.stringify(prev));
+          }
+        } catch {
+          /* ignore */
+        }
         if (useCustomQuoteFlow) {
           try {
             localStorage.removeItem(CUSTOM_QUOTE_REQUEST_ID_KEY);

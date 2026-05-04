@@ -10,7 +10,8 @@ export interface ProfessionalBookingStoreRequest {
   /** Service being booked (from response when Book was clicked). */
   service_id: number;
   selected_date: string; // YYYY-MM-DD
-  selected_time: string; // e.g. "10:30 AM"
+  /** e.g. "9:00 AM", "2:00 PM" — include AM/PM; backend parsers often require a meridian. */
+  selected_time: string;
   /** Session ID from selected_services/store (or service-specific create) when user clicked Book. */
   session_id?: number;
   first_name: string;
@@ -562,6 +563,11 @@ export interface ProfessionalBookingItem {
     id: number;
     name: string;
     price: string;
+  } | null;
+  /** Present when `selected_service` is null; use `service_name` for display */
+  service?: {
+    id: number;
+    service_name: string;
   } | null;
   creator: {
     id: number;

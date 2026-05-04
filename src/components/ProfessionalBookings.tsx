@@ -82,7 +82,10 @@ const mapApiResponseToBooking = (apiBooking: ProfessionalBookingItem): Booking =
   return {
     id: apiBooking.id,
     reference: apiBooking.ref_code || `FG-${apiBooking.id}`,
-    service: apiBooking.selected_service?.name || "General Service",
+    service:
+      apiBooking.service?.service_name ??
+      apiBooking.selected_service?.name ??
+      "General Service",
     customer: fullName,
     customerEmail: apiBooking.email,
     customerPhone: apiBooking.phone,
@@ -773,9 +776,18 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
                   Service Information
                 </h3>
                 <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                  <p><strong>Service:</strong> {selectedBooking.service}</p>
-                  <p><strong>Property Type:</strong> {selectedBooking.propertyType}</p>
-                  <p><strong>Property Size:</strong> {selectedBooking.propertySize}</p>
+                  <p>
+                    <strong>Service:</strong>{" "}
+                    {(() => {
+                      const row = apiBookingsMap.get(selectedBooking.id);
+                      if (!row) return selectedBooking.service;
+                      return (
+                        row.service?.service_name ??
+                        row.selected_service?.name ??
+                        selectedBooking.service
+                      );
+                    })()}
+                  </p>
                   {selectedBooking.floors && <p><strong>Number of Floors:</strong> {selectedBooking.floors}</p>}
                   <p><strong>Duration:</strong> {selectedBooking.duration}</p>
                 </div>

@@ -29,30 +29,71 @@ import { Alert, AlertDescription } from "./ui/alert";
 import { Checkbox } from "./ui/checkbox";
 import { Slider } from "./ui/slider";
 import { Badge } from "./ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
 import { fetchServices, ServiceResponse, formatServiceFromPrice } from "../api/servicesService";
 import { uploadProfileImage, UploadProfileImageRequest } from "../api/authService";
-import { getApiToken, getProfessionalId, setProfessionalId, getUserEmail } from "../lib/auth";
+import {
+  getApiToken,
+  getProfessionalId,
+  setProfessionalId,
+  getUserEmail,
+  getUserFullName,
+  getUserPhone,
+} from "../lib/auth";
 import { createCertification } from "../api/qualificationsService";
-import { createProfessional, CreateProfessionalRequest, fetchProfessionals, ProfessionalResponse, getSelectedServices, getProfileCompletionPercentage, ProfileCompletionDetails, getCertificates, CertificateItem, getProfessionalExperiences, createProfessionalExperience, ExperienceItem } from "../api/professionalsService";
+import { createProfessional, CreateProfessionalRequest, fetchProfessionalFromListById, getProfessionalProfileImageUrl, getSelectedServices, getProfileCompletionPercentage, ProfileCompletionDetails, getCertificates, CertificateItem, getProfessionalExperiences, createProfessionalExperience, ExperienceItem } from "../api/professionalsService";
 import { toast } from "sonner";
 import {
   readCompleteProfileReminderFlag,
   clearCompleteProfileReminderFlag,
 } from "../lib/professionalProfileReminder";
 
+/** Pre-fill from signup/login session (localStorage) — same fields the user entered at registration. */
+function readAuthContactDefaults() {
+  return {
+    name: (getUserFullName() ?? "").trim(),
+    email: (getUserEmail() ?? "").trim(),
+    phone: (getUserPhone() ?? "").trim(),
+  };
+}
+
+/** Modal/banner only for new pros who have not saved the profile yet (no professional_id). */
+function computeShowProfileOnboardingReminder(): boolean {
+  const pid = getProfessionalId();
+  if (pid != null && !Number.isNaN(Number(pid))) {
+    return false;
+  }
+  return readCompleteProfileReminderFlag();
+}
+
 export function ProfessionalProfileContent() {
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    businessName: "",
-    address: "",
-    postcode: "",
-    bio: "",
-    serviceRadius: [50],
-    emergencyCallout: true
+  const [formData, setFormData] = useState(() => {
+    const d = readAuthContactDefaults();
+    return {
+      name: d.name,
+      email: d.email,
+      phone: d.phone,
+      businessName: "",
+      address: "",
+      postcode: "",
+      bio: "",
+      serviceRadius: [50],
+      emergencyCallout: true,
+    };
   });
+
+  // If auth keys were written after first paint, merge once into empty fields only
+  useEffect(() => {
+    setFormData((prev) => {
+      const d = readAuthContactDefaults();
+      return {
+        ...prev,
+        name: prev.name.trim() ? prev.name : d.name,
+        email: prev.email.trim() ? prev.email : d.email,
+        phone: prev.phone.trim() ? prev.phone : d.phone,
+      };
+    });
+  }, []);
 
   const [selectedServices, setSelectedServices] = useState<number[]>([]);
   const [services, setServices] = useState<ServiceResponse[]>([]);
@@ -114,7 +155,20 @@ export function ProfessionalProfileContent() {
   const [isExperienceModalOpen, setIsExperienceModalOpen] = useState(false);
   const [selectedExperience, setSelectedExperience] = useState<ExperienceItem | null>(null);
 
-  const [showCompleteProfileReminder, setShowCompleteProfileReminder] = useState(readCompleteProfileReminderFlag);
+  const [showCompleteProfileReminder, setShowCompleteProfileReminder] = useState(computeShowProfileOnboardingReminder);
+
+  /** Shown first after signup redirect; hidden after successful save or if professional already exists. */
+  const [completeProfileIntroModalOpen, setCompleteProfileIntroModalOpen] = useState(computeShowProfileOnboardingReminder);
+
+  // Clear stale session flag once profile exists (e.g. after refresh or returning user)
+  useEffect(() => {
+    const pid = getProfessionalId();
+    if (pid != null && !Number.isNaN(Number(pid))) {
+      clearCompleteProfileReminderFlag();
+      setShowCompleteProfileReminder(false);
+      setCompleteProfileIntroModalOpen(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (showCompleteProfileReminder) return;
@@ -263,57 +317,6 @@ export function ProfessionalProfileContent() {
       clearTimeout(timeoutId);
     };
   }, []); // Run once on mount, but retry until email is available
-
-  // Helper function to reload profile image when professional_id becomes available
-  // Uses a ref to track if component is still mounted
-  // Uses email-based key for persistence across logout/login
-  
-  const reloadProfileImage = () => {
-    // Check if component is still mounted before updating state
-    if (!reloadProfileImageRef.current) {
-      return;
-    }
-    
-    const professionalId = getProfessionalId();
-    const userEmail = getUserEmail();
-    
-      if (professionalId && !isNaN(professionalId)) {
-        // Try to load from email-based key first (persists across sessions)
-        let storedImageUrl: string | null = null;
-        
-        if (userEmail) {
-          // Normalize email to lowercase to match the key format used during upload
-          const normalizedEmail = userEmail.trim().toLowerCase();
-          const emailBasedKey = `professional_profile_image_${normalizedEmail}`;
-          storedImageUrl = localStorage.getItem(emailBasedKey);
-        }
-        
-        // Fallback to regular key (for backward compatibility)
-        if (!storedImageUrl) {
-          storedImageUrl = localStorage.getItem('professional_profile_image');
-        }
-      
-      if (storedImageUrl) {
-        startTransition(() => {
-          if (reloadProfileImageRef.current) {
-            setProfileImageUrl(storedImageUrl);
-          }
-        });
-      } else {
-        startTransition(() => {
-          if (reloadProfileImageRef.current) {
-            setProfileImageUrl(null);
-          }
-        });
-      }
-    } else {
-      startTransition(() => {
-        if (reloadProfileImageRef.current) {
-          setProfileImageUrl(null);
-        }
-      });
-    }
-  };
 
   // Fetch services from API on component mount
   useEffect(() => {
@@ -506,18 +509,10 @@ export function ProfessionalProfileContent() {
     try {
       setLoadingProfessional(true);
       setHasAttemptedFetch(true); // Mark that we've attempted to fetch data (professional_id exists)
-      
-      // Fetch all professionals (the API returns professionals for the authenticated user)
-      const professionals = await fetchProfessionals(1);
-      
-      if (!professionals || professionals.length === 0) {
-        setLoadingProfessional(false);
-        return;
-      }
-      
-      // Find the professional that matches the professional_id
-      const currentProfessional = professionals.find(prof => prof.id === professionalId);
-      
+
+      // Paginate /professional/list until this id appears (page 1 alone missed many accounts).
+      const currentProfessional = await fetchProfessionalFromListById(professionalId);
+
       if (currentProfessional) {
         // Populate form data with fetched professional data
         startTransition(() => {
@@ -534,6 +529,28 @@ export function ProfessionalProfileContent() {
           setLoadingProfessional(false);
         });
 
+        // Avatar: API returns photo under `user.image` (not localStorage-only). Sync LS when we have a server URL.
+        const fromApi = getProfessionalProfileImageUrl(currentProfessional);
+        const userEmail = getUserEmail();
+        let resolved = fromApi;
+        if (!resolved && userEmail) {
+          const ne = userEmail.trim().toLowerCase();
+          resolved =
+            (localStorage.getItem(`professional_profile_image_${ne}`) || "").trim() ||
+            (localStorage.getItem("professional_profile_image") || "").trim();
+        }
+        if (resolved) {
+          startTransition(() => {
+            setProfileImageUrl(resolved);
+          });
+          if (fromApi) {
+            if (userEmail) {
+              localStorage.setItem(`professional_profile_image_${userEmail.trim().toLowerCase()}`, fromApi);
+            }
+            localStorage.setItem("professional_profile_image", fromApi);
+          }
+        }
+
         // Fetch selected services, profile completion, and certificates for this professional
         fetchSelectedServicesForProfessional(professionalId);
         fetchProfileCompletion(professionalId);
@@ -541,6 +558,16 @@ export function ProfessionalProfileContent() {
         fetchProfessionalExperiences(professionalId);
       } else {
         setLoadingProfessional(false);
+        const userEmail = getUserEmail();
+        if (userEmail) {
+          const ne = userEmail.trim().toLowerCase();
+          const fromLs =
+            (localStorage.getItem(`professional_profile_image_${ne}`) || "").trim() ||
+            (localStorage.getItem("professional_profile_image") || "").trim();
+          if (fromLs) {
+            startTransition(() => setProfileImageUrl(fromLs));
+          }
+        }
       }
     } catch (error) {
       console.error("Error loading professional data:", error);
@@ -574,37 +601,6 @@ export function ProfessionalProfileContent() {
       
       if (isMounted) {
         await fetchProfessionalData(professionalId);
-        
-        // After fetching professional data, also load profile image if it exists
-        // Use email-based key for persistence across logout/login
-        const userEmail = getUserEmail();
-        if (userEmail && isMounted) {
-          // Normalize email to lowercase to match the key format used during upload
-          const normalizedEmail = userEmail.trim().toLowerCase();
-          const emailBasedKey = `professional_profile_image_${normalizedEmail}`;
-          const storedImageUrl = localStorage.getItem(emailBasedKey);
-          if (storedImageUrl) {
-            console.log('Profile image loaded after fetching professional data:', emailBasedKey);
-            startTransition(() => {
-              if (isMounted) {
-                setProfileImageUrl(storedImageUrl);
-              }
-            });
-          } else {
-            // Try regular key as fallback
-            const regularKeyUrl = localStorage.getItem('professional_profile_image');
-            if (regularKeyUrl && isMounted) {
-              console.log('Profile image loaded from regular key after fetching professional data');
-              startTransition(() => {
-                if (isMounted) {
-                  setProfileImageUrl(regularKeyUrl);
-                  // Also store with email-based key for future persistence
-                  localStorage.setItem(emailBasedKey, regularKeyUrl);
-                }
-              });
-            }
-          }
-        }
       }
     };
 
@@ -1161,34 +1157,40 @@ export function ProfessionalProfileContent() {
 
       if (isSuccess) {
         toast.success(response.message || "Profile saved successfully!");
-        
-        // Extract professional_id from the response structure:
-        // Response: { status: true, message: "...", data: { professional: { id: 15, ... }, services: [...], certificate: {...} } }
-        // Extract from: response.data.professional.id
-        const profIdFromResponse = response.data?.professional?.id;
-        
-        console.log('Professional created - Extracted professional_id:', profIdFromResponse);
-        console.log('Full response data:', response.data);
-        
-        if (profIdFromResponse && !isNaN(profIdFromResponse)) {
-          // Wrap all state updates and API calls in startTransition to prevent Suspense errors
+
+        // First-time signup reminder: hide modal + banner permanently for this session after successful submit
+        clearCompleteProfileReminderFlag();
+        setShowCompleteProfileReminder(false);
+        setCompleteProfileIntroModalOpen(false);
+
+        // Extract professional id — create and update payloads may use different shapes (id may be string from API)
+        const coercePositiveInt = (v: unknown): number | undefined => {
+          if (v == null || v === '') return undefined;
+          const n = typeof v === 'number' ? v : parseInt(String(v), 10);
+          return Number.isFinite(n) && n > 0 ? n : undefined;
+        };
+        const profIdFromResponse =
+          coercePositiveInt(response.data?.professional?.id) ??
+          coercePositiveInt(response.data?.id) ??
+          coercePositiveInt(response.data?.professional_id);
+        const topLevelId = coercePositiveInt(response.professional_id);
+        const existingId = getProfessionalId();
+        const effectiveProfessionalId =
+          profIdFromResponse ??
+          topLevelId ??
+          (existingId != null && !Number.isNaN(existingId) ? existingId : undefined);
+
+        console.log('Professional save — effective professional_id:', effectiveProfessionalId, 'raw:', response.data);
+
+        if (effectiveProfessionalId != null && !Number.isNaN(Number(effectiveProfessionalId))) {
+          const pid = Number(effectiveProfessionalId);
           startTransition(() => {
-            // Store professional_id in localStorage for future use
-            // This professional_id will be used for all related API calls (get_selected_service, get_certificate, etc.)
-            setProfessionalId(profIdFromResponse);
-            
-            // Reload profile image in case one was uploaded before saving
-            reloadProfileImage();
-            
-            // Use the extracted professional_id to fetch related data from APIs
-            // All these APIs require professional_id in the request body
-            fetchProfileCompletion(profIdFromResponse);
-            fetchSelectedServicesForProfessional(profIdFromResponse);
-            fetchProfessionalCertificates(profIdFromResponse);
-            fetchProfessionalExperiences(profIdFromResponse);
-            
-            // Also fetch and populate professional data
-            fetchProfessionalData(profIdFromResponse);
+            setProfessionalId(pid);
+            fetchProfileCompletion(pid);
+            fetchSelectedServicesForProfessional(pid);
+            fetchProfessionalCertificates(pid);
+            fetchProfessionalExperiences(pid);
+            void fetchProfessionalData(pid);
           });
         } else {
           console.error('Failed to extract professional_id from response:', response.data);
@@ -1243,9 +1245,42 @@ export function ProfessionalProfileContent() {
     ? profileCompletionPercentage 
     : (completionSteps.filter(s => s.completed).length / completionSteps.length) * 100;
 
+  /** Preview sidebar: photo from state, preview blob, or API completion flag */
+  const hasProfilePhotoForPreview =
+    !!profileImageUrl ||
+    !!imagePreview ||
+    profileCompletionDetails?.profile_image === 20;
+
+  /** Hide the yellow nudge when the profile is complete and a photo exists; avoid "add a photo" if they already have one */
+  const showProfilePreviewNudge =
+    completionPercentage < 100 || !hasProfilePhotoForPreview;
+
   return (
     <div>
-      {showCompleteProfileReminder && (
+      <Dialog open={completeProfileIntroModalOpen} onOpenChange={setCompleteProfileIntroModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#0A1A2F] text-lg sm:text-xl pr-8">
+              <AlertCircle className="w-6 h-6 text-red-600 shrink-0" aria-hidden />
+              Complete your profile to continue
+            </DialogTitle>
+            <DialogDescription className="text-left text-base text-gray-700 pt-1">
+            Must fill out and save this form to create your professional profile.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-2 sm:justify-end pt-2">
+            <Button
+              type="button"
+              className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => setCompleteProfileIntroModalOpen(false)}
+            >
+              Continue to the form
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {showCompleteProfileReminder && !completeProfileIntroModalOpen && (
         <Alert
           role="alert"
           className="mb-6 border-2 border-red-600 bg-red-50 shadow-md"
@@ -1756,21 +1791,6 @@ export function ProfessionalProfileContent() {
                         </p>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="cert_status">Status *</Label>
-                        <select
-                          id="cert_status"
-                          value={certificationFormData.status}
-                          onChange={(e) => setCertificationFormData({ ...certificationFormData, status: e.target.value })}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none bg-white"
-                          required
-                        >
-                          <option value="pending">Pending</option>
-                          <option value="verified">Verified</option>
-                          <option value="rejected">Rejected</option>
-                        </select>
-                      </div>
-
                    
                     </form>
                   </CardContent>
@@ -2119,19 +2139,23 @@ export function ProfessionalProfileContent() {
                 </div>
               </div>
 
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 sm:p-3">
-                <div className="flex gap-2">
-                  <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs sm:text-sm font-medium text-yellow-900 mb-1 break-words">
-                      Complete Your Profile
-                    </p>
-                    <p className="text-xs sm:text-sm text-yellow-800 break-words">
-                      Add a photo and more certifications to increase booking chances
-                    </p>
+              {showProfilePreviewNudge && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 sm:p-3">
+                  <div className="flex gap-2">
+                    <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs sm:text-sm font-medium text-yellow-900 mb-1 break-words">
+                        {hasProfilePhotoForPreview ? "Strengthen your profile" : "Complete your profile"}
+                      </p>
+                      <p className="text-xs sm:text-sm text-yellow-800 break-words">
+                        {hasProfilePhotoForPreview
+                          ? "Finish the sections above and add certifications where you can — complete profiles get more bookings."
+                          : "Add a photo and more certifications to increase booking chances."}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
 

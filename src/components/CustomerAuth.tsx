@@ -12,6 +12,24 @@ import { registerUser, loginUser, sendOtp, verifyOtp, resetPassword } from "../a
 import { setAuthToken, setUserEmail, setUserInfo, setUserPhone, setUserRole, setProfessionalId } from "../lib/auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
 
+function getConfiguredCustomerSocialAuthUrl(provider: string): string | null {
+  const trimmed = (value: string | undefined) => {
+    if (!value) return null;
+    const t = value.trim();
+    return t.length > 0 ? t : null;
+  };
+  switch (provider) {
+    case "Google":
+      return trimmed(import.meta.env.VITE_CUSTOMER_SOCIAL_AUTH_GOOGLE_URL);
+    case "Apple":
+      return trimmed(import.meta.env.VITE_CUSTOMER_SOCIAL_AUTH_APPLE_URL);
+    case "Facebook":
+      return trimmed(import.meta.env.VITE_CUSTOMER_SOCIAL_AUTH_FACEBOOK_URL);
+    default:
+      return null;
+  }
+}
+
 interface CustomerAuthProps {
   /** Pass `{ isNewProfessionalSignup: true }` when a new account was created with the Professional role. */
   onAuthSuccess: (name: string, options?: { isNewProfessionalSignup?: boolean }) => void;
@@ -222,14 +240,17 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
   };
 
   const handleSocialLogin = (provider: string) => {
-    setIsSocialLoading(provider);
-    
-    // Simulate social login
-    setTimeout(() => {
-      toast.success(`Successfully signed in with ${provider}!`);
-      onAuthSuccess("John Smith");
-      setIsSocialLoading(null);
-    }, 1500);
+    const redirectUrl = getConfiguredCustomerSocialAuthUrl(provider);
+    if (redirectUrl) {
+      setIsSocialLoading(provider);
+      window.location.assign(redirectUrl);
+      return;
+    }
+
+    toast.message("Social sign-in is not available yet", {
+      description: "Please use the email and password fields below to sign in or create an account.",
+      duration: 7000,
+    });
   };
 
   const handleSendOtp = async (e?: React.FormEvent) => {
@@ -525,7 +546,7 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
             </div>
 
             {/* Right Side - Auth Form */}
-            <div className="order-1 lg:order-2 relative">
+            <div className="order-1 lg:order-2 relative z-10">
               <Card className="border-0 shadow-2xl overflow-visible">
                 <CardHeader className="text-center pb-4">
                   <div className="w-14 h-14 md:w-16 md:h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3 md:mb-4">

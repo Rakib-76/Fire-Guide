@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type CSSProperties } from "react";
-import { Search, Loader2, FileText, MoreVertical, Eye, Pencil, UserPlus, User, Calendar, Building2, FileCheck, Mail, Phone } from "lucide-react";
+import { Search, Loader2, FileText, MoreVertical, Eye, Pencil, UserPlus, User, Calendar, FileCheck, Mail, Phone } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -22,6 +22,7 @@ import { fetchProfessionals, ProfessionalResponse } from "../api/professionalsSe
 import { getApiToken } from "../lib/auth";
 import { toast } from "sonner";
 import { Label } from "./ui/label";
+import { CustomQuoteRequestDetailsPanel, customQuoteRequestListSubtitle } from "./CustomQuoteRequestDetailsPanel";
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-GB", {
@@ -31,14 +32,6 @@ function formatDate(dateStr: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function parseRequestData(requestData: string): Record<string, unknown> {
-  try {
-    return typeof requestData === "string" ? JSON.parse(requestData) : requestData || {};
-  } catch {
-    return {};
-  }
 }
 
 export function AdminCustomQuoteContent() {
@@ -344,7 +337,7 @@ export function AdminCustomQuoteContent() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {paginatedRecords.map((record) => {
-                      const rd = parseRequestData(record.request_data);
+                      const listSubtitle = customQuoteRequestListSubtitle(record.request_data);
                       return (
                         <tr key={record.id} className="hover:bg-gray-50">
                           <td className="p-4">
@@ -360,9 +353,9 @@ export function AdminCustomQuoteContent() {
                             <p className="text-sm text-gray-700">
                               {record.service?.service_name ?? "—"}
                             </p>
-                            {(rd.building_type || rd.people_count) && (
-                              <p className="text-xs text-gray-500 mt-0.5">
-                                {[rd.building_type, rd.people_count].filter(Boolean).join(" • ")}
+                            {listSubtitle && (
+                              <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
+                                {listSubtitle}
                               </p>
                             )}
                           </td>
@@ -439,7 +432,7 @@ export function AdminCustomQuoteContent() {
 
               <div className="md:hidden space-y-4">
                 {paginatedRecords.map((record) => {
-                  const rd = parseRequestData(record.request_data);
+                  const listSubtitle = customQuoteRequestListSubtitle(record.request_data);
                   return (
                     <div
                       key={record.id}
@@ -499,9 +492,9 @@ export function AdminCustomQuoteContent() {
                         </div>
                       </div>
                       <p className="text-xs text-gray-500">{record.customer_email}</p>
-                      {(rd.building_type || rd.people_count) && (
-                        <p className="text-xs text-gray-600">
-                          {rd.building_type} • {rd.people_count}
+                      {listSubtitle && (
+                        <p className="text-xs text-gray-600 line-clamp-2">
+                          {listSubtitle}
                         </p>
                       )}
                       <p className="text-xs text-gray-500">{formatDate(record.created_at)}</p>
@@ -667,55 +660,8 @@ export function AdminCustomQuoteContent() {
                 )}
               </div>
 
-              {/* Request Details - full width */}
-              {(() => {
-                const rd = parseRequestData(detailsRecord.request_data);
-                if (Object.keys(rd).length > 0) {
-                  return (
-                    <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
-                          <Building2 className="w-4 h-4 text-purple-600" />
-                        </div>
-                        <p className="font-semibold text-gray-800">Request Details</p>
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {rd.building_type != null && (
-                          <div>
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Building</p>
-                            <p className="text-gray-900 font-medium mt-0.5">{String(rd.building_type)}</p>
-                          </div>
-                        )}
-                        {rd.people_count != null && (
-                          <div>
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">People</p>
-                            <p className="text-gray-900 font-medium mt-0.5">{String(rd.people_count)}</p>
-                          </div>
-                        )}
-                        {rd.floors != null && (
-                          <div>
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Floors</p>
-                            <p className="text-gray-900 font-medium mt-0.5">{String(rd.floors)}</p>
-                          </div>
-                        )}
-                        {rd.assessment_type != null && (
-                          <div>
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Assessment</p>
-                            <p className="text-gray-900 font-medium mt-0.5">{String(rd.assessment_type)}</p>
-                          </div>
-                        )}
-                      </div>
-                      {rd.notes && (
-                        <div className="mt-4 pt-4 border-t border-gray-200">
-                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Notes</p>
-                          <p className="text-gray-700">{String(rd.notes)}</p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-                return null;
-              })()}
+              {/* Request Details - full width (summary from access_note when present) */}
+              <CustomQuoteRequestDetailsPanel requestData={detailsRecord.request_data} />
             </div>
           ) : null}
         </DialogContent>
@@ -800,6 +746,22 @@ export function AdminCustomQuoteContent() {
                 Assign a professional to quote request #{assignRecord.id} for {assignRecord.customer_name}.
               </p>
               <div>
+                <Label htmlFor="assign-quoted-price">Quoted Price (£)</Label>
+                <div className="relative mt-2">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-medium">£</span>
+                  <Input
+                    id="assign-quoted-price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={assignQuotedPrice}
+                    onChange={(e) => setAssignQuotedPrice(e.target.value.replace(/[^0-9.]/g, ""))}
+                    className="w-full pl-8"
+                  />
+                </div>
+              </div>
+              <div>
                 <Label htmlFor="professional-select">Select Professional</Label>
                 {professionalsLoading ? (
                   <div className="flex items-center gap-2 mt-2">
@@ -824,22 +786,6 @@ export function AdminCustomQuoteContent() {
                 {!professionalsLoading && professionals.length === 0 && (
                   <p className="text-sm text-gray-500 mt-2">No professionals available.</p>
                 )}
-              </div>
-              <div>
-                <Label htmlFor="assign-quoted-price">Quoted Price (£)</Label>
-                <div className="relative mt-2">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-medium">£</span>
-                  <Input
-                    id="assign-quoted-price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={assignQuotedPrice}
-                    onChange={(e) => setAssignQuotedPrice(e.target.value.replace(/[^0-9.]/g, ""))}
-                    className="w-full pl-8"
-                  />
-                </div>
               </div>
             </div>
           )}

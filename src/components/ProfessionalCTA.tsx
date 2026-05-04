@@ -49,6 +49,9 @@ export function ProfessionalCTA({ onJoinNow }: ProfessionalCTAProps) {
           <h2 className="mb-6 text-[28px] md:text-5xl font-bold leading-[120%] tracking-[-0.01em] pt-4 pb-3 px-4">
             Grow Your Fire Safety Business
           </h2>
+          <p className="text-base md:text-lg lg:text-xl max-w-3xl mx-auto leading-relaxed text-[#666]">
+            Join Fire Guide and connect with thousands of customers who need your expertise. No setup fees.
+          </p>
         </div>
 
         <div className="grid lg:grid-cols-2 gap-12 items-center mb-16">

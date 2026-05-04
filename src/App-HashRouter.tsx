@@ -12,6 +12,8 @@ export interface Booking {
   date: string;
   time: string;
   status: "upcoming" | "completed" | "cancelled";
+  displayStatus?: string;
+  isPaid?: boolean;
   location: string;
   price: string;
   professionalEmail: string;
@@ -28,7 +30,7 @@ export interface Payment {
   service: string;
   professional: string;
   amount: string;
-  status: "paid" | "refunded" | "pending";
+  status: "paid" | "refunded" | "pending" | "unpaid";
   paymentMethod: string;
   invoiceNumber: string;
   bookingRef: string;

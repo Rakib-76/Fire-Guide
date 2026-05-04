@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "./ui/button";
+import type { UserInfo } from "./Header";
 import { CheckCircle, TrendingUp, Shield, CreditCard, Star, MapPin, ArrowRight, Menu, User } from "lucide-react";
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
+import { PROFESSIONAL_BENEFITS_JOIN_ID } from "../lib/professionalBenefitsNavigation";
 
 interface ProfessionalBenefitsProps {
   onRegister: () => void;
@@ -12,9 +14,22 @@ interface ProfessionalBenefitsProps {
   onNavigateServices: () => void;
   onNavigateAbout: () => void;
   onNavigateContact: () => void;
+  /** When set (e.g. customer on /services), show the same account affordance as the main site header — avoids looking “logged out”. */
+  currentUser?: UserInfo | null;
+  onNavigateToDashboard?: () => void;
 }
 
-export function ProfessionalBenefits({ onRegister, onLogin, onBack, onNavigateHome, onNavigateServices, onNavigateAbout, onNavigateContact }: ProfessionalBenefitsProps) {
+export function ProfessionalBenefits({
+  onRegister,
+  onLogin,
+  onBack,
+  onNavigateHome,
+  onNavigateServices,
+  onNavigateAbout,
+  onNavigateContact,
+  currentUser,
+  onNavigateToDashboard,
+}: ProfessionalBenefitsProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const benefits = [
@@ -103,14 +118,27 @@ export function ProfessionalBenefits({ onRegister, onLogin, onBack, onNavigateHo
             </nav>
 
             <div className="hidden md:flex items-center gap-4">
-              <Button 
-                variant="ghost" 
-                onClick={onLogin}
-                className="text-lg text-white hover:text-red-600 hover:bg-transparent cursor-pointer h-auto py-2 group relative"
-              >
-                <User className="w-5 h-5 mr-2 shrink-0" />
-                Login/Register
-              </Button>
+              {currentUser ? (
+                <Button
+                  variant="ghost"
+                  type="button"
+                  onClick={() => onNavigateToDashboard?.()}
+                  className="text-lg text-white hover:text-red-600 hover:bg-transparent cursor-pointer h-auto py-2 group relative"
+                >
+                  <User className="w-5 h-5 mr-2 shrink-0" />
+                  {currentUser.name}
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  type="button"
+                  onClick={onLogin}
+                  className="text-lg text-white hover:text-red-600 hover:bg-transparent cursor-pointer h-auto py-2 group relative"
+                >
+                  <User className="w-5 h-5 mr-2 shrink-0" />
+                  Login/Register
+                </Button>
+              )}
             </div>
 
             <button
@@ -161,14 +189,30 @@ export function ProfessionalBenefits({ onRegister, onLogin, onBack, onNavigateHo
                   Contact
                 </button>
                 <div className="pt-4 mt-2 border-t border-white/10">
-                  <Button 
-                    variant="ghost" 
-                    onClick={onLogin}
-                    className="w-full text-lg text-white hover:text-red-400 hover:bg-white/10 justify-start py-3 px-4 h-auto cursor-pointer transition-all"
-                  >
-                    <User className="w-5 h-5 mr-2 shrink-0" />
-                    Login/Register
-                  </Button>
+                  {currentUser ? (
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        onNavigateToDashboard?.();
+                      }}
+                      className="w-full text-lg text-white hover:text-red-400 hover:bg-white/10 justify-start py-3 px-4 h-auto cursor-pointer transition-all"
+                    >
+                      <User className="w-5 h-5 mr-2 shrink-0" />
+                      {currentUser.name}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      onClick={onLogin}
+                      className="w-full text-lg text-white hover:text-red-400 hover:bg-white/10 justify-start py-3 px-4 h-auto cursor-pointer transition-all"
+                    >
+                      <User className="w-5 h-5 mr-2 shrink-0" />
+                      Login/Register
+                    </Button>
+                  )}
                 </div>
               </nav>
             </div>
@@ -233,8 +277,12 @@ export function ProfessionalBenefits({ onRegister, onLogin, onBack, onNavigateHo
               </div>
             </div>
 
-            {/* Bottom Section - CTA Area */}
-            <div className="flex justify-center">
+            {/* Bottom Section - CTA Area (hash target for /professional/benefits#join-professionals) */}
+            <section
+              id={PROFESSIONAL_BENEFITS_JOIN_ID}
+              className="flex scroll-mt-24 justify-center md:scroll-mt-28"
+              aria-label="Join Fire Guide"
+            >
               <div className="w-full md:max-w-[480px] bg-white rounded-2xl shadow-2xl p-6 md:p-10">
                 {/* CTA Content */}
                 <div className="text-center mb-6 md:mb-8">
@@ -246,22 +294,58 @@ export function ProfessionalBenefits({ onRegister, onLogin, onBack, onNavigateHo
                   </p>
                 </div>
 
-                {/* CTA Buttons */}
+                {/* CTA Buttons — avoid duplicate "Login" when already signed in */}
                 <div className="flex flex-col md:flex-row gap-3 md:gap-4 mb-6">
-                  <Button
-                    onClick={onRegister}
-                    className="w-full h-12 md:h-14 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white shadow-lg shadow-red-600/30 hover:shadow-xl hover:shadow-red-600/40 transition-all duration-300 cursor-pointer text-base md:text-lg"
-                  >
-                    Register Now
-                    <ArrowRight className="w-5 h-5 ml-2" />
-                  </Button>
-                  <Button
-                    onClick={onLogin}
-                    variant="outline"
-                    className="w-full h-12 md:h-14 border-2 border-red-600 text-red-600 hover:bg-red-50 transition-all duration-300 cursor-pointer text-base md:text-lg"
-                  >
-                    Login
-                  </Button>
+                  {currentUser ? (
+                    currentUser.role === "customer" ? (
+                      <>
+                        <Button
+                          type="button"
+                          onClick={() => onNavigateToDashboard?.()}
+                          className="w-full h-12 md:h-14 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white shadow-lg shadow-red-600/30 hover:shadow-xl hover:shadow-red-600/40 transition-all duration-300 cursor-pointer text-base md:text-lg"
+                        >
+                          My account
+                          <ArrowRight className="w-5 h-5 ml-2" />
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={onRegister}
+                          variant="outline"
+                          className="w-full h-12 md:h-14 border-2 border-red-600 text-red-600 hover:bg-red-50 transition-all duration-300 cursor-pointer text-base md:text-lg"
+                        >
+                          Join as a professional
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        type="button"
+                        onClick={() => onNavigateToDashboard?.()}
+                        className="w-full h-12 md:h-14 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white shadow-lg shadow-red-600/30 hover:shadow-xl hover:shadow-red-600/40 transition-all duration-300 cursor-pointer text-base md:text-lg"
+                      >
+                        Go to dashboard
+                        <ArrowRight className="w-5 h-5 ml-2" />
+                      </Button>
+                    )
+                  ) : (
+                    <>
+                      <Button
+                        type="button"
+                        onClick={onRegister}
+                        className="w-full h-12 md:h-14 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white shadow-lg shadow-red-600/30 hover:shadow-xl hover:shadow-red-600/40 transition-all duration-300 cursor-pointer text-base md:text-lg"
+                      >
+                        Register Now
+                        <ArrowRight className="w-5 h-5 ml-2" />
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={onLogin}
+                        variant="outline"
+                        className="w-full h-12 md:h-14 border-2 border-red-600 text-red-600 hover:bg-red-50 transition-all duration-300 cursor-pointer text-base md:text-lg"
+                      >
+                        Login
+                      </Button>
+                    </>
+                  )}
                 </div>
 
                 {/* Micro Trust Line */}
@@ -271,7 +355,7 @@ export function ProfessionalBenefits({ onRegister, onLogin, onBack, onNavigateHo
                   </p>
                 </div>
               </div>
-            </div>
+            </section>
           </div>
         </main>
       </div>

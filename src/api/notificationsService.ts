@@ -26,6 +26,104 @@ export interface FetchNotificationsResponse {
   error?: string;
 }
 
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return x != null && typeof x === "object" && !Array.isArray(x);
+}
+
+/** Same envelope patterns as customer feed: `data: []` or `data: { data: [] }`. */
+function extractNotificationsArray(payload: unknown): unknown[] {
+  if (payload == null) return [];
+  if (Array.isArray(payload)) return payload;
+  if (!isRecord(payload)) return [];
+  const data = payload.data;
+  if (Array.isArray(data)) return data;
+  if (isRecord(data) && Array.isArray(data.data)) return data.data;
+  if (Array.isArray(payload.notifications)) return payload.notifications;
+  return [];
+}
+
+function strField(r: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = r[k];
+    if (v != null && String(v).trim() !== "") return String(v);
+  }
+  return "";
+}
+
+function coerceCategory(raw: unknown): NotificationApiItem["category"] {
+  const v = String(raw ?? "system").toLowerCase();
+  if (v === "bookings" || v === "booking") return "bookings";
+  if (v === "payments" || v === "payment") return "payments";
+  if (v === "reviews" || v === "review") return "reviews";
+  return "system";
+}
+
+function coercePriority(raw: unknown): NotificationApiItem["priority"] {
+  const v = String(raw ?? "medium").toLowerCase();
+  if (v === "high" || v === "urgent") return "high";
+  if (v === "low") return "low";
+  return "medium";
+}
+
+function readFlag(r: Record<string, unknown>): boolean {
+  return (
+    r.is_read === true ||
+    r.is_read === 1 ||
+    r.is_read === "1" ||
+    r.read === true ||
+    r.read === 1
+  );
+}
+
+/**
+ * Normalizes one row from POST /notifications into the shape the professional UI expects.
+ */
+export function normalizeNotificationFeedRow(row: unknown): NotificationApiItem | null {
+  if (!isRecord(row)) return null;
+  const idRaw = row.id ?? row.notification_id;
+  const idParsed = typeof idRaw === "number" && Number.isFinite(idRaw) ? idRaw : parseInt(String(idRaw ?? ""), 10);
+  if (!Number.isFinite(idParsed) || idParsed <= 0) return null;
+
+  const user_id =
+    typeof row.user_id === "number" && Number.isFinite(row.user_id)
+      ? row.user_id
+      : parseInt(String(row.user_id ?? "0"), 10) || 0;
+
+  const title = strField(row, "title", "subject", "heading", "name") || "Notification";
+  const content = strField(row, "content", "message", "body", "description", "text", "details");
+  const created_at = strField(row, "created_at", "updated_at", "date", "sent_at") || new Date().toISOString();
+  const updated_at = strField(row, "updated_at", "created_at") || created_at;
+
+  return {
+    id: idParsed,
+    user_id,
+    title,
+    content,
+    priority: coercePriority(row.priority),
+    category: coerceCategory(row.category ?? row.type),
+    is_read: readFlag(row),
+    created_at,
+    updated_at,
+  };
+}
+
+export function normalizeNotificationsResponsePayload(payload: unknown): NotificationApiItem[] {
+  const raw = extractNotificationsArray(payload);
+  const out: NotificationApiItem[] = [];
+  for (const row of raw) {
+    const n = normalizeNotificationFeedRow(row);
+    if (n) out.push(n);
+  }
+  return out;
+}
+
+/** Stable id for seen-state (header badge) and deduping. */
+export function getProfessionalNotificationDedupeKey(item: NotificationApiItem): string {
+  if (Number.isFinite(item.id) && item.id > 0) return `id:${item.id}`;
+  const head = `${item.title}|${(item.content || "").slice(0, 120)}`;
+  return `h:${item.created_at}|${head}`;
+}
+
 export interface MarkAllAsReadRequest {
   api_token: string;
 }
@@ -112,13 +210,17 @@ export const fetchNotifications = async (
   data: FetchNotificationsRequest
 ): Promise<FetchNotificationsResponse> => {
   try {
-    const response = await apiClient.post<FetchNotificationsResponse>(
-      '/notifications',
-      {
-        api_token: data.api_token,
-      }
-    );
-    return response.data;
+    const response = await apiClient.post<unknown>("/notifications", {
+      api_token: data.api_token,
+    });
+    const body = response.data;
+    const list = normalizeNotificationsResponsePayload(body);
+    const msg = isRecord(body) && typeof body.message === "string" ? body.message : undefined;
+    return {
+      status: true,
+      data: list,
+      message: msg,
+    };
   } catch (error) {
     if (axios.isAxiosError(error)) {
       // Handle axios errors

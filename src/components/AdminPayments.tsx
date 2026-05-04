@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { getApiToken } from "../lib/auth";
 import { createPlatformCommission, getAdminPaymentSummary, getAdminPaymentList } from "../api/adminService";
-import { Search, DollarSign, TrendingUp, TrendingDown, Download, Filter, Settings, Eye, Send, CheckCircle } from "lucide-react";
+import { Search, DollarSign, TrendingUp, TrendingDown, Download, Filter, Settings, Eye, CheckCircle } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card, CardContent } from "./ui/card";
@@ -24,13 +24,13 @@ export function AdminPayments() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterPeriod, setFilterPeriod] = useState("all");
   const [commissionModalOpen, setCommissionModalOpen] = useState(false);
-  const [payoutModalOpen, setPayoutModalOpen] = useState(false);
+  // const [payoutModalOpen, setPayoutModalOpen] = useState(false);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [commissionRate, setCommissionRate] = useState<string>("");
   const [newCommissionRate, setNewCommissionRate] = useState("15");
   const [commissionUpdating, setCommissionUpdating] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
-  const [selectedProfessionals, setSelectedProfessionals] = useState<number[]>([]);
+  // const [selectedProfessionals, setSelectedProfessionals] = useState<number[]>([]);
 
   type TransactionRow = {
     id: string;
@@ -54,24 +54,24 @@ export function AdminPayments() {
 
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
 
-  const pendingPayouts = [
-    {
-      id: 1,
-      professional: "James Patterson",
-      email: "james.patterson@fireguide.co.uk",
-      amount: 140.25,
-      transactions: 1,
-      oldestDate: "Nov 19, 2025"
-    },
-    {
-      id: 2,
-      professional: "Lisa Anderson",
-      email: "lisa.anderson@fireguide.co.uk",
-      amount: 543.50,
-      transactions: 3,
-      oldestDate: "Nov 15, 2025"
-    }
-  ];
+  // const pendingPayouts = [
+  //   {
+  //     id: 1,
+  //     professional: "James Patterson",
+  //     email: "james.patterson@fireguide.co.uk",
+  //     amount: 140.25,
+  //     transactions: 1,
+  //     oldestDate: "Nov 19, 2025"
+  //   },
+  //   {
+  //     id: 2,
+  //     professional: "Lisa Anderson",
+  //     email: "lisa.anderson@fireguide.co.uk",
+  //     amount: 543.50,
+  //     transactions: 3,
+  //     oldestDate: "Nov 15, 2025"
+  //   }
+  // ];
 
   const filteredTransactions = transactions.filter((transaction) =>
     transaction.reference.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -103,7 +103,7 @@ export function AdminPayments() {
           if (d.commission_rate) setCommissionRate(d.commission_rate);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -143,7 +143,7 @@ export function AdminPayments() {
           setTransactions(rows);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const handleCommissionUpdate = async () => {
@@ -176,26 +176,26 @@ export function AdminPayments() {
     }
   };
 
-  const handlePayoutSelected = () => {
-    if (selectedProfessionals.length === 0) {
-      toast.error("Please select at least one professional");
-      return;
-    }
-    toast.success(`Processing payouts for ${selectedProfessionals.length} professional(s)`);
-    setSelectedProfessionals([]);
-    setPayoutModalOpen(false);
-  };
+  // const handlePayoutSelected = () => {
+  //   if (selectedProfessionals.length === 0) {
+  //     toast.error("Please select at least one professional");
+  //     return;
+  //   }
+  //   toast.success(`Processing payouts for ${selectedProfessionals.length} professional(s)`);
+  //   setSelectedProfessionals([]);
+  //   setPayoutModalOpen(false);
+  // };
 
-  const toggleProfessionalSelection = (id: number) => {
-    setSelectedProfessionals(prev =>
-      prev.includes(id) ? prev.filter(pid => pid !== id) : [...prev, id]
-    );
-  };
+  // const toggleProfessionalSelection = (id: number) => {
+  //   setSelectedProfessionals(prev =>
+  //     prev.includes(id) ? prev.filter(pid => pid !== id) : [...prev, id]
+  //   );
+  // };
 
-  const totalSelectedPayout = selectedProfessionals.reduce((sum, id) => {
-    const prof = pendingPayouts.find(p => p.id === id);
-    return sum + (prof?.amount || 0);
-  }, 0);
+  // const totalSelectedPayout = selectedProfessionals.reduce((sum, id) => {
+  //   const prof = pendingPayouts.find(p => p.id === id);
+  //   return sum + (prof?.amount || 0);
+  // }, 0);
 
   return (
     <div className="space-y-6">
@@ -256,6 +256,7 @@ export function AdminPayments() {
                 <TrendingDown className="w-6 h-6 text-yellow-600" />
               </div>
             </div>
+            {/* Process Payouts entry — hidden with payout modal (restore if needed)
             <Button
               variant="link"
               className="text-xs p-0 h-auto mt-1"
@@ -263,6 +264,7 @@ export function AdminPayments() {
             >
               Process Payouts →
             </Button>
+            */}
           </CardContent>
         </Card>
         <Card>
@@ -276,27 +278,34 @@ export function AdminPayments() {
       {/* Filters */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
+          <div className="flex w-full items-center gap-4">
+
+            {/* 🔍 Search */}
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <Input
                 placeholder="Search transactions..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="pl-10 w-full h-11"
               />
             </div>
-            <Select value={filterPeriod} onValueChange={setFilterPeriod}>
-              <SelectTrigger className="w-full md:w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Time</SelectItem>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="week">This Week</SelectItem>
-                <SelectItem value="month">This Month</SelectItem>
-              </SelectContent>
-            </Select>
+
+            {/* 🔽 Filter */}
+            <div className="w-[180px]">
+              <Select value={filterPeriod} onValueChange={setFilterPeriod}>
+                <SelectTrigger className="w-full h-11 px-4">
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
           </div>
         </CardContent>
       </Card>
@@ -350,8 +359,8 @@ export function AdminPayments() {
                         transaction.payoutStatus === "paid"
                           ? "bg-green-100 text-green-700 text-xs mt-1"
                           : transaction.payoutStatus === "pending"
-                          ? "bg-yellow-100 text-yellow-700 text-xs mt-1"
-                          : "bg-gray-100 text-gray-700 text-xs mt-1"
+                            ? "bg-yellow-100 text-yellow-700 text-xs mt-1"
+                            : "bg-gray-100 text-gray-700 text-xs mt-1"
                       }>
                         {transaction.payoutStatus}
                       </Badge>
@@ -362,8 +371,8 @@ export function AdminPayments() {
                           transaction.status === "completed"
                             ? "bg-green-100 text-green-700"
                             : transaction.status === "refunded"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-yellow-100 text-yellow-700"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-yellow-100 text-yellow-700"
                         }
                       >
                         {transaction.status}
@@ -381,6 +390,7 @@ export function AdminPayments() {
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
+                        {/* Payout (paper plane) — hidden with Process Payouts modal
                         {(transaction.payoutStatus === "pending" || transaction.status === "completed" || transaction.status === "confirmed") && (
                           <Button
                             variant="ghost"
@@ -393,6 +403,7 @@ export function AdminPayments() {
                             <Send className="w-4 h-4" />
                           </Button>
                         )}
+                        */}
                       </div>
                     </td>
                   </tr>
@@ -455,8 +466,8 @@ export function AdminPayments() {
                     transaction.payoutStatus === "paid"
                       ? "bg-green-100 text-green-700 text-xs"
                       : transaction.payoutStatus === "pending"
-                      ? "bg-yellow-100 text-yellow-700 text-xs"
-                      : "bg-gray-100 text-gray-700 text-xs"
+                        ? "bg-yellow-100 text-yellow-700 text-xs"
+                        : "bg-gray-100 text-gray-700 text-xs"
                   }>
                     {transaction.payoutStatus}
                   </Badge>
@@ -469,8 +480,8 @@ export function AdminPayments() {
                       transaction.status === "completed"
                         ? "bg-green-100 text-green-700"
                         : transaction.status === "refunded"
-                        ? "bg-red-100 text-red-700"
-                        : "bg-yellow-100 text-yellow-700"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-yellow-100 text-yellow-700"
                     }
                   >
                     {transaction.status}
@@ -487,6 +498,7 @@ export function AdminPayments() {
                       <Eye className="w-4 h-4 mr-1" />
                       View
                     </Button>
+                    {/* Mobile Payout — hidden with Process Payouts modal
                     {(transaction.payoutStatus === "pending" || transaction.status === "completed" || transaction.status === "confirmed") && (
                       <Button
                         variant="outline"
@@ -500,6 +512,7 @@ export function AdminPayments() {
                         Payout
                       </Button>
                     )}
+                    */}
                   </div>
                 </div>
               </div>
@@ -567,16 +580,16 @@ export function AdminPayments() {
             </div>
 
             <div className="flex flex-col gap-2.5 pt-2">
-              <Button 
-                className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-sm font-medium justify-center" 
+              <Button
+                className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-sm font-medium justify-center"
                 onClick={() => void handleCommissionUpdate()}
                 disabled={commissionUpdating}
               >
                 <CheckCircle className="w-4 h-4 mr-2" />
                 {commissionUpdating ? "Updating..." : "Update Commission Rate"}
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setCommissionModalOpen(false)}
                 className="w-full h-11 text-sm font-medium justify-center border-gray-300"
               >
@@ -587,7 +600,7 @@ export function AdminPayments() {
         </DialogContent>
       </Dialog>
 
-      {/* Payout Management Modal */}
+      {/* Payout Management Modal — hidden by request (restore with state + pendingPayouts + handlers above)
       <Dialog open={payoutModalOpen} onOpenChange={setPayoutModalOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -669,6 +682,7 @@ export function AdminPayments() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      */}
 
       {/* Transaction Details Modal */}
       <Dialog open={detailsModalOpen} onOpenChange={setDetailsModalOpen}>
@@ -739,8 +753,8 @@ export function AdminPayments() {
                   selectedTransaction?.payoutStatus === "paid"
                     ? "bg-green-100 text-green-700 mt-1"
                     : selectedTransaction?.payoutStatus === "pending"
-                    ? "bg-yellow-100 text-yellow-700 mt-1"
-                    : "bg-gray-100 text-gray-700 mt-1"
+                      ? "bg-yellow-100 text-yellow-700 mt-1"
+                      : "bg-gray-100 text-gray-700 mt-1"
                 }>
                   {selectedTransaction?.payoutStatus}
                 </Badge>

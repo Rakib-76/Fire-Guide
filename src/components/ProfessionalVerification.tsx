@@ -899,7 +899,7 @@ export function ProfessionalVerification() {
         ))}
       </div>
 
-      {/* Support */}
+      {/* Support — hidden per product request
       <Card className="bg-gray-50">
         <CardContent className="p-6">
           <div className="flex items-start gap-4">
@@ -916,6 +916,7 @@ export function ProfessionalVerification() {
           </div>
         </CardContent>
       </Card>
+      */}
     </div>
   );
 }

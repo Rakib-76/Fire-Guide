@@ -25,6 +25,7 @@ import { handleTokenExpired, isTokenExpiredError } from '../lib/auth';
  * 11. Monthly Availability Summary: '/professional/monthly_availability/summary' (note: nested path format)
  * 12. Create Professional Day: '/professional_days/create' (note: underscore format with "/create" suffix)
  * 13. Delete Professional Day: '/professional_days/delete' (note: underscore format with "/delete" suffix)
+ * 14. Contact professional by email: '/professional-mail' (public JSON body)
  * 
  * ENDPOINT NAMING CONVENTIONS:
  * -----------------------------
@@ -223,7 +224,7 @@ export const updateProfessionalUser = async (
  * Professional profile details — single professional data when View Profile is clicked.
  * POST https://fireguide.attoexasolutions.com/api/professional-profile/details
  * Body: { professional_id }
- * Response: { status, message, data: { name, initials, profile_image, verified, rating, total_reviews, location, response_time } }
+ * Response: { status, message, data: { name, initials, profile_image, verified, rating, total_reviews, location, response_time, phone? } }
  */
 export interface ProfessionalProfileDetailsData {
   name: string;
@@ -234,6 +235,15 @@ export interface ProfessionalProfileDetailsData {
   total_reviews: number;
   location: string;
   response_time: string;
+  /** When returned by profile details API, used for Send Message / mailto */
+  email?: string | null;
+  /** Contact line — backend may use any of these optional keys */
+  phone?: string | null;
+  contact_number?: string | null;
+  mobile?: string | null;
+  phone_number?: string | null;
+  /** Some APIs reuse `number` for the phone field */
+  number?: string | null;
 }
 
 export interface ProfessionalProfileDetailsResponse {
@@ -290,6 +300,48 @@ export const fetchProfessionalProfilePricing = async (
     return data;
   }
   throw new Error(payload?.message || 'Failed to fetch pricing');
+};
+
+/** POST /professional-mail — customer message to a professional (public). */
+export interface ProfessionalMailRequest {
+  full_name: string;
+  pro_email: string;
+  email: string;
+  phone: string;
+  subject: string;
+  message: string;
+}
+
+export interface ProfessionalMailResponse {
+  status?: boolean;
+  success?: boolean;
+  message?: string;
+}
+
+/**
+ * Send a contact email to a professional via the backend.
+ * POST `/professional-mail` with JSON body matching the API contract.
+ * @returns Server success message when present
+ */
+export const sendProfessionalMail = async (payload: ProfessionalMailRequest): Promise<string> => {
+  try {
+    const response = await apiClient.post<ProfessionalMailResponse>("/professional-mail", payload);
+    const data = response.data as ProfessionalMailResponse;
+    if (data?.status === false || data?.success === false) {
+      throw new Error(data?.message || "Failed to send message");
+    }
+    if (typeof data?.message === "string" && data.message.trim()) {
+      return data.message.trim();
+    }
+    return "Your message has been sent.";
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const d = error.response?.data as { message?: string; error?: string } | undefined;
+      const msg = d?.message || d?.error || error.message;
+      throw new Error(typeof msg === "string" ? msg : "Failed to send message");
+    }
+    throw error instanceof Error ? error : new Error("Failed to send message");
+  }
 };
 
 /**
@@ -449,18 +501,15 @@ export const getBlockedBookingDaysList = async (
 /**
  * Blocked booking days list by professional (e.g. for booking calendar).
  * POST .../block-professional/booking-days-list
- * Body: { professional_id } always; { api_token } included when provided.
+ * Body: { professional_id } only (no api_token).
  * Response: same as getBlockedBookingDaysList.
  */
 export const getBlockedBookingDaysListForProfessional = async (
-  professionalId: number,
-  apiToken?: string | null
+  professionalId: number
 ): Promise<BlockedBookingDayItem[]> => {
-  const body: { professional_id: number; api_token?: string } = { professional_id: professionalId };
-  if (apiToken) body.api_token = apiToken;
   const response = await apiClient.post<BlockedBookingDaysListResponse>(
     '/block-professional/booking-days-list',
-    body
+    { professional_id: professionalId }
   );
   const payload = response.data as BlockedBookingDaysListResponse & { data?: unknown };
   if (payload?.status === false) return [];
@@ -499,7 +548,7 @@ function expandBlockedRangeToIsoDates(startDay: string, endDay: string): string[
   return out;
 }
 
-function collectCalendarBlockedDatesFromListPayload(
+export function collectCalendarBlockedDatesFromListPayload(
   payload: Record<string, unknown>,
   data: unknown
 ): string[] {
@@ -543,11 +592,10 @@ function collectCalendarBlockedDatesFromListPayload(
 
 /**
  * POST /block-professional/booking-days-list
- * Body: { api_token, professional_id }
+ * Body: { professional_id } only (no api_token).
  * Merges data.notice_blocked_dates and every calendar day in data.blocked_ranges (start_day–end_day).
  */
 export const getNoticeBlockedBookingDates = async (
-  apiToken: string,
   professionalId: number
 ): Promise<string[]> => {
   const response = await apiClient.post<{
@@ -557,7 +605,6 @@ export const getNoticeBlockedBookingDates = async (
     data?: BlockProfessionalBookingDaysListExtendedData | BlockedBookingDayItem[] | Record<string, unknown>;
     notice_blocked_dates?: string[];
   }>('/block-professional/booking-days-list', {
-    api_token: apiToken,
     professional_id: professionalId,
   });
   const payload = response.data as Record<string, unknown>;
@@ -1045,10 +1092,23 @@ export interface ProfessionalResponse {
   number: string;
   email: string;
   user_id?: number;
+  /** List/detail APIs often nest the auth user avatar here (e.g. `user.image`). */
+  user?: { id?: number; image?: string | null } | null;
+  image?: string | null;
+  profile_image?: string | null;
   created_at: string;
   updated_at: string;
   creator: { id: number; user_name?: string; full_name?: string } | null;
   updater: { id: number; user_name?: string; full_name?: string } | null;
+}
+
+/** Avatar URL from a `/professional/list` row — prefers nested `user.image`. */
+export function getProfessionalProfileImageUrl(prof: ProfessionalResponse): string {
+  const u = prof.user;
+  if (u && typeof u.image === "string" && u.image.trim()) return u.image.trim();
+  if (typeof prof.image === "string" && prof.image.trim()) return prof.image.trim();
+  if (typeof prof.profile_image === "string" && prof.profile_image.trim()) return prof.profile_image.trim();
+  return "";
 }
 
 export interface ProfessionalsPaginatedResponse {
@@ -1056,21 +1116,54 @@ export interface ProfessionalsPaginatedResponse {
   data: ProfessionalResponse[];
   per_page: number;
   total: number;
+  /** Laravel paginator includes this; needed to load the correct page for a given professional id */
+  last_page?: number;
 }
 
 export interface ProfessionalsApiResponse {
   status: string;
   message: string;
-  data: ProfessionalsPaginatedResponse;
+  /** Laravel paginator `{ data: Professional[], ... }`, or a bare `Professional[]` (some backends). */
+  data: ProfessionalsPaginatedResponse | ProfessionalResponse[];
+}
+
+function isProfessionalListRow(x: unknown): x is ProfessionalResponse {
+  return x != null && typeof x === "object" && typeof (x as { id?: unknown }).id === "number";
+}
+
+/**
+ * GET /professional/list returns either:
+ * - `{ status, data: { data: Professional[], current_page, last_page, ... } }` (Laravel paginator)
+ * - `{ status, data: Professional[] }` (flat list)
+ */
+function parseProfessionalListResponse(body: unknown): { rows: ProfessionalResponse[]; lastPage: number } | null {
+  if (!body || typeof body !== "object") return null;
+  const b = body as { status?: unknown; data?: unknown };
+  if (b.status !== "success" || b.data == null) return null;
+
+  if (Array.isArray(b.data)) {
+    const rows = b.data.filter(isProfessionalListRow);
+    return { rows, lastPage: 1 };
+  }
+
+  if (typeof b.data === "object" && b.data !== null && "data" in b.data) {
+    const pag = b.data as ProfessionalsPaginatedResponse;
+    const rows = Array.isArray(pag.data) ? pag.data.filter(isProfessionalListRow) : [];
+    const lastPage =
+      typeof pag.last_page === "number" && pag.last_page >= 1
+        ? pag.last_page
+        : Math.max(1, Math.ceil((pag.total ?? 0) / Math.max(1, pag.per_page ?? 10)));
+    return { rows, lastPage };
+  }
+
+  return null;
 }
 
 export const fetchProfessionals = async (page: number = 1): Promise<ProfessionalResponse[]> => {
   try {
-    const response = await apiClient.get<ProfessionalsApiResponse>('/professional/list', { params: { page } });
-    if (response.data.status === 'success' && response.data.data?.data) {
-      return response.data.data.data;
-    }
-    return [];
+    const response = await apiClient.get<ProfessionalsApiResponse>("/professional/list", { params: { page } });
+    const parsed = parseProfessionalListResponse(response.data);
+    return parsed?.rows ?? [];
   } catch (error) {
     console.error('Error fetching professionals:', error);
     if (axios.isAxiosError(error)) {
@@ -1082,6 +1175,36 @@ export const fetchProfessionals = async (page: number = 1): Promise<Professional
     }
     throw { success: false, message: 'An unexpected error occurred', error: error instanceof Error ? error.message : 'Unknown error' };
   }
+};
+
+/**
+ * Paginated GET /professional/list — walks pages until the row with `professionalId` is found.
+ * The profile page previously only loaded page 1, so pros not on the first page never hydrated from the API.
+ */
+export const fetchProfessionalFromListById = async (
+  professionalId: number
+): Promise<ProfessionalResponse | null> => {
+  let page = 1;
+  const maxPages = 500;
+
+  for (let guard = 0; guard < maxPages; guard++) {
+    const response = await apiClient.get<ProfessionalsApiResponse>("/professional/list", { params: { page } });
+    const parsed = parseProfessionalListResponse(response.data);
+    if (!parsed) {
+      return null;
+    }
+    const { rows, lastPage } = parsed;
+    const found = rows.find((p) => p.id === professionalId) ?? null;
+    if (found) {
+      return found;
+    }
+
+    if (page >= lastPage || rows.length === 0) {
+      return null;
+    }
+    page += 1;
+  }
+  return null;
 };
 
 /** Public landing list: GET /professionals-get */
@@ -2258,34 +2381,127 @@ export interface DashboardSummaryData {
   };
 }
 
-export interface DashboardSummaryResponse {
-  status: string;
-  data: DashboardSummaryData;
+function dashboardSummaryIsRecord(x: unknown): x is Record<string, unknown> {
+  return x != null && typeof x === 'object' && !Array.isArray(x);
+}
+
+function dashboardSummaryNum(v: unknown, fallback = 0): number {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number.parseFloat(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+}
+
+function dashboardSummaryStr(v: unknown, fallback = '0'): string {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return fallback;
+}
+
+/** Unwrap Laravel `{ data }` / nested `data` or use root when summary keys exist. */
+function extractDashboardSummaryPayload(body: unknown): Record<string, unknown> | null {
+  if (!dashboardSummaryIsRecord(body)) return null;
+  if (body.success === false || body.status === false) return null;
+
+  const d = body.data;
+  if (dashboardSummaryIsRecord(d)) {
+    const inner = d.data;
+    if (
+      dashboardSummaryIsRecord(inner) &&
+      ('upcoming_jobs' in inner ||
+        'upcomingJobs' in inner ||
+        'earnings' in inner ||
+        'reports' in inner)
+    ) {
+      return inner;
+    }
+    if (
+      'upcoming_jobs' in d ||
+      'upcomingJobs' in d ||
+      'earnings' in d ||
+      'reports' in d
+    ) {
+      return d;
+    }
+  }
+  if (
+    'upcoming_jobs' in body ||
+    'upcomingJobs' in body ||
+    'earnings' in body ||
+    'reports' in body
+  ) {
+    return body;
+  }
+  return null;
 }
 
 /**
- * Get professional dashboard summary
- * BaseURL: https://fireguide.attoexasolutions.com/api/professional_dashboard/summary
- * Method: POST
- * @param api_token - The API token for authentication
- * @returns Promise with the API response containing dashboard summary data
+ * Normalize `POST /professional_dashboard/summary` JSON into {@link DashboardSummaryData}.
+ * Accepts camelCase or snake_case blocks and common Laravel envelopes.
  */
-export const getDashboardSummary = async (
-  api_token: string
-): Promise<DashboardSummaryResponse> => {
+export function parseDashboardSummaryFromResponse(body: unknown): DashboardSummaryData | null {
+  const raw = extractDashboardSummaryPayload(body);
+  if (!raw) return null;
+
+  const ujRaw =
+    (dashboardSummaryIsRecord(raw.upcoming_jobs) && raw.upcoming_jobs) ||
+    (dashboardSummaryIsRecord(raw.upcomingJobs) && raw.upcomingJobs) ||
+    null;
+  const upcoming_jobs = {
+    count: dashboardSummaryNum(
+      ujRaw?.count ?? ujRaw?.total ?? ujRaw?.total_count ?? raw.upcoming_jobs_count
+    ),
+    this_week: dashboardSummaryNum(
+      ujRaw?.this_week ??
+        ujRaw?.thisWeek ??
+        raw.this_week_upcoming ??
+        raw.jobs_this_week ??
+        raw.upcoming_this_week
+    ),
+  };
+
+  const eraw =
+    (dashboardSummaryIsRecord(raw.earnings) && raw.earnings) ||
+    (dashboardSummaryIsRecord(raw.total_earnings) && raw.total_earnings) ||
+    null;
+  const earnings = {
+    total: dashboardSummaryStr(
+      eraw?.total ?? eraw?.total_earnings ?? raw.total_earnings ?? raw.earnings_total
+    ),
+    this_month: dashboardSummaryStr(
+      eraw?.this_month ?? eraw?.thisMonth ?? raw.earnings_this_month ?? raw.this_month_earnings
+    ),
+  };
+
+  const repRaw = dashboardSummaryIsRecord(raw.reports) ? raw.reports : null;
+  const reports = {
+    pending: dashboardSummaryNum(
+      repRaw?.pending ??
+        repRaw?.count ??
+        repRaw?.total ??
+        raw.reports_pending ??
+        raw.total_reports ??
+        raw.all_reports
+    ),
+  };
+
+  return { upcoming_jobs, earnings, reports };
+}
+
+/**
+ * Professional dashboard stat cards (upcoming jobs, earnings, reports).
+ * POST `/professional_dashboard/summary` with `{ api_token }` (same token stored after login).
+ * @returns Parsed summary, or `null` if the response shape is not recognized or indicates failure.
+ */
+export const getDashboardSummary = async (api_token: string): Promise<DashboardSummaryData | null> => {
   try {
-    console.log('POST /professional_dashboard/summary - Requesting...');
-    
-    const response = await apiClient.post<DashboardSummaryResponse>(
-      '/professional_dashboard/summary',
-      { api_token }
-    );
-    
-    console.log('POST /professional_dashboard/summary - Response:', response.data);
-    
-    return response.data;
+    const response = await apiClient.post<unknown>('/professional_dashboard/summary', {
+      api_token,
+    });
+    return parseDashboardSummaryFromResponse(response.data);
   } catch (error) {
-    console.error('Error fetching dashboard summary:', error);
     if (axios.isAxiosError(error)) {
       if (error.response) {
         throw {
@@ -2485,6 +2701,130 @@ export const createProfessionalNoticePeriod = async (
       success: false,
       message: 'An unexpected error occurred',
       error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
+
+/** Admin → professional messages — POST /contact-professional/get with `{ api_token }`. */
+export interface ProfessionalAdminContactMessageItem {
+  id: number;
+  message: string;
+  created_at: string;
+  title?: string;
+  [key: string]: unknown;
+}
+
+export interface GetProfessionalContactAdminMessagesRequest {
+  api_token: string;
+}
+
+export interface GetProfessionalContactAdminMessagesResponse {
+  status: boolean;
+  message: string;
+  data: ProfessionalAdminContactMessageItem[];
+}
+
+function pcMsgIsRecord(x: unknown): x is Record<string, unknown> {
+  return x != null && typeof x === "object" && !Array.isArray(x);
+}
+
+function pcMsgStrField(r: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = r[k];
+    if (v != null && String(v).trim() !== "") return String(v);
+  }
+  return "";
+}
+
+function pcMsgMessageFromPayload(payload: unknown, fallback: string): string {
+  if (!pcMsgIsRecord(payload)) return fallback;
+  const m = payload.message;
+  return typeof m === "string" && m.trim() ? m : fallback;
+}
+
+function extractProfessionalContactMessagesArray(payload: unknown): unknown[] {
+  if (payload == null) return [];
+  if (Array.isArray(payload)) return payload;
+  if (!pcMsgIsRecord(payload)) return [];
+  const data = payload.data;
+  if (Array.isArray(data)) return data;
+  if (pcMsgIsRecord(data) && Array.isArray(data.data)) return data.data;
+  if (Array.isArray(payload.messages)) return payload.messages;
+  if (pcMsgIsRecord(data) && typeof data.message === "string") {
+    return [data];
+  }
+  return [];
+}
+
+function normalizeProfessionalAdminContactMessageRow(row: unknown): ProfessionalAdminContactMessageItem | null {
+  if (!pcMsgIsRecord(row)) return null;
+  const idRaw = row.id ?? row.message_id;
+  let id = typeof idRaw === "number" && Number.isFinite(idRaw) ? idRaw : parseInt(String(idRaw ?? ""), 10);
+  if (!Number.isFinite(id) || id <= 0) {
+    id = 0;
+  }
+  const message = pcMsgStrField(row, "message", "body", "content", "text", "note", "admin_message");
+  const title = pcMsgStrField(row, "title", "subject", "heading") || "Admin message";
+  const created_at = pcMsgStrField(row, "created_at", "updated_at", "date", "sent_at", "createdAt");
+  return {
+    ...row,
+    id,
+    title,
+    message,
+    created_at,
+  } as ProfessionalAdminContactMessageItem;
+}
+
+function parseProfessionalContactMessagesPayload(payload: unknown): ProfessionalAdminContactMessageItem[] {
+  const raw = extractProfessionalContactMessagesArray(payload);
+  const out: ProfessionalAdminContactMessageItem[] = [];
+  raw.forEach((row) => {
+    const n = normalizeProfessionalAdminContactMessageRow(row);
+    if (n && (n.message.trim() !== "" || n.id > 0)) {
+      out.push(n);
+    }
+  });
+  return out;
+}
+
+/**
+ * Professional inbox for messages sent by admin — POST /contact-professional/get.
+ */
+export const getProfessionalContactAdminMessages = async (
+  data: GetProfessionalContactAdminMessagesRequest
+): Promise<GetProfessionalContactAdminMessagesResponse> => {
+  try {
+    const response = await apiClient.post<unknown>("/contact-professional/get", {
+      api_token: data.api_token,
+    });
+    const body = response.data;
+    const list = parseProfessionalContactMessagesPayload(body);
+    return {
+      status: true,
+      message: pcMsgMessageFromPayload(body, "OK"),
+      data: list,
+    };
+  } catch (error) {
+    console.error("Error fetching professional admin messages:", error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          status: false,
+          message: error.response.data?.message || "Failed to load admin messages",
+          error: error.response.data?.error || "Unknown error",
+        };
+      } else if (error.request) {
+        throw {
+          status: false,
+          message: "Network error. Please check your connection.",
+          error: "Network error",
+        };
+      }
+    }
+    throw {
+      status: false,
+      message: "An unexpected error occurred",
+      error: error instanceof Error ? error.message : "Unknown error",
     };
   }
 };

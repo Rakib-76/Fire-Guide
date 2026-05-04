@@ -62,6 +62,15 @@ export default defineConfig({
     host: '0.0.0.0',
     port:3000,
     open: true,
+    // When VITE_API_BASE_URL is `/api`, the browser hits same-origin `/api/*`; forward to the real backend
+    // so POST /api/addresses_update is not answered by the SPA dev server (which would 404).
+    proxy: {
+      '/api': {
+        target: 'https://firesafety-backend.fireguide.co.uk',
+        changeOrigin: true,
+        secure: true,
+      },
+    },
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-router-dom', 'jszip'],

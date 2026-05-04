@@ -6,6 +6,8 @@ import { fetchServices, formatServiceFromPrice, type ServiceResponse } from "../
 
 interface PricingPreviewProps {
   onGetQuote: () => void;
+  /** "Contact Sales Team" — e.g. navigate to /about#contact */
+  onContactSales?: () => void;
 }
 
 /** Match API `service_name` (substring) to card; first hit wins. */
@@ -27,7 +29,7 @@ function priceForCard(
   return fallbackFormatted;
 }
 
-export function PricingPreview({ onGetQuote }: PricingPreviewProps) {
+export function PricingPreview({ onGetQuote, onContactSales }: PricingPreviewProps) {
   const [apiServices, setApiServices] = useState<ServiceResponse[]>([]);
 
   useEffect(() => {
@@ -201,7 +203,8 @@ export function PricingPreview({ onGetQuote }: PricingPreviewProps) {
             Need a custom quote for multiple services?
           </p>
           <Button 
-            onClick={onGetQuote}
+            type="button"
+            onClick={onContactSales ?? onGetQuote}
             variant="outline"
             className="border-2 border-red-600 text-red-600 hover:bg-red-600 hover:text-white px-8 py-6 text-lg"
           >

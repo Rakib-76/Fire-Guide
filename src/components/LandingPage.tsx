@@ -34,6 +34,10 @@ interface LandingPageProps {
   currentUser?: User | null;
   onLogout?: () => void;
   onAboutContact?: () => void;
+  /** When set (e.g. from router), used for header About vs generic onAboutContact */
+  onNavigateAboutPage?: () => void;
+  /** When set, navigates to contact section on about page (e.g. /about#contact) */
+  onNavigateToContactPage?: () => void;
   onNavigateToDashboard?: () => void;
   /** Clears hash (e.g. #live-booking) and scrolls to top when provided */
   onNavigateHome?: () => void;
@@ -47,6 +51,8 @@ export function LandingPage({
   currentUser,
   onLogout,
   onAboutContact,
+  onNavigateAboutPage,
+  onNavigateToContactPage,
   onNavigateToDashboard,
   onNavigateHome,
 }: LandingPageProps) {
@@ -64,17 +70,21 @@ export function LandingPage({
         onNavigateHome={handleNavigateHome}
         onNavigateServices={onGetStarted}
         onNavigateAbout={() => {
-          if (onAboutContact) {
+          if (onNavigateAboutPage) {
+            onNavigateAboutPage();
+          } else if (onAboutContact) {
             onAboutContact();
           }
         }}
         onNavigateContact={() => {
-          if (onAboutContact) {
+          if (onNavigateToContactPage) {
+            onNavigateToContactPage();
+          } else if (onAboutContact) {
             onAboutContact();
             setTimeout(() => {
-              const contactSection = document.getElementById('contact');
+              const contactSection = document.getElementById("contact");
               if (contactSection) {
-                contactSection.scrollIntoView({ behavior: 'smooth' });
+                contactSection.scrollIntoView({ behavior: "smooth" });
               }
             }, 100);
           }
@@ -111,7 +121,10 @@ export function LandingPage({
         {/* <InteractiveCalculator onGetQuote={onGetStarted} /> */}
       </Suspense>
       <Suspense fallback={null}>
-        <PricingPreview onGetQuote={onGetStarted} />
+        <PricingPreview
+          onGetQuote={onGetStarted}
+          onContactSales={onNavigateToContactPage}
+        />
       </Suspense>
       <Suspense fallback={null}>
         <WhyChooseFireGuide />
@@ -126,7 +139,22 @@ export function LandingPage({
         <Testimonials />
       </Suspense>
       <Suspense fallback={null}>
-        <FAQ onContactSupport={onGetStarted} />
+        <FAQ
+          onContactSupport={() => {
+            if (onNavigateToContactPage) {
+              onNavigateToContactPage();
+              return;
+            }
+            if (onAboutContact) {
+              onAboutContact();
+              window.setTimeout(() => {
+                document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" });
+              }, 100);
+              return;
+            }
+            onGetStarted();
+          }}
+        />
       </Suspense>
       <Suspense fallback={null}>
         <Footer onAdminLogin={onAdminLogin} />

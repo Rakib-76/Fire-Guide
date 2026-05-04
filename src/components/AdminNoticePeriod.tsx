@@ -100,17 +100,19 @@ export function AdminNoticePeriod() {
 
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
+          <div className="flex w-full items-center gap-4">
+
+            {/* { Search } */}
+          <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <Input
-                placeholder="Search by name or email..."
+                placeholder="Search professional by name or email..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="pl-10 w-full h-11"
               />
             </div>
-            <Select value={filterProfessional} onValueChange={setFilterProfessional}>
+            {/* <Select value={filterProfessional} onValueChange={setFilterProfessional}>
               <SelectTrigger className="w-full md:w-56">
                 <span>{selectedProfessionalLabel}</span>
               </SelectTrigger>
@@ -122,7 +124,7 @@ export function AdminNoticePeriod() {
                   </SelectItem>
                 ))}
               </SelectContent>
-            </Select>
+            </Select> */}
           </div>
         </CardContent>
       </Card>

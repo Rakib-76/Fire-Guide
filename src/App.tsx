@@ -4,6 +4,7 @@ import Routes from "./components/Routes";
 import { Toaster } from "./components/ui/sonner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ScrollToTop } from "./components/ScrollToTop";
+import { PaymentReturnRedirect } from "./components/PaymentReturnRedirect";
 
 
 export interface Booking {
@@ -14,6 +15,8 @@ export interface Booking {
   time: string;
   status: "upcoming" | "completed" | "cancelled";
   displayStatus?: string; // Original status from API for display (e.g., "Confirmed", "Pending")
+  /** From API `is_paid`; when true, hide Pay / show as paid in dashboard. */
+  isPaid?: boolean;
   location: string;
   price: string;
   professionalEmail: string;
@@ -30,7 +33,7 @@ export interface Payment {
   service: string;
   professional: string;
   amount: string;
-  status: "paid" | "refunded" | "pending";
+  status: "paid" | "refunded" | "pending" | "unpaid";
   paymentMethod: string;
   invoiceNumber: string;
   bookingRef: string;
@@ -45,6 +48,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
+        <PaymentReturnRedirect />
         <ScrollToTop />
         <AppProvider>
           <div className="min-h-screen bg-white">

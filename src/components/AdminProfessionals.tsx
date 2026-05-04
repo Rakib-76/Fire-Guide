@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Search, Star, MoreVertical, Mail, Phone, MapPin, CheckCircle, Clock, XCircle, Eye, Ban, Award, FileText, Download, AlertCircle, Edit2, Image, File } from "lucide-react";
 import { getApiToken } from "../lib/auth";
 import { resolveApiBaseUrl } from "../lib/apiBaseUrl";
-import { getAdminProfessionalSummary, AdminProfessionalSummaryData, getAdminProfessionals, AdminProfessionalListItem, adminProfessionalTakeAction, AdminProfessionalStatus, getAdminProfessionalSingle, AdminProfessionalSingleData, adminProfessionalChangeCertificateStatus, adminProfessionalChangeServiceStatus } from "../api/adminService";
+import { getAdminProfessionalSummary, AdminProfessionalSummaryData, getAdminProfessionals, AdminProfessionalListItem, adminProfessionalTakeAction, AdminProfessionalStatus, getAdminProfessionalSingle, AdminProfessionalSingleData, adminProfessionalChangeCertificateStatus, adminProfessionalChangeServiceStatus, adminProfessionalChangeExperienceStatus } from "../api/adminService";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card, CardContent } from "./ui/card";
@@ -31,12 +31,12 @@ export function AdminProfessionals() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
-  const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
+  // const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
-  const [rejectionReason, setRejectionReason] = useState("");
-  const [rejectionMessage, setRejectionMessage] = useState("");
+  // const [rejectionReason, setRejectionReason] = useState("");
+  // const [rejectionMessage, setRejectionMessage] = useState("");
   const [verificationNotes, setVerificationNotes] = useState("");
   const [serviceRejectModalOpen, setServiceRejectModalOpen] = useState(false);
   const [serviceReuploadModalOpen, setServiceReuploadModalOpen] = useState(false);
@@ -45,7 +45,7 @@ export function AdminProfessionals() {
   const [serviceReuploadNote, setServiceReuploadNote] = useState("");
   const [filePreviewModalOpen, setFilePreviewModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<any>(null);
-  const [evidenceStatuses, setEvidenceStatuses] = useState<{[key: string]: string}>({});
+  const [evidenceStatuses, setEvidenceStatuses] = useState<{ [key: string]: string }>({});
   const [professionalSummary, setProfessionalSummary] = useState<AdminProfessionalSummaryData | null>(null);
   const [professionalSummaryLoading, setProfessionalSummaryLoading] = useState(false);
   const [professionalsList, setProfessionalsList] = useState<AdminProfessionalListItem[]>([]);
@@ -54,6 +54,8 @@ export function AdminProfessionals() {
   const [profileDetail, setProfileDetail] = useState<AdminProfessionalSingleData | null>(null);
   const [profileDetailLoading, setProfileDetailLoading] = useState(false);
   const [certificateUpdatingId, setCertificateUpdatingId] = useState<string | null>(null);
+  const [experienceStatuses, setExperienceStatuses] = useState<{ [key: string]: string }>({});
+  const [experienceUpdatingId, setExperienceUpdatingId] = useState<string | null>(null);
   const [serviceUpdatingId, setServiceUpdatingId] = useState<number | string | null>(null);
 
   useEffect(() => {
@@ -111,6 +113,20 @@ export function AdminProfessionals() {
     if (e.startsWith("http://") || e.startsWith("https://")) return e;
     if (e.startsWith("/")) return `${EVIDENCE_BASE_URL}${e}`;
     return `${EVIDENCE_BASE_URL}/certificates/${encodeURIComponent(e)}`;
+  };
+
+  const filePreviewDisplayName = (name: string | undefined | null): string => {
+    const n = (name ?? "").trim();
+    if (!n) return "Document";
+    if (/^https?:\/\//i.test(n)) {
+      try {
+        const last = new URL(n).pathname.split("/").filter(Boolean).pop();
+        return last ? decodeURIComponent(last) : "Document";
+      } catch {
+        return "Document";
+      }
+    }
+    return n;
   };
 
   type ProfessionalDisplay = {
@@ -246,7 +262,7 @@ export function AdminProfessionals() {
   };
 
   // Mock qualifications evidence data
-  const qualificationsEvidence: {[key: number]: any[]} = {
+  const qualificationsEvidence: { [key: number]: any[] } = {
     1: [ // Sarah Mitchell's evidence
       {
         id: "e1",
@@ -425,8 +441,7 @@ export function AdminProfessionals() {
   };
 
   const handleReject = (professional: any) => {
-    setSelectedProfessional(professional);
-    setRejectionModalOpen(true);
+    void handleUpdateProfessionalStatus(professional, "rejected");
   };
 
   const handleEdit = (professional: any) => {
@@ -454,17 +469,17 @@ export function AdminProfessionals() {
     setVerificationNotes("");
   };
 
-  const confirmRejection = async () => {
-    if (!rejectionReason) {
-      toast.error("Please select a rejection reason");
-      return;
-    }
-    if (!selectedProfessional) return;
-    await handleUpdateProfessionalStatus(selectedProfessional, "rejected");
-    setRejectionModalOpen(false);
-    setRejectionReason("");
-    setRejectionMessage("");
-  };
+  // const confirmRejection = async () => {
+  //   if (!rejectionReason) {
+  //     toast.error("Please select a rejection reason");
+  //     return;
+  //   }
+  //   if (!selectedProfessional) return;
+  //   await handleUpdateProfessionalStatus(selectedProfessional, "rejected");
+  //   setRejectionModalOpen(false);
+  //   setRejectionReason("");
+  //   setRejectionMessage("");
+  // };
 
   const saveProfileEdits = () => {
     toast.success(`Changes to ${selectedProfessional?.name}'s profile saved successfully`);
@@ -491,11 +506,11 @@ export function AdminProfessionals() {
         setProfileDetail((prev) =>
           prev
             ? {
-                ...prev,
-                certificates: prev.certificates.map((c) =>
-                  c.id === Number(evidenceId) ? { ...c, status: "verified" } : c
-                ),
-              }
+              ...prev,
+              certificates: prev.certificates.map((c) =>
+                c.id === Number(evidenceId) ? { ...c, status: "verified" } : c
+              ),
+            }
             : prev
         );
         toast.success(`${fileName} has been approved`);
@@ -529,11 +544,11 @@ export function AdminProfessionals() {
         setProfileDetail((prev) =>
           prev
             ? {
-                ...prev,
-                certificates: prev.certificates.map((c) =>
-                  c.id === Number(evidenceId) ? { ...c, status: "rejected" } : c
-                ),
-              }
+              ...prev,
+              certificates: prev.certificates.map((c) =>
+                c.id === Number(evidenceId) ? { ...c, status: "rejected" } : c
+              ),
+            }
             : prev
         );
         toast.error(`${fileName} has been rejected`);
@@ -574,11 +589,11 @@ export function AdminProfessionals() {
         setProfileDetail((prev) =>
           prev
             ? {
-                ...prev,
-                services: prev.services.map((s) =>
-                  s.id === serviceId ? { ...s, status: newStatus } : s
-                ),
-              }
+              ...prev,
+              services: prev.services.map((s) =>
+                s.id === serviceId ? { ...s, status: newStatus } : s
+              ),
+            }
             : prev
         );
         toast.success(`${service.name} has been approved`);
@@ -614,11 +629,11 @@ export function AdminProfessionals() {
         setProfileDetail((prev) =>
           prev
             ? {
-                ...prev,
-                services: prev.services.map((s) =>
-                  s.id === serviceId ? { ...s, status: newStatus } : s
-                ),
-              }
+              ...prev,
+              services: prev.services.map((s) =>
+                s.id === serviceId ? { ...s, status: newStatus } : s
+              ),
+            }
             : prev
         );
         setServiceRejectModalOpen(false);
@@ -665,6 +680,54 @@ export function AdminProfessionals() {
     }
   };
 
+  const handleUpdateExperienceStatus = async (
+    experienceIdRaw: string,
+    experienceTitle: string,
+    status: "verified" | "rejected"
+  ) => {
+    const token = getApiToken();
+    const professionalId = selectedProfessional?.id ?? profileDetail?.id;
+    const experienceId = Number(experienceIdRaw);
+    if (!token || !professionalId || !Number.isFinite(experienceId)) {
+      toast.error("Unable to update experience status");
+      return;
+    }
+    setExperienceUpdatingId(experienceIdRaw);
+    try {
+      const res = await adminProfessionalChangeExperienceStatus({
+        api_token: token,
+        professional_id: Number(professionalId),
+        experience_id: experienceId,
+        status,
+      });
+      if (!res.success) {
+        toast.error(res.message || "Failed to update experience status");
+        return;
+      }
+
+      const uiStatus = status === "verified" ? "approved" : "rejected";
+      setExperienceStatuses((prev) => ({ ...prev, [experienceIdRaw]: uiStatus }));
+      setProfileDetail((prev) => {
+        if (!prev?.experiences?.length) return prev;
+        return {
+          ...prev,
+          experiences: prev.experiences.map((exp: any) =>
+            Number(exp?.id) === experienceId ? { ...exp, status } : exp
+          ),
+        };
+      });
+      toast.success(
+        status === "verified"
+          ? `${experienceTitle} marked as verified`
+          : `${experienceTitle} marked as rejected`
+      );
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || e?.message || "Failed to update experience status");
+    } finally {
+      setExperienceUpdatingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -704,27 +767,34 @@ export function AdminProfessionals() {
       <div>
         <Card>
           <CardContent className="p-4">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1 relative">
+            <div className="flex w-full items-center gap-4">
+
+              {/* 🔍 Search */}
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <Input
-                  placeholder="Search professionals by name or email..."
+                  placeholder="Search professinals by name or email..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 w-full h-11"
                 />
               </div>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-full md:w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="suspended">Suspended</SelectItem>
-                </SelectContent>
-              </Select>
+
+              {/* 🔽 Filter */}
+              <div className="w-[180px]">
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger className="w-full h-11 px-4">
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="suspended">Suspended</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
             </div>
           </CardContent>
         </Card>
@@ -739,151 +809,151 @@ export function AdminProfessionals() {
             </CardContent>
           </Card>
         ) : (
-        filteredProfessionals.map((professional) => (
-          <Card key={professional.id}>
-            <CardContent className="p-6">
-              <div className="flex flex-col md:flex-row gap-6">
-                <img
-                  src={professional.photo}
-                  alt={professional.name}
-                  className="w-24 h-24 rounded-lg object-cover"
-                />
-                
-                <div className="flex-1">
-                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
-                    <div>
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-xl text-[#0A1A2F]">{professional.name}</h3>
-                        <Badge
-                          variant="custom"
-                          className={
-                            professional.status === "approved"
-                              ? "bg-green-100 text-green-700 hover:bg-green-100 hover:text-green-700"
-                              : professional.status === "pending"
-                              ? "bg-yellow-100 text-yellow-700 hover:bg-yellow-100 hover:text-yellow-700"
-                              : "bg-red-100 text-red-700 hover:bg-red-100 hover:text-red-700"
-                          }
-                        >
-                          {professional.status === "approved" && <CheckCircle className="w-3 h-3 mr-1" />}
-                          {professional.status === "pending" && <Clock className="w-3 h-3 mr-1" />}
-                          {professional.status === "suspended" && <XCircle className="w-3 h-3 mr-1" />}
-                          {professional.status}
-                        </Badge>
-                      </div>
-                      
-                      <div className="space-y-1 text-sm text-gray-600 mb-3">
-                        <p className="flex items-center gap-2">
-                          <Mail className="w-4 h-4" />
-                          {professional.email}
-                        </p>
-                        <p className="flex items-center gap-2">
-                          <Phone className="w-4 h-4" />
-                          {professional.phone}
-                        </p>
-                        <p className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4" />
-                          {professional.location}
-                        </p>
-                      </div>
+          filteredProfessionals.map((professional) => (
+            <Card key={professional.id}>
+              <CardContent className="p-6">
+                <div className="flex flex-col md:flex-row gap-6">
+                  <img
+                    src={professional.photo}
+                    alt={professional.name}
+                    className="w-24 h-24 rounded-lg object-cover"
+                  />
 
-                      {professional.qualifications.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {professional.qualifications.map((qual, index) => (
-                            <Badge key={index} variant="outline" className="bg-blue-50 text-blue-700">
-                              <Award className="w-3 h-3 mr-1" />
-                              {qual}
-                            </Badge>
-                          ))}
+                  <div className="flex-1">
+                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
+                      <div>
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-xl text-[#0A1A2F]">{professional.name}</h3>
+                          <Badge
+                            variant="custom"
+                            className={
+                              professional.status === "approved"
+                                ? "bg-green-100 text-green-700 hover:bg-green-100 hover:text-green-700"
+                                : professional.status === "pending"
+                                  ? "bg-yellow-100 text-yellow-700 hover:bg-yellow-100 hover:text-yellow-700"
+                                  : "bg-red-100 text-red-700 hover:bg-red-100 hover:text-red-700"
+                            }
+                          >
+                            {professional.status === "approved" && <CheckCircle className="w-3 h-3 mr-1" />}
+                            {professional.status === "pending" && <Clock className="w-3 h-3 mr-1" />}
+                            {professional.status === "suspended" && <XCircle className="w-3 h-3 mr-1" />}
+                            {professional.status}
+                          </Badge>
                         </div>
-                      )}
-                    </div>
 
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={statusUpdatingId === professional.id}
-                          className="transition-colors hover:bg-gray-100 hover:text-gray-800"
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleViewProfile(professional)}>
-                          <Eye className="w-4 h-4 mr-2" />
-                          View Full Profile
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleEdit(professional)}>
+                        <div className="space-y-1 text-sm text-gray-600 mb-3">
+                          <p className="flex items-center gap-2">
+                            <Mail className="w-4 h-4" />
+                            {professional.email}
+                          </p>
+                          <p className="flex items-center gap-2">
+                            <Phone className="w-4 h-4" />
+                            {professional.phone}
+                          </p>
+                          <p className="flex items-center gap-2">
+                            <MapPin className="w-4 h-4" />
+                            {professional.location}
+                          </p>
+                        </div>
+
+                        {professional.qualifications.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {professional.qualifications.map((qual, index) => (
+                              <Badge key={index} variant="outline" className="bg-blue-50 text-blue-700">
+                                <Award className="w-3 h-3 mr-1" />
+                                {qual}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={statusUpdatingId === professional.id}
+                            className="transition-colors hover:bg-gray-100 hover:text-gray-800"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleViewProfile(professional)}>
+                            <Eye className="w-4 h-4 mr-2" />
+                            View Full Profile
+                          </DropdownMenuItem>
+                          {/* <DropdownMenuItem onClick={() => handleEdit(professional)}>
                           <Edit2 className="w-4 h-4 mr-2" />
                           Edit Profile
-                        </DropdownMenuItem>
-                        {professional.status === "pending" && (
-                          <>
-                            <DropdownMenuItem className="text-green-600" onClick={() => handleApprove(professional)}>
+                        </DropdownMenuItem> */}
+                          {professional.status === "pending" && (
+                            <>
+                              <DropdownMenuItem className="text-green-600" onClick={() => handleApprove(professional)}>
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Approve Professional
+                              </DropdownMenuItem>
+                              <DropdownMenuItem className="text-red-600" onClick={() => handleReject(professional)}>
+                                <XCircle className="w-4 h-4 mr-2" />
+                                Reject Application
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {professional.status === "approved" && (
+                            <DropdownMenuItem className="text-yellow-600" onClick={() => handleSuspend(professional)}>
+                              <Ban className="w-4 h-4 mr-2" />
+                              Suspend Account
+                            </DropdownMenuItem>
+                          )}
+                          {professional.status === "suspended" && (
+                            <DropdownMenuItem className="text-green-600" onClick={() => handleReactivate(professional)}>
                               <CheckCircle className="w-4 h-4 mr-2" />
-                              Approve Professional
+                              Reactivate Account
                             </DropdownMenuItem>
-                            <DropdownMenuItem className="text-red-600" onClick={() => handleReject(professional)}>
-                              <XCircle className="w-4 h-4 mr-2" />
-                              Reject Application
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                        {professional.status === "approved" && (
-                          <DropdownMenuItem className="text-yellow-600" onClick={() => handleSuspend(professional)}>
-                            <Ban className="w-4 h-4 mr-2" />
-                            Suspend Account
-                          </DropdownMenuItem>
-                        )}
-                        {professional.status === "suspended" && (
-                          <DropdownMenuItem className="text-green-600" onClick={() => handleReactivate(professional)}>
-                            <CheckCircle className="w-4 h-4 mr-2" />
-                            Reactivate Account
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
 
-                  {/* Stats */}
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t">
-                    <div>
-                      <p className="text-sm text-gray-600">Rating</p>
-                      <div className="flex items-center gap-1 mt-1">
-                        <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                        <span className="font-semibold text-gray-900">
-                          {professional.rating > 0 ? professional.rating : "N/A"}
-                        </span>
-                        {professional.reviewCount > 0 && (
-                          <span className="text-sm text-gray-500">({professional.reviewCount})</span>
-                        )}
+                    {/* Stats */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t">
+                      <div>
+                        <p className="text-sm text-gray-600">Rating</p>
+                        <div className="flex items-center gap-1 mt-1">
+                          <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                          <span className="font-semibold text-gray-900">
+                            {professional.rating > 0 ? professional.rating : "N/A"}
+                          </span>
+                          {professional.reviewCount > 0 && (
+                            <span className="text-sm text-gray-500">({professional.reviewCount})</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Bookings</p>
-                      <p className="font-semibold text-gray-900 mt-1">{professional.totalBookings}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Completion</p>
-                      <p className="font-semibold text-gray-900 mt-1">
-                        {professional.completionRate > 0 ? `${professional.completionRate}%` : "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Response Time</p>
-                      <p className="font-semibold text-gray-900 mt-1">{professional.responseTime}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Joined</p>
-                      <p className="font-semibold text-gray-900 mt-1">{professional.joinDate}</p>
+                      <div>
+                        <p className="text-sm text-gray-600">Bookings</p>
+                        <p className="font-semibold text-gray-900 mt-1">{professional.totalBookings}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Completion</p>
+                        <p className="font-semibold text-gray-900 mt-1">
+                          {professional.completionRate > 0 ? `${professional.completionRate}%` : "—"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Response Time</p>
+                        <p className="font-semibold text-gray-900 mt-1">{professional.responseTime}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Joined</p>
+                        <p className="font-semibold text-gray-900 mt-1">{professional.joinDate}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))
+              </CardContent>
+            </Card>
+          ))
         )}
       </div>
 
@@ -1030,7 +1100,7 @@ export function AdminProfessionals() {
         </DialogContent>
       </Dialog>
 
-      {/* Rejection Modal */}
+      {/* Rejection Modal — disabled: Reject Application now calls adminProfessionalTakeAction directly via handleUpdateProfessionalStatus
       <Dialog open={rejectionModalOpen} onOpenChange={setRejectionModalOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -1104,9 +1174,10 @@ export function AdminProfessionals() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      */}
 
       {/* Edit Profile Modal */}
-      <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+      {/* <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl text-[#0A1A2F] flex items-center gap-2">
@@ -1236,7 +1307,7 @@ export function AdminProfessionals() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> */}
 
       {/* View Profile Modal */}
       <Dialog open={profileModalOpen} onOpenChange={setProfileModalOpen}>
@@ -1254,443 +1325,581 @@ export function AdminProfessionals() {
             {profileDetailLoading ? (
               <div className="py-12 text-center text-gray-500">Loading profile...</div>
             ) : (
-            <>
-            {/* Profile Header */}
-            <div className="flex items-start gap-6">
-              <img
-                src={profileDetail?.professional_image ?? selectedProfessional?.photo ?? DEFAULT_AVATAR}
-                alt={profileDetail?.name ?? selectedProfessional?.name}
-                className="w-24 h-24 rounded-lg object-cover"
-              />
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <h3 className="text-2xl text-[#0A1A2F]">{profileDetail?.name ?? selectedProfessional?.name}</h3>
-                  <Badge
-                    className={
-                      (profileDetail?.status ?? selectedProfessional?.status) === "approved"
-                        ? "bg-green-100 text-green-700"
-                        : (profileDetail?.status ?? selectedProfessional?.status) === "pending"
-                        ? "bg-yellow-100 text-yellow-700"
-                        : "bg-red-100 text-red-700"
-                    }
-                  >
-                    {(profileDetail?.status ?? selectedProfessional?.status) === "rejected" ? "suspended" : (profileDetail?.status ?? selectedProfessional?.status)}
-                  </Badge>
-                </div>
-                <div className="space-y-1 text-sm text-gray-600">
-                  <p className="flex items-center gap-2">
-                    <Mail className="w-4 h-4" />
-                    {profileDetail?.email ?? selectedProfessional?.email}
-                  </p>
-                  <p className="flex items-center gap-2">
-                    <Phone className="w-4 h-4" />
-                    {profileDetail?.number ?? selectedProfessional?.phone}
-                  </p>
-                  <p className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    {profileDetail?.business_location ?? selectedProfessional?.location}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Performance Stats */}
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-4">Performance Statistics</h4>
-              <div className="grid md:grid-cols-4 gap-4">
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600">Rating</p>
-                  <div className="flex items-center gap-1 mt-1">
-                    <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                    <span className="font-semibold text-gray-900">
-                      {profileDetail?.rating ?? selectedProfessional?.rating ?? "N/A"}
-                    </span>
-                  </div>
-                </div>
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600">Total Bookings</p>
-                  <p className="font-semibold text-gray-900 mt-1">{profileDetail ? "—" : (selectedProfessional?.totalBookings ?? "—")}</p>
-                </div>
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600">Completion Rate</p>
-                  <p className="font-semibold text-gray-900 mt-1">
-                    {profileDetail ? "—" : (selectedProfessional?.completionRate ? `${selectedProfessional.completionRate}%` : "N/A")}
-                  </p>
-                </div>
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600">Response Time</p>
-                  <p className="font-semibold text-gray-900 mt-1">{profileDetail?.response_time ?? selectedProfessional?.responseTime ?? "N/A"}</p>
-                </div>
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Evidence Submitted - from API certificates */}
-            {(() => {
-              const evidenceList = profileDetail?.certificates?.length
-                ? profileDetail.certificates.map((c) => {
-                    const ev = (c.evidence || "").toLowerCase();
-                    const isPdf = ev.includes(".pdf") || ev.endsWith(".pdf");
-                    const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/i.test(c.evidence || "");
-                    return {
-                      id: String(c.id),
-                      fileName: c.name,
-                      fileType: isPdf ? "pdf" : isImage ? "image" : "document",
-                      uploadDate: "—",
-                      status: c.status === "verified" ? "approved" : c.status === "rejected" ? "rejected" : "pending",
-                      approvedDate: c.status === "verified" ? "—" : null,
-                      evidenceUrl: resolveEvidenceUrl(c.evidence),
-                    };
-                  })
-                : qualificationsEvidence[selectedProfessional?.id] ?? [];
-              if (evidenceList.length === 0) return null;
-              return (
               <>
-                <div>
-                  <div className="mb-3">
-                    <h4 className="text-lg font-medium text-gray-900">Evidence Submitted</h4>
-                    <p className="text-sm text-gray-600 mt-1">Documents uploaded by the professional for verification</p>
-                  </div>
-
-                  {/* Check if all evidence is approved */}
-                  {evidenceList.every((ev: any) => 
-                    (evidenceStatuses[ev.id] || ev.status) === 'approved'
-                  ) && (
-                    <div className="mb-4 flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-                      <CheckCircle className="w-5 h-5 text-green-600" />
-                      <span className="text-sm font-medium text-green-900">Professional Verified - All documents approved</span>
+                {/* Profile Header */}
+                <div className="flex items-start gap-6">
+                  <img
+                    src={profileDetail?.professional_image ?? selectedProfessional?.photo ?? DEFAULT_AVATAR}
+                    alt={profileDetail?.name ?? selectedProfessional?.name}
+                    className="w-24 h-24 rounded-lg object-cover"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="text-2xl text-[#0A1A2F]">{profileDetail?.name ?? selectedProfessional?.name}</h3>
+                      <Badge
+                        className={
+                          (profileDetail?.status ?? selectedProfessional?.status) === "approved"
+                            ? "bg-green-100 text-green-700"
+                            : (profileDetail?.status ?? selectedProfessional?.status) === "pending"
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-red-100 text-red-700"
+                        }
+                      >
+                        {(profileDetail?.status ?? selectedProfessional?.status) === "rejected" ? "suspended" : (profileDetail?.status ?? selectedProfessional?.status)}
+                      </Badge>
                     </div>
-                  )}
-
-                  <div className="space-y-3">
-                    {evidenceList.map((evidence: any) => {
-                      const currentStatus = evidenceStatuses[evidence.id] || evidence.status;
-                      const isApproved = currentStatus === 'approved';
-                      const isPending = currentStatus === 'pending';
-                      const isRejected = currentStatus === 'rejected';
-
-                      return (
-                        <div 
-                          key={evidence.id}
-                          className={`p-4 border rounded-lg transition-all ${
-                            isApproved ? 'bg-green-50 border-green-200' : 
-                            isRejected ? 'bg-red-50 border-red-200' : 
-                            'bg-white border-gray-200'
-                          }`}
-                        >
-                          {/* Document Row */}
-                          <div className="flex items-start gap-3 mb-3">
-                            {/* Thumbnail - show actual image when available, else icon */}
-                            <div className="flex-shrink-0 w-12 h-12 rounded overflow-hidden bg-gray-100 flex items-center justify-center">
-                              {evidence.fileType === 'image' && evidence.evidenceUrl ? (
-                                <img
-                                  src={evidence.evidenceUrl}
-                                  alt={evidence.fileName}
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = 'none';
-                                    const parent = (e.target as HTMLImageElement).parentElement;
-                                    const fallback = parent?.querySelector('.evidence-thumb-fallback');
-                                    if (fallback) (fallback as HTMLElement).classList.remove('hidden');
-                                  }}
-                                />
-                              ) : null}
-                              <div className={`evidence-thumb-fallback ${evidence.fileType === 'image' && evidence.evidenceUrl ? 'hidden' : ''} w-full h-full flex items-center justify-center ${evidence.fileType === 'pdf' ? 'bg-red-100' : 'bg-blue-100'}`}>
-                                {evidence.fileType === 'pdf' ? (
-                                  <FileText className="w-6 h-6 text-red-600" />
-                                ) : (
-                                  <Image className="w-6 h-6 text-blue-600" />
-                                )}
-                              </div>
-                            </div>
-
-                            {/* File Info */}
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-gray-900 break-words">{evidence.fileName}</p>
-                              <p className="text-sm text-gray-500 mt-1">Uploaded {evidence.uploadDate}</p>
-                              {isApproved && evidence.approvedDate && (
-                                <div className="flex items-center gap-1 mt-1">
-                                  <CheckCircle className="w-3 h-3 text-green-600" />
-                                  <p className="text-xs text-green-600">Approved on {evidence.approvedDate}</p>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Status Badge */}
-                            <Badge
-                              className={`flex-shrink-0 ${
-                                isApproved ? 'bg-green-100 text-green-700' :
-                                isPending ? 'bg-yellow-100 text-yellow-700' :
-                                'bg-red-100 text-red-700'
-                              }`}
-                            >
-                              {isApproved ? 'Verified' : isPending ? 'Not Verified' : 'Rejected'}
-                            </Badge>
-                          </div>
-
-                          {/* Action Buttons */}
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleViewFile(evidence)}
-                              className="h-9"
-                            >
-                              <Eye className="w-4 h-4 mr-2" />
-                              View
-                            </Button>
-                            {!isApproved && (
-                              <Button
-                                size="sm"
-                                className="bg-green-600 hover:bg-green-700 h-9"
-                                disabled={certificateUpdatingId === evidence.id}
-                                onClick={() => handleApproveEvidence(evidence.id, evidence.fileName)}
-                              >
-                                <CheckCircle className="w-4 h-4 mr-2" />
-                                Approve
-                              </Button>
-                            )}
-                            {!isRejected && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-red-600 text-red-600 hover:bg-red-50 h-9"
-                                disabled={certificateUpdatingId === evidence.id}
-                                onClick={() => handleRejectEvidence(evidence.id, evidence.fileName)}
-                              >
-                                <XCircle className="w-4 h-4 mr-2" />
-                                Reject
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    <div className="space-y-1 text-sm text-gray-600">
+                      <p className="flex items-center gap-2">
+                        <Mail className="w-4 h-4" />
+                        {profileDetail?.email ?? selectedProfessional?.email}
+                      </p>
+                      <p className="flex items-center gap-2">
+                        <Phone className="w-4 h-4" />
+                        {profileDetail?.number ?? selectedProfessional?.phone}
+                      </p>
+                      <p className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4" />
+                        {profileDetail?.business_location ?? selectedProfessional?.location}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
                 <Separator />
-              </>
-              );
-            })()}
 
-            {/* Qualifications */}
-            <div>
-              <h4 className="text-lg font-medium text-gray-900 mb-3">Certificates</h4>
-              <div className="flex flex-wrap gap-2">
-                {(profileDetail?.services ?? selectedProfessional?.qualifications ?? []).map((qual: string | { id: number; name: string }, index: number) => (
-                  <Badge key={index} variant="outline" className="bg-blue-50 text-blue-700 h-9 px-3 flex items-center gap-2">
-                    <Award className="w-4 h-4" />
-                    {typeof qual === "string" ? qual : qual.name}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Account Details */}
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-3">Account Details</h4>
-              <div className="grid md:grid-cols-2 gap-4 text-sm">
+                {/* Performance Stats */}
                 <div>
-                  <p className="text-gray-600">Join Date</p>
-                  <p className="font-medium text-gray-900 mt-1">{profileDetail ? formatJoinDate(profileDetail.created_at) : selectedProfessional?.joinDate}</p>
-                </div>
-                <div>
-                  <p className="text-gray-600">Total Reviews</p>
-                  <p className="font-medium text-gray-900 mt-1">{profileDetail?.review ?? selectedProfessional?.reviewCount ?? "—"}</p>
-                </div>
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Registered Services Section */}
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-4">Registered Services</h4>
-              <div className="space-y-4">
-                {(profileDetail?.services?.length
-                  ? profileDetail.services.map((s) => ({
-                      id: s.id,
-                      name: s.name,
-                      status: s.status === "ACTIVE" || s.status?.toLowerCase() === "approved" ? "approved" : s.status?.toUpperCase() === "REJECTED" || s.status?.toLowerCase() === "rejected" ? "rejected" : "pending",
-                      uploadDate: null,
-                      evidenceFile: null,
-                      evidenceType: null,
-                      verifiedDate: null,
-                      rejectedDate: null,
-                      rejectionReason: null,
-                    }))
-                  : professionalServices[selectedProfessional?.id as keyof typeof professionalServices] ?? []
-                ).map((service: any) => (
-                  <div 
-                    key={service.id}
-                    className="border rounded-lg p-4 md:p-5 shadow-sm hover:shadow-md transition-shadow duration-200 space-y-4"
-                  >
-                    {/* Service Header - Mobile Optimized */}
-                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <h5 className="font-semibold text-gray-900 text-base md:text-lg break-words">
-                          {service.name}
-                        </h5>
-                        <p className="text-sm text-gray-500 mt-1">
-                          {service.uploadDate ? `Uploaded: ${service.uploadDate}` : 'Not uploaded yet'}
-                        </p>
+                  <h4 className="font-semibold text-gray-900 mb-4">Performance Statistics</h4>
+                  <div className="grid md:grid-cols-4 gap-4">
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                      <p className="text-sm text-gray-600">Rating</p>
+                      <div className="flex items-center gap-1 mt-1">
+                        <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                        <span className="font-semibold text-gray-900">
+                          {profileDetail?.rating ?? selectedProfessional?.rating ?? "N/A"}
+                        </span>
                       </div>
-                      <Badge
-                        className={`flex-shrink-0 ${
-                          service.status === 'approved'
-                            ? 'bg-green-100 text-green-700'
-                            : service.status === 'pending'
-                            ? 'bg-yellow-100 text-yellow-700'
-                            : 'bg-red-100 text-red-700'
-                        }`}
-                      >
-                        {service.status === 'approved' && <CheckCircle className="w-3 h-3 mr-1" />}
-                        {service.status === 'pending' && <Clock className="w-3 h-3 mr-1" />}
-                        {service.status === 'rejected' && <XCircle className="w-3 h-3 mr-1" />}
-                        {service.status.charAt(0).toUpperCase() + service.status.slice(1)}
-                      </Badge>
                     </div>
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                      <p className="text-sm text-gray-600">Total Bookings</p>
+                      <p className="font-semibold text-gray-900 mt-1">{profileDetail ? "—" : (selectedProfessional?.totalBookings ?? "—")}</p>
+                    </div>
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                      <p className="text-sm text-gray-600">Completion Rate</p>
+                      <p className="font-semibold text-gray-900 mt-1">
+                        {profileDetail ? "—" : (selectedProfessional?.completionRate ? `${selectedProfessional.completionRate}%` : "N/A")}
+                      </p>
+                    </div>
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                      <p className="text-sm text-gray-600">Response Time</p>
+                      <p className="font-semibold text-gray-900 mt-1">{profileDetail?.response_time ?? selectedProfessional?.responseTime ?? "N/A"}</p>
+                    </div>
+                  </div>
+                </div>
 
-                    {/* Evidence of Competency */}
-                    {service.evidenceFile ? (
-                      <div className="bg-gray-50 rounded-lg p-3 md:p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0">
-                            {service.evidenceType === 'pdf' ? (
-                              <div className="w-12 h-12 md:w-14 md:h-14 bg-red-100 rounded flex items-center justify-center">
-                                <FileText className="w-6 h-6 md:w-7 md:h-7 text-red-600" />
-                              </div>
-                            ) : (
-                              <div className="w-12 h-12 md:w-14 md:h-14 bg-blue-100 rounded flex items-center justify-center">
-                                <FileText className="w-6 h-6 md:w-7 md:h-7 text-blue-600" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 break-all">
-                              {service.evidenceFile}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              {service.evidenceType?.toUpperCase()} Document
-                            </p>
-                            {service.verifiedDate && (
-                              <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-                                <CheckCircle className="w-3 h-3" />
-                                Verified on {service.verifiedDate}
-                              </p>
-                            )}
-                            {service.rejectedDate && service.rejectionReason && (
-                              <p className="text-xs text-red-600 mt-1 flex items-start gap-1">
-                                <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                                <span className="break-words">{service.rejectionReason}</span>
-                              </p>
-                            )}
-                          </div>
-                          <Button variant="ghost" size="sm" className="flex-shrink-0 transition-colors hover:bg-blue-50 hover:text-blue-700">
-                            <Download className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 md:p-4">
-                        <div className="flex items-start gap-2">
-                          <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-yellow-900">Evidence Required</p>
-                            <p className="text-xs text-yellow-700 mt-1">
-                              No competency evidence has been uploaded for this service yet.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                <Separator />
 
-                    {/* Admin Actions - Mobile Optimized */}
-                    <div className="flex flex-col md:flex-row gap-2 pt-2 border-t">
-                      {(profileDetail && typeof service.id === 'number') || (service.status === 'pending' && service.evidenceFile) ? (
-                        <>
-                          {(service.status === 'pending' || service.status === 'rejected') && (
-                            <Button
-                              size="sm"
-                              className="bg-green-600 hover:bg-green-700 h-11 md:h-9"
-                              disabled={serviceUpdatingId === service.id}
-                              onClick={() => handleApproveService(service)}
-                            >
-                              <CheckCircle className="w-4 h-4 mr-2" />
-                              Approve Service
-                            </Button>
+                {/* Evidence Submitted - from API certificates */}
+                {(() => {
+                  const evidenceList = profileDetail?.certificates?.length
+                    ? profileDetail.certificates.map((c) => {
+                      const ev = (c.evidence || "").toLowerCase();
+                      const isPdf = ev.includes(".pdf") || ev.endsWith(".pdf");
+                      const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/i.test(c.evidence || "");
+                      return {
+                        id: String(c.id),
+                        fileName: c.name,
+                        fileType: isPdf ? "pdf" : isImage ? "image" : "document",
+                        uploadDate: "—",
+                        status: c.status === "verified" ? "approved" : c.status === "rejected" ? "rejected" : "pending",
+                        approvedDate: c.status === "verified" ? "—" : null,
+                        evidenceUrl: resolveEvidenceUrl(c.evidence),
+                      };
+                    })
+                    : qualificationsEvidence[selectedProfessional?.id] ?? [];
+                  if (evidenceList.length === 0) return null;
+                  return (
+                    <>
+                      <div>
+                        <div className="mb-3">
+                          <h4 className="text-lg font-medium text-gray-900">Evidence Submitted</h4>
+                          <p className="text-sm text-gray-600 mt-1">Documents uploaded by the professional for verification</p>
+                        </div>
+
+                        {/* Check if all evidence is approved */}
+                        {evidenceList.every((ev: any) =>
+                          (evidenceStatuses[ev.id] || ev.status) === 'approved'
+                        ) && (
+                            <div className="mb-4 flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                              <CheckCircle className="w-5 h-5 text-green-600" />
+                              <span className="text-sm font-medium text-green-900">Professional Verified - All documents approved</span>
+                            </div>
                           )}
-                          {(service.status === 'pending' || service.status === 'approved') && (
+
+                        <div className="space-y-3">
+                          {evidenceList.map((evidence: any) => {
+                            const currentStatus = evidenceStatuses[evidence.id] || evidence.status;
+                            const isApproved = currentStatus === 'approved';
+                            const isPending = currentStatus === 'pending';
+                            const isRejected = currentStatus === 'rejected';
+
+                            return (
+                              <div
+                                key={evidence.id}
+                                className={`p-4 border rounded-lg transition-all ${isApproved ? 'bg-green-50 border-green-200' :
+                                  isRejected ? 'bg-red-50 border-red-200' :
+                                    'bg-white border-gray-200'
+                                  }`}
+                              >
+                                {/* Document Row */}
+                                <div className="flex items-start gap-3 mb-3">
+                                  {/* Thumbnail - show actual image when available, else icon */}
+                                  <div className="flex-shrink-0 w-12 h-12 rounded overflow-hidden bg-gray-100 flex items-center justify-center">
+                                    {evidence.fileType === 'image' && evidence.evidenceUrl ? (
+                                      <img
+                                        src={evidence.evidenceUrl}
+                                        alt={evidence.fileName}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).style.display = 'none';
+                                          const parent = (e.target as HTMLImageElement).parentElement;
+                                          const fallback = parent?.querySelector('.evidence-thumb-fallback');
+                                          if (fallback) (fallback as HTMLElement).classList.remove('hidden');
+                                        }}
+                                      />
+                                    ) : null}
+                                    <div className={`evidence-thumb-fallback ${evidence.fileType === 'image' && evidence.evidenceUrl ? 'hidden' : ''} w-full h-full flex items-center justify-center ${evidence.fileType === 'pdf' ? 'bg-red-100' : 'bg-blue-100'}`}>
+                                      {evidence.fileType === 'pdf' ? (
+                                        <FileText className="w-6 h-6 text-red-600" />
+                                      ) : (
+                                        <Image className="w-6 h-6 text-blue-600" />
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* File Info */}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-medium text-gray-900 break-words">{evidence.fileName}</p>
+                                    {isApproved && evidence.approvedDate && (
+                                      <div className="flex items-center gap-1 mt-1">
+                                        <CheckCircle className="w-3 h-3 text-green-600" />
+                                        <p className="text-xs text-green-600">Approved on {evidence.approvedDate}</p>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Status Badge */}
+                                  <Badge
+                                    className={`flex-shrink-0 ${isApproved ? 'bg-green-100 text-green-700' :
+                                      isPending ? 'bg-yellow-100 text-yellow-700' :
+                                        'bg-red-100 text-red-700'
+                                      }`}
+                                  >
+                                    {isApproved ? 'Verified' : isPending ? 'Not Verified' : 'Rejected'}
+                                  </Badge>
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleViewFile(evidence)}
+                                    className="h-9"
+                                  >
+                                    <Eye className="w-4 h-4 mr-2" />
+                                    View
+                                  </Button>
+                                  {!isApproved && (
+                                    <Button
+                                      size="sm"
+                                      className="bg-green-600 hover:bg-green-700 h-9"
+                                      disabled={certificateUpdatingId === evidence.id}
+                                      onClick={() => handleApproveEvidence(evidence.id, evidence.fileName)}
+                                    >
+                                      <CheckCircle className="w-4 h-4 mr-2" />
+                                      Approve
+                                    </Button>
+                                  )}
+                                  {!isRejected && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="border-red-600 text-red-600 hover:bg-red-50 h-9"
+                                      disabled={certificateUpdatingId === evidence.id}
+                                      onClick={() => handleRejectEvidence(evidence.id, evidence.fileName)}
+                                    >
+                                      <XCircle className="w-4 h-4 mr-2" />
+                                      Reject
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <Separator />
+                    </>
+                  );
+                })()}
+
+                {/* Experience Submitted - from API experiences */}
+                {(() => {
+                  const raw = (profileDetail as unknown as { experiences?: any[]; experience?: any[]; professional_experiences?: any[] } | null);
+                  const source =
+                    raw?.experiences ??
+                    raw?.experience ??
+                    raw?.professional_experiences ??
+                    [];
+                  const experienceList = Array.isArray(source)
+                    ? source.map((exp: any, idx: number) => {
+                      const status = String(exp?.status ?? "pending").toLowerCase();
+                      const uiStatus =
+                        status === "verified" || status === "approved"
+                          ? "approved"
+                          : status === "rejected"
+                            ? "rejected"
+                            : "pending";
+                      return {
+                        id: String(exp?.id ?? `exp-${idx}`),
+                        title: exp?.experience_name || exp?.title || exp?.name || "Experience",
+                        years: exp?.years ?? exp?.year ?? null,
+                        description: exp?.description ?? "",
+                        evidence: exp?.evidence ?? "",
+                        uploadDate: exp?.created_at ? new Date(exp.created_at).toLocaleDateString("en-GB") : "—",
+                        status: uiStatus,
+                        evidenceUrl: resolveEvidenceUrl(exp?.evidence),
+                      };
+                    })
+                    : [];
+                  if (experienceList.length === 0) return null;
+                  return (
+                    <>
+                      <div>
+                        <div className="mb-3">
+                          <h4 className="text-lg font-medium text-gray-900">Experience Submitted</h4>
+                          <p className="text-sm text-gray-600 mt-1">Experience entries uploaded by the professional</p>
+                        </div>
+                        <div className="space-y-3">
+                          {experienceList.map((exp: any) => {
+                            const currentStatus = experienceStatuses[exp.id] || exp.status;
+                            const isApproved = currentStatus === "approved";
+                            const isRejected = currentStatus === "rejected";
+                            const isPending = currentStatus === "pending";
+                            return (
+                              <div
+                                key={exp.id}
+                                className={`p-4 border rounded-lg ${isApproved
+                                  ? "bg-green-50 border-green-200"
+                                  : isRejected
+                                    ? "bg-red-50 border-red-200"
+                                    : "bg-white border-gray-200"
+                                  }`}
+                              >
+                                <div className="flex items-start justify-between gap-3 mb-2">
+                                  <div className="min-w-0">
+                                    <p className="font-medium text-gray-900 break-words">{exp.title}</p>
+                                    {exp.years != null && String(exp.years) !== "" ? (
+                                      <p className="text-xs text-gray-500 mt-1">{exp.years} years</p>
+                                    ) : null}
+                                  </div>
+                                  <Badge
+                                    className={
+                                      isApproved
+                                        ? "bg-green-100 text-green-700"
+                                        : isRejected
+                                          ? "bg-red-100 text-red-700"
+                                          : "bg-yellow-100 text-yellow-700"
+                                    }
+                                  >
+                                    {isApproved ? "Verified" : isRejected ? "Rejected" : "Pending verification"}
+                                  </Badge>
+                                </div>
+                                {exp.description ? (
+                                  <p className="text-sm text-gray-700 break-words mb-3">{exp.description}</p>
+                                ) : null}
+                                <div className="flex flex-wrap gap-2">
+                                  {exp.evidenceUrl && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-9"
+                                      onClick={() =>
+                                        handleViewFile({
+                                          id: exp.id,
+                                          fileName: exp.evidence || exp.title,
+                                          fileType: /\.pdf$/i.test(exp.evidence || "")
+                                            ? "pdf"
+                                            : /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/i.test(exp.evidence || "")
+                                              ? "image"
+                                              : "document",
+                                          uploadDate: exp.uploadDate,
+                                          status: currentStatus,
+                                          evidenceUrl: exp.evidenceUrl,
+                                        })
+                                      }
+                                    >
+                                      <Eye className="w-4 h-4 mr-2" />
+                                      View
+                                    </Button>
+                                  )}
+                                  {!isApproved && (
+                                    <Button
+                                      size="sm"
+                                      className="bg-green-600 hover:bg-green-700 h-9"
+                                      disabled={experienceUpdatingId === exp.id}
+                                      onClick={() => {
+                                        void handleUpdateExperienceStatus(exp.id, exp.title, "verified");
+                                      }}
+                                    >
+                                      <CheckCircle className="w-4 h-4 mr-2" />
+                                      Approve
+                                    </Button>
+                                  )}
+                                  {!isRejected && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="border-red-600 text-red-600 hover:bg-red-50 h-9"
+                                      disabled={experienceUpdatingId === exp.id}
+                                      onClick={() => {
+                                        void handleUpdateExperienceStatus(exp.id, exp.title, "rejected");
+                                      }}
+                                    >
+                                      <XCircle className="w-4 h-4 mr-2" />
+                                      Reject
+                                    </Button>
+                                  )}
+                                  {isPending && !exp.evidenceUrl && (
+                                    <p className="text-xs text-gray-500 flex items-center">No evidence attached</p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <Separator />
+                    </>
+                  );
+                })()}
+
+                {/* Qualifications */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-3">Certificates</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {(profileDetail?.services ?? selectedProfessional?.qualifications ?? []).map((qual: string | { id: number; name: string }, index: number) => (
+                      <Badge key={index} variant="outline" className="bg-blue-50 text-blue-700 h-9 px-3 flex items-center gap-2">
+                        <Award className="w-4 h-4" />
+                        {typeof qual === "string" ? qual : qual.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Account Details */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-3">Account Details</h4>
+                  <div className="grid md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-gray-600">Join Date</p>
+                      <p className="font-medium text-gray-900 mt-1">{profileDetail ? formatJoinDate(profileDetail.created_at) : selectedProfessional?.joinDate}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Total Reviews</p>
+                      <p className="font-medium text-gray-900 mt-1">{profileDetail?.review ?? selectedProfessional?.reviewCount ?? "—"}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Registered Services Section */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-4">Registered Services</h4>
+                  <div className="space-y-4">
+                    {(profileDetail?.services?.length
+                      ? profileDetail.services.map((s) => ({
+                        id: s.id,
+                        name: s.name,
+                        status: s.status === "ACTIVE" || s.status?.toLowerCase() === "approved" ? "approved" : s.status?.toUpperCase() === "REJECTED" || s.status?.toLowerCase() === "rejected" ? "rejected" : "pending",
+                        uploadDate: null,
+                        evidenceFile: null,
+                        evidenceType: null,
+                        verifiedDate: null,
+                        rejectedDate: null,
+                        rejectionReason: null,
+                      }))
+                      : professionalServices[selectedProfessional?.id as keyof typeof professionalServices] ?? []
+                    ).map((service: any) => (
+                      <div
+                        key={service.id}
+                        className="border rounded-lg p-4 md:p-5 shadow-sm hover:shadow-md transition-shadow duration-200 space-y-4"
+                      >
+                        {/* Service Header - Mobile Optimized */}
+                        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <h5 className="font-semibold text-gray-900 text-base md:text-lg break-words">
+                              {service.name}
+                            </h5>
+                            <p className="text-sm text-gray-500 mt-1">
+                              {service.uploadDate ? `Uploaded: ${service.uploadDate}` : 'Not uploaded yet'}
+                            </p>
+                          </div>
+                          <Badge
+                            className={`flex-shrink-0 ${service.status === 'approved'
+                              ? 'bg-green-100 text-green-700'
+                              : service.status === 'pending'
+                                ? 'bg-yellow-100 text-yellow-700'
+                                : 'bg-red-100 text-red-700'
+                              }`}
+                          >
+                            {service.status === 'approved' && <CheckCircle className="w-3 h-3 mr-1" />}
+                            {service.status === 'pending' && <Clock className="w-3 h-3 mr-1" />}
+                            {service.status === 'rejected' && <XCircle className="w-3 h-3 mr-1" />}
+                            {service.status.charAt(0).toUpperCase() + service.status.slice(1)}
+                          </Badge>
+                        </div>
+
+                        {/* Evidence of Competency */}
+                        {service.evidenceFile ? (
+                          <div className="bg-gray-50 rounded-lg p-3 md:p-4">
+                            <div className="flex items-start gap-3">
+                              <div className="flex-shrink-0">
+                                {service.evidenceType === 'pdf' ? (
+                                  <div className="w-12 h-12 md:w-14 md:h-14 bg-red-100 rounded flex items-center justify-center">
+                                    <FileText className="w-6 h-6 md:w-7 md:h-7 text-red-600" />
+                                  </div>
+                                ) : (
+                                  <div className="w-12 h-12 md:w-14 md:h-14 bg-blue-100 rounded flex items-center justify-center">
+                                    <FileText className="w-6 h-6 md:w-7 md:h-7 text-blue-600" />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 break-all">
+                                  {service.evidenceFile}
+                                </p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {service.evidenceType?.toUpperCase()} Document
+                                </p>
+                                {service.verifiedDate && (
+                                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                                    <CheckCircle className="w-3 h-3" />
+                                    Verified on {service.verifiedDate}
+                                  </p>
+                                )}
+                                {service.rejectedDate && service.rejectionReason && (
+                                  <p className="text-xs text-red-600 mt-1 flex items-start gap-1">
+                                    <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                    <span className="break-words">{service.rejectionReason}</span>
+                                  </p>
+                                )}
+                              </div>
+                              <Button variant="ghost" size="sm" className="flex-shrink-0 transition-colors hover:bg-blue-50 hover:text-blue-700">
+                                <Download className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 md:p-4">
+                            <div className="flex items-start gap-2">
+                              <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-yellow-900">Evidence Required</p>
+                                <p className="text-xs text-yellow-700 mt-1">
+                                  No competency evidence has been uploaded for this service yet.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Admin Actions - Mobile Optimized */}
+                        <div className="flex flex-col md:flex-row gap-2 pt-2 border-t">
+                          {(profileDetail && typeof service.id === 'number') || (service.status === 'pending' && service.evidenceFile) ? (
+                            <>
+                              {(service.status === 'pending' || service.status === 'rejected') && (
+                                <Button
+                                  size="sm"
+                                  className="bg-green-600 hover:bg-green-700 h-11 md:h-9"
+                                  disabled={serviceUpdatingId === service.id}
+                                  onClick={() => handleApproveService(service)}
+                                >
+                                  <CheckCircle className="w-4 h-4 mr-2" />
+                                  Approve Service
+                                </Button>
+                              )}
+                              {(service.status === 'pending' || service.status === 'approved') && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-red-600 text-red-600 hover:bg-red-50 h-11 md:h-9"
+                                  disabled={serviceUpdatingId === service.id}
+                                  onClick={() => {
+                                    setSelectedService(service);
+                                    setServiceRejectModalOpen(true);
+                                  }}
+                                >
+                                  <XCircle className="w-4 h-4 mr-2" />
+                                  Reject
+                                </Button>
+                              )}
+                            </>
+                          ) : null}
+                          {service.status === 'rejected' && (
                             <Button
                               size="sm"
                               variant="outline"
-                              className="border-red-600 text-red-600 hover:bg-red-50 h-11 md:h-9"
-                              disabled={serviceUpdatingId === service.id}
+                              className="border-blue-600 text-blue-600 hover:bg-blue-50 h-11 md:h-9"
                               onClick={() => {
                                 setSelectedService(service);
-                                setServiceRejectModalOpen(true);
+                                setServiceReuploadModalOpen(true);
                               }}
                             >
-                              <XCircle className="w-4 h-4 mr-2" />
-                              Reject
+                              <FileText className="w-4 h-4 mr-2" />
+                              Request Re-upload
                             </Button>
                           )}
-                        </>
-                      ) : null}
-                      {service.status === 'rejected' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="border-blue-600 text-blue-600 hover:bg-blue-50 h-11 md:h-9"
-                          onClick={() => {
-                            setSelectedService(service);
-                            setServiceReuploadModalOpen(true);
-                          }}
-                        >
-                          <FileText className="w-4 h-4 mr-2" />
-                          Request Re-upload
-                        </Button>
-                      )}
-                      {service.status === 'pending' && !service.evidenceFile && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="border-blue-600 text-blue-600 hover:bg-blue-50 h-11 md:h-9"
-                          onClick={() => {
-                            setSelectedService(service);
-                            setServiceReuploadModalOpen(true);
-                          }}
-                        >
-                          <FileText className="w-4 h-4 mr-2" />
-                          Request Evidence Upload
-                        </Button>
-                      )}
-                      {service.status === 'approved' && (
-                        <div className="flex items-center gap-2 text-sm text-gray-600 px-2 py-1">
-                          <CheckCircle className="w-4 h-4 text-green-600" />
-                          <span>Service approved and active</span>
+                          {service.status === 'pending' && !service.evidenceFile && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-blue-600 text-blue-600 hover:bg-blue-50 h-11 md:h-9"
+                              onClick={() => {
+                                setSelectedService(service);
+                                setServiceReuploadModalOpen(true);
+                              }}
+                            >
+                              <FileText className="w-4 h-4 mr-2" />
+                              Request Evidence Upload
+                            </Button>
+                          )}
+                          {service.status === 'approved' && (
+                            <div className="flex items-center gap-2 text-sm text-gray-600 px-2 py-1">
+                              <CheckCircle className="w-4 h-4 text-green-600" />
+                              <span>Service approved and active</span>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
 
-              {((profileDetail?.services?.length ?? 0) === 0 && 
-                (!professionalServices[selectedProfessional?.id as keyof typeof professionalServices] || 
-                professionalServices[selectedProfessional?.id as keyof typeof professionalServices].length === 0)) && (
-                <div className="text-center py-8 text-gray-500">
-                  No services registered yet
+                  {((profileDetail?.services?.length ?? 0) === 0 &&
+                    (!professionalServices[selectedProfessional?.id as keyof typeof professionalServices] ||
+                      professionalServices[selectedProfessional?.id as keyof typeof professionalServices].length === 0)) && (
+                      <div className="text-center py-8 text-gray-500">
+                        No services registered yet
+                      </div>
+                    )}
                 </div>
-              )}
-            </div>
-            </>
+              </>
             )}
           </div>
 
@@ -1701,7 +1910,7 @@ export function AdminProfessionals() {
             >
               Close
             </Button>
-            <Button
+            {/* <Button
               className="bg-blue-600 hover:bg-blue-700"
               onClick={() => {
                 setProfileModalOpen(false);
@@ -1710,7 +1919,7 @@ export function AdminProfessionals() {
             >
               <Edit2 className="w-4 h-4 mr-2" />
               Edit Profile
-            </Button>
+            </Button> */}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1783,7 +1992,7 @@ export function AdminProfessionals() {
       </Dialog>
 
       {/* Service Re-upload Request Modal */}
-      <Dialog open={serviceReuploadModalOpen} onOpenChange={setServiceReuploadModalOpen}>
+      {/* <Dialog open={serviceReuploadModalOpen} onOpenChange={setServiceReuploadModalOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-xl text-[#0A1A2F] flex items-center gap-2">
@@ -1845,35 +2054,38 @@ export function AdminProfessionals() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> */}
 
       {/* File Preview Modal */}
       <Dialog open={filePreviewModalOpen} onOpenChange={setFilePreviewModalOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-2xl text-[#0A1A2F]">Document Preview</DialogTitle>
-            <DialogDescription>
-              {selectedFile?.fileName}
-            </DialogDescription>
           </DialogHeader>
 
           <div className="py-4 flex-1 min-h-0 overflow-auto">
             {selectedFile?.evidenceUrl ? (
-              selectedFile?.fileType === 'pdf' ? (
+              (
+                selectedFile?.fileType === 'pdf' ||
+                (/\.pdf(\?.*)?$/i.test(selectedFile?.evidenceUrl || ""))
+              ) ? (
                 <div className="space-y-4">
                   <div className="bg-gray-100 rounded-lg overflow-hidden min-h-[400px]">
                     <iframe
                       src={`${selectedFile.evidenceUrl}#toolbar=1`}
-                      title={selectedFile.fileName}
+                      title={filePreviewDisplayName(selectedFile.fileName)}
                       className="w-full h-[500px] border-0"
                     />
                   </div>
                 </div>
-              ) : selectedFile?.fileType === 'image' ? (
+              ) : (
+                selectedFile?.fileType === 'image' ||
+                (/\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i.test(selectedFile?.evidenceUrl || ""))
+              ) ? (
                 <div className="bg-gray-100 rounded-lg p-4 min-h-[200px] flex items-center justify-center">
                   <img
                     src={selectedFile.evidenceUrl}
-                    alt={selectedFile.fileName}
+                    alt={filePreviewDisplayName(selectedFile.fileName)}
                     className="max-w-full max-h-[500px] object-contain rounded shadow-lg"
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = 'none';
@@ -1888,7 +2100,7 @@ export function AdminProfessionals() {
               ) : (
                 <div className="bg-gray-100 rounded-lg p-8 text-center min-h-[200px] flex flex-col items-center justify-center">
                   <FileText className="w-24 h-24 text-gray-400 mb-4" />
-                  <p className="text-lg font-medium text-gray-900 mb-2">{selectedFile?.fileName}</p>
+                  <p className="text-lg font-medium text-gray-900 mb-2">{filePreviewDisplayName(selectedFile?.fileName)}</p>
                   <p className="text-sm text-gray-600 mb-4">Preview not available for this file type</p>
                   <Button className="bg-blue-600 text-white transition-colors hover:bg-blue-700 hover:text-white" onClick={handleDownloadEvidence}>
                     <Download className="w-4 h-4 mr-2" />
@@ -1899,7 +2111,7 @@ export function AdminProfessionals() {
             ) : (
               <div className="bg-gray-100 rounded-lg p-8 text-center min-h-[200px] flex flex-col items-center justify-center">
                 <FileText className="w-24 h-24 text-gray-400 mb-4" />
-                <p className="text-lg font-medium text-gray-900 mb-2">{selectedFile?.fileName}</p>
+                <p className="text-lg font-medium text-gray-900 mb-2">{filePreviewDisplayName(selectedFile?.fileName)}</p>
                 <p className="text-sm text-gray-600">File URL not available for preview or download</p>
               </div>
             )}
@@ -1912,16 +2124,11 @@ export function AdminProfessionals() {
                   <p className="font-medium text-gray-900 mt-1">{(selectedFile?.fileType ?? "—").toUpperCase()}</p>
                 </div>
                 <div>
-                  <p className="text-gray-600">Upload Date</p>
-                  <p className="font-medium text-gray-900 mt-1">{selectedFile?.uploadDate ?? "—"}</p>
-                </div>
-                <div>
                   <p className="text-gray-600">Status</p>
-                  <Badge className={`mt-1 ${
-                    selectedFile?.status === 'approved' ? 'bg-green-100 text-green-700' :
+                  <Badge className={`mt-1 ${selectedFile?.status === 'approved' ? 'bg-green-100 text-green-700' :
                     selectedFile?.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                    'bg-red-100 text-red-700'
-                  }`}>
+                      'bg-red-100 text-red-700'
+                    }`}>
                     {selectedFile?.status ?? "—"}
                   </Badge>
                 </div>

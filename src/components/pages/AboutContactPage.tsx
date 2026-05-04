@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
+import { professionalBenefitsJoinTo } from "../../lib/professionalBenefitsNavigation";
 import { AboutContact } from "../AboutContact";
 
 export default function AboutContactPage() {
@@ -16,11 +17,9 @@ export default function AboutContactPage() {
         navigate("/");
       }}
       onNavigateServices={() => navigate("/services")}
-      onNavigateProfessionals={() => navigate("/professional/auth")}
+      onNavigateProfessionals={() => navigate(professionalBenefitsJoinTo())}
       onCustomerLogin={() => navigate("/customer/auth")}
-      onStartBooking={() =>
-        navigate({ pathname: "/", hash: "live-booking" })
-      }
+      onStartBooking={() => navigate("/services")}
     />
   );
 }

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="2.75 1.1 18.5 21.8" role="img" aria-label="Fire Guide">
+  <!-- Map pin (header navy) -->
+  <path
+    fill="#0A1A2F"
+    d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
+  />
+  <!-- White circle in pin head -->
+  <circle cx="12" cy="9" r="3.5" fill="#ffffff" />
+  <!-- Flame (red-600) -->
+  <path
+    fill="#dc2626"
+    d="M12 5.4c-1.15 2.1-1.9 4.3-1 6 .35.65.85 1.2 1 1.35.15-.15.65-.7 1-1.35.9-1.7.15-3.9-1-6z"
+  />
+</svg>

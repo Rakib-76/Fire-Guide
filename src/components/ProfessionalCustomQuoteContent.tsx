@@ -1,5 +1,5 @@
 import React, { useState, useEffect, type CSSProperties } from "react";
-import { Search, Loader2, FileText, MoreVertical, User, Mail, Phone, Calendar, Building2, Eye } from "lucide-react";
+import { Search, Loader2, FileText, MoreVertical, User, Mail, Phone, Calendar, Eye } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -20,8 +20,11 @@ import {
   getProfessionalCustomQuoteRequests,
   ProfessionalQuoteRequestItem,
   ProfessionalCustomQuoteResponse,
+  markQuoteRequestAsCompleted,
 } from "../api/customQuoteRequestsService";
 import { getApiToken } from "../lib/auth";
+import { getCustomQuoteRequestDisplayRows } from "./CustomQuoteRequestDetailsPanel";
+import { toast } from "sonner";
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-GB", {
@@ -33,21 +36,23 @@ function formatDate(dateStr: string) {
   });
 }
 
-function parseRequestData(requestData: string): Record<string, unknown> {
-  try {
-    return typeof requestData === "string" ? JSON.parse(requestData) : requestData || {};
-  } catch {
-    return {};
-  }
+function formatQuotedPrice(value: string | number | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const num = typeof value === "number" ? value : parseFloat(String(value).replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(num) || num < 0) return null;
+  return `£${num.toFixed(2)}`;
 }
 
-function serviceSubline(rd: Record<string, unknown>): string {
-  const parts: string[] = [];
-  if (rd.building_type) parts.push(String(rd.building_type));
-  if (rd.people_count) parts.push(String(rd.people_count));
-  if (rd.floors != null) parts.push(String(rd.floors));
-  if (rd.training_people_count) parts.push(String(rd.training_people_count));
-  return parts.filter(Boolean).join(" • ");
+/** Laravel may send is_paid as bool, 1/0, or "1"/"0"; some rows use payment_status. */
+function isProfessionalQuoteRequestPaid(record: ProfessionalQuoteRequestItem): boolean {
+  const raw = record.is_paid;
+  if (raw === true) return true;
+  if (raw === false || raw === 0 || raw === "0") return false;
+  if (raw === 1 || raw === "1") return true;
+  if (typeof raw === "string" && ["true", "yes", "paid"].includes(raw.toLowerCase())) return true;
+  const ps = (record.payment_status ?? "").toString().trim().toLowerCase();
+  if (ps === "paid" || ps === "completed" || ps === "succeeded" || ps === "success") return true;
+  return false;
 }
 
 export function ProfessionalCustomQuoteContent() {
@@ -57,6 +62,7 @@ export function ProfessionalCustomQuoteContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detailsRecord, setDetailsRecord] = useState<ProfessionalQuoteRequestItem | null>(null);
+  const [markingCompleteId, setMarkingCompleteId] = useState<number | null>(null);
 
   const requests: ProfessionalQuoteRequestItem[] = data?.requests ?? [];
   const professionalName = data?.professional?.full_name ?? "—";
@@ -110,6 +116,8 @@ export function ProfessionalCustomQuoteContent() {
         return { backgroundColor: "#d1fae5", color: "#047857", border: "1px solid #6ee7b7" };
       case "assigned":
         return { backgroundColor: "#ede9fe", color: "#5b21b6", border: "1px solid #c4b5fd" };
+      case "completed":
+        return { backgroundColor: "#dcfce7", color: "#166534", border: "1px solid #86efac" };
       default:
         return { backgroundColor: "#f1f5f9", color: "#334155", border: "1px solid #e2e8f0" };
     }
@@ -117,6 +125,44 @@ export function ProfessionalCustomQuoteContent() {
 
   const formatStatus = (status: string) =>
     status ? status.charAt(0).toUpperCase() + status.slice(1).toLowerCase() : "";
+
+  const handleMarkQuoteCompleted = async (record: ProfessionalQuoteRequestItem) => {
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Please log in again to continue.");
+      return;
+    }
+
+    if ((record.status ?? "").toLowerCase() === "completed") {
+      toast.info("This quote request is already completed.");
+      return;
+    }
+
+    setMarkingCompleteId(record.id);
+    try {
+      await markQuoteRequestAsCompleted(token, record.id);
+      const nextUpdatedAt = new Date().toISOString();
+
+      setData((prev) => {
+        if (!prev?.requests) return prev;
+        return {
+          ...prev,
+          requests: prev.requests.map((r) =>
+            r.id === record.id ? { ...r, status: "completed", updated_at: nextUpdatedAt } : r
+          ),
+        };
+      });
+
+      setDetailsRecord((prev) =>
+        prev && prev.id === record.id ? { ...prev, status: "completed", updated_at: nextUpdatedAt } : prev
+      );
+      toast.success(`Quote #${record.id} marked as completed.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to mark as completed.");
+    } finally {
+      setMarkingCompleteId(null);
+    }
+  };
 
   return (
     <div>
@@ -140,6 +186,7 @@ export function ProfessionalCustomQuoteContent() {
                 <option value="reviewed">Reviewed</option>
                 <option value="quoted">Quoted</option>
                 <option value="assigned">Assigned</option>
+                <option value="completed">Completed</option>
               </select>
             </div>
           </div>
@@ -186,8 +233,6 @@ export function ProfessionalCustomQuoteContent() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
                   {filteredRecords.map((record) => {
-                    const rd = parseRequestData(record.request_data);
-                    const subline = serviceSubline(rd);
                     return (
                       <tr key={record.id} className="hover:bg-gray-50">
                         <td className="p-4">
@@ -203,9 +248,6 @@ export function ProfessionalCustomQuoteContent() {
                           <p className="text-sm text-gray-700">
                             {record.service?.service_name ?? "—"}
                           </p>
-                          {subline && (
-                            <p className="text-xs text-gray-500 mt-0.5">{subline}</p>
-                          )}
                         </td>
                         <td className="p-4">
                           <Badge variant="custom" style={statusStyle(record.status)}>
@@ -317,7 +359,18 @@ export function ProfessionalCustomQuoteContent() {
 
               {/* Related quote request context */}
               <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-4">
-                <p className="font-semibold text-gray-800 mb-3">Related quote request</p>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <p className="font-semibold text-gray-800">Related quote request</p>
+                  {isProfessionalQuoteRequestPaid(detailsRecord) ? (
+                    <Badge className="border border-green-200 bg-green-50 text-green-800 hover:bg-green-50">
+                      Paid
+                    </Badge>
+                  ) : (
+                    <Badge className="border border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-50">
+                      Unpaid
+                    </Badge>
+                  )}
+                </div>
                 <div className="flex flex-wrap items-center gap-2 mb-3">
                   <span className="text-sm text-gray-600">Request #{detailsRecord.id}</span>
                   <Badge variant="custom" style={statusStyle(detailsRecord.status)}>
@@ -338,63 +391,57 @@ export function ProfessionalCustomQuoteContent() {
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Professional</p>
                     <p className="text-gray-700 mt-0.5">{professionalName}</p>
                   </div>
+                  {formatQuotedPrice(detailsRecord.quoted_price) && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Quoted price</p>
+                      <p className="text-gray-900 mt-0.5 font-semibold">
+                        {formatQuotedPrice(detailsRecord.quoted_price)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                {getCustomQuoteRequestDisplayRows(detailsRecord.request_data).length > 0 && (
+                  <div className="mt-4 border-t border-gray-200 pt-4">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Request details</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {getCustomQuoteRequestDisplayRows(detailsRecord.request_data).map((row) => (
+                        <div
+                          key={row.id}
+                          className="rounded-md border border-gray-200 bg-white/80 px-3 py-2.5"
+                        >
+                          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                            {row.label}
+                          </p>
+                          <p className="text-sm text-gray-900 font-medium mt-1.5 leading-snug">{row.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-200 pt-3">
+                  <div className="ml-auto">
+                    {isProfessionalQuoteRequestPaid(detailsRecord) &&
+                      (detailsRecord.status ?? "").toLowerCase() !== "completed" && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-red-600 hover:bg-red-700 text-white"
+                        disabled={markingCompleteId === detailsRecord.id}
+                        onClick={() => handleMarkQuoteCompleted(detailsRecord)}
+                      >
+                        {markingCompleteId === detailsRecord.id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                            Marking...
+                          </>
+                        ) : (
+                          "Mark as Complete"
+                        )}
+                      </Button>
+                      )}
+                  </div>
                 </div>
               </div>
-
-              {(() => {
-                const rd = parseRequestData(detailsRecord.request_data);
-                if (Object.keys(rd).length > 0) {
-                  return (
-                    <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
-                          <Building2 className="w-4 h-4 text-purple-600" />
-                        </div>
-                        <p className="font-semibold text-gray-800">Request Details</p>
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {rd.building_type != null && (
-                          <div>
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Building</p>
-                            <p className="text-gray-900 font-medium mt-0.5">{String(rd.building_type)}</p>
-                          </div>
-                        )}
-                        {rd.people_count != null && (
-                          <div>
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">People</p>
-                            <p className="text-gray-900 font-medium mt-0.5">{String(rd.people_count)}</p>
-                          </div>
-                        )}
-                        {rd.floors != null && (
-                          <div>
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Floors</p>
-                            <p className="text-gray-900 font-medium mt-0.5">{String(rd.floors)}</p>
-                          </div>
-                        )}
-                        {rd.assessment_type != null && (
-                          <div>
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Assessment</p>
-                            <p className="text-gray-900 font-medium mt-0.5">{String(rd.assessment_type)}</p>
-                          </div>
-                        )}
-                        {rd.training_people_count != null && (
-                          <div>
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Training</p>
-                            <p className="text-gray-900 font-medium mt-0.5">{String(rd.training_people_count)}</p>
-                          </div>
-                        )}
-                      </div>
-                      {rd.notes != null && String(rd.notes).trim() !== "" ? (
-                        <div className="mt-4 pt-4 border-t border-gray-200">
-                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Notes</p>
-                          <p className="text-gray-700">{String(rd.notes)}</p>
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                }
-                return null;
-              })()}
             </div>
           )}
         </DialogContent>

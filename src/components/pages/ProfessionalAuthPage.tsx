@@ -5,6 +5,7 @@ import { useApp } from "../../contexts/AppContext";
 import { ProfessionalAuth } from "../ProfessionalAuth";
 import { setUserInfo, getUserRole } from "../../lib/auth";
 import { setCompleteProfileReminderFlag } from "../../lib/professionalProfileReminder";
+import { professionalBenefitsJoinTo } from "../../lib/professionalBenefitsNavigation";
 
 export default function ProfessionalAuthPage() {
   const navigate = useNavigate();
@@ -76,7 +77,7 @@ export default function ProfessionalAuthPage() {
       }}
       onNavigateProfessionals={() => {
         startTransition(() => {
-          navigate("/professional/benefits");
+          navigate(professionalBenefitsJoinTo());
         });
       }}
       onNavigateAbout={() => {

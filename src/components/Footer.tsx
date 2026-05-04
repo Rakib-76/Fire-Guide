@@ -1,5 +1,39 @@
-import { Flame, Facebook, Twitter, Linkedin, Instagram, Mail, Phone, MapPin } from "lucide-react";
+import { Facebook, Twitter, Linkedin, Instagram, Mail, Phone, MapPin } from "lucide-react";
+import { Link } from "react-router-dom";
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
+
+const FOOTER_SERVICES: { label: string; description: string }[] = [
+  {
+    label: "Fire Risk Assessment",
+    description:
+      "A suitable and sufficient assessment of fire hazards and fire safety measures within your premises, tailored to its use and occupancy.",
+  },
+  {
+    label: "Fire Alarm Service",
+    description:
+      "Installation, inspection, testing, and maintenance of fire alarm systems to confirm they operate as intended and provide effective warning.",
+  },
+  {
+    label: "Fire Extinguisher Service",
+    description:
+      "Supply, inspection, and maintenance of fire extinguishers appropriate to the risks and layout of your premises.",
+  },
+  {
+    label: "Emergency Lighting Test",
+    description:
+      "Inspection and testing of emergency lighting systems to support visibility of escape routes in the event of power failure.",
+  },
+  {
+    label: "Fire Marshal / Warden Training",
+    description:
+      "Training for designated fire marshals and wardens on evacuation procedures, fire prevention, and emergency response.",
+  },
+  {
+    label: "Fire Safety Consultation",
+    description:
+      "Professional fire safety advice to help dutyholders understand requirements, review concerns, and plan appropriate fire safety measures for their premises.",
+  },
+];
 
 interface FooterProps {
   onAdminLogin?: () => void;
@@ -36,15 +70,21 @@ export function Footer({ onAdminLogin }: FooterProps) {
             </div>
           </div>
           
-          {/* Services */}
+          {/* Services — aligned with service selection page */}
           <div>
             <h4 className="mb-4">Services</h4>
             <ul className="space-y-2 text-sm text-gray-400">
-              <li><a href="#" className="hover:text-red-500 transition-colors">Fire Risk Assessment</a></li>
-              <li><a href="#" className="hover:text-red-500 transition-colors">Fire Alarm Service</a></li>
-              <li><a href="#" className="hover:text-red-500 transition-colors">Extinguisher Service</a></li>
-              <li><a href="#" className="hover:text-red-500 transition-colors">Fire Door Inspection</a></li>
-              <li><a href="#" className="hover:text-red-500 transition-colors">Fire Marshal Training</a></li>
+              {FOOTER_SERVICES.map(({ label, description }) => (
+                <li key={label}>
+                  <Link
+                    to="/services"
+                    title={description}
+                    className="hover:text-red-500 transition-colors"
+                  >
+                    {label}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
           
@@ -52,11 +92,15 @@ export function Footer({ onAdminLogin }: FooterProps) {
           <div>
             <h4 className="mb-4">Company</h4>
             <ul className="space-y-2 text-sm text-gray-400">
-              <li><a href="#about" className="hover:text-red-500 transition-colors">About Us</a></li>
+              <li>
+                <Link to="/about" className="hover:text-red-500 transition-colors">
+                  About Us
+                </Link>
+              </li>
               <li><a href="#how-it-works" className="hover:text-red-500 transition-colors">How It Works</a></li>
               <li><a href="#professionals" className="hover:text-red-500 transition-colors">For Professionals</a></li>
-              <li><a href="#" className="hover:text-red-500 transition-colors">Careers</a></li>
-              <li><a href="#" className="hover:text-red-500 transition-colors">Blog</a></li>
+              {/* <li><a href="#" className="hover:text-red-500 transition-colors">Careers</a></li> */}
+              {/* <li><a href="#" className="hover:text-red-500 transition-colors">Blog</a></li> */}
             </ul>
           </div>
           

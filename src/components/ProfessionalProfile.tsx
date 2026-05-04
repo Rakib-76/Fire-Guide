@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { Flame, ChevronRight, Star, Award, Shield, Clock, MapPin, CheckCircle2, Phone, Mail, Calendar, ArrowLeft, Briefcase, Loader2 } from "lucide-react";
+import { Flame, ChevronRight, Star, Award, Shield, Clock, MapPin, CheckCircle2, Phone, Mail, Calendar, ArrowLeft, Briefcase, Loader2, Send } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Textarea } from "./ui/textarea";
 import { Badge } from "./ui/badge";
 import { Separator } from "./ui/separator";
 import { fetchProfessionalProfileCertifications, ProfessionalProfileCertificationItem } from "../api/qualificationsService";
@@ -11,18 +14,30 @@ import { fetchProfessionalProfileInsurance, ProfessionalProfileInsuranceData } f
 import { fetchProfessionalProfileExperiences, ProfessionalProfileExperienceData } from "../api/experiencesService";
 import { fetchProfessionalProfileReviews, ProfessionalProfileReviewItem } from "../api/reviewsService";
 import { fetchProfessionalProfileAvailableDates, ProfessionalProfileAvailableDateItem } from "../api/availableDatesService";
-import { fetchProfessionalProfileDetails, fetchProfessionalProfilePricing, ProfessionalProfileDetailsData, ProfessionalProfilePricingItem } from "../api/professionalsService";
+import {
+  fetchProfessionalProfileDetails,
+  fetchProfessionalProfilePricing,
+  sendProfessionalMail,
+  type ProfessionalProfileDetailsData,
+  type ProfessionalProfilePricingItem,
+} from "../api/professionalsService";
+import {
+  resolveProfessionalDisplayPhone,
+  copyTextToClipboard,
+  openTelDialer,
+} from "../lib/phoneContact";
 import { toast } from "sonner";
 
 interface ProfessionalProfileProps {
   professional: any;
   /** Professional ID from URL (from Professional List API, passed when View Profile is clicked) */
   professionalIdFromUrl?: number;
-  onBook: () => void;
+  /** Optional; sticky “Book & Pay” bar was removed — kept for callers that still pass it */
+  onBook?: () => void;
   onBack: () => void;
 }
 
-export function ProfessionalProfile({ professional, professionalIdFromUrl, onBook, onBack }: ProfessionalProfileProps) {
+export function ProfessionalProfile({ professional, professionalIdFromUrl, onBack }: ProfessionalProfileProps) {
   const { professionalId: urlProfessionalId } = useParams<{ professionalId?: string }>();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [profileDetails, setProfileDetails] = useState<ProfessionalProfileDetailsData | null>(null);
@@ -43,6 +58,14 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
   const [isLoadingPricing, setIsLoadingPricing] = useState(true);
   const [persistedProfessional, setPersistedProfessional] = useState<any>(null);
   const [pricingPageIndex, setPricingPageIndex] = useState(0);
+  const [isCallNowBusy, setIsCallNowBusy] = useState(false);
+  const [sendMessageOpen, setSendMessageOpen] = useState(false);
+  const [msgFullName, setMsgFullName] = useState("");
+  const [msgEmail, setMsgEmail] = useState("");
+  const [msgPhone, setMsgPhone] = useState("");
+  const [msgSubject, setMsgSubject] = useState("");
+  const [msgBody, setMsgBody] = useState("");
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
 
   // Restore professional data from sessionStorage on mount if not provided in props
   useEffect(() => {
@@ -237,8 +260,8 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
     const loadAvailableDates = async () => {
       try {
         setIsLoadingAvailableDates(true);
-        const data = await fetchProfessionalProfileAvailableDates(professionalIdNum);
-        if (!cancelled) setAvailableDatesData(data ?? []);
+        const { dates } = await fetchProfessionalProfileAvailableDates(professionalIdNum);
+        if (!cancelled) setAvailableDatesData(dates ?? []);
       } catch (error: any) {
         if (!cancelled) {
           setAvailableDatesData([]);
@@ -310,6 +333,74 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
   const resolvedProfessionalData = getResolvedProfessional();
   const professionalToUse = resolvedProfessionalData || professional || defaultData;
 
+  const professionalRecipientEmail = useMemo(() => {
+    const fromDetails =
+      typeof profileDetails?.email === "string" ? profileDetails.email.trim() : "";
+    if (fromDetails.length > 0) return fromDetails;
+    const src = professionalToUse as { email?: string | null };
+    const e = typeof src.email === "string" ? src.email.trim() : "";
+    return e.length > 0 ? e : "";
+  }, [professionalToUse, profileDetails]);
+
+  const resetSendMessageForm = useCallback(() => {
+    setMsgFullName("");
+    setMsgEmail("");
+    setMsgPhone("");
+    setMsgSubject("");
+    setMsgBody("");
+    setIsSendingMessage(false);
+  }, []);
+
+  const onSendMessageModalOpenChange = useCallback(
+    (open: boolean) => {
+      setSendMessageOpen(open);
+      if (!open) resetSendMessageForm();
+    },
+    [resetSendMessageForm]
+  );
+
+  const contactPhoneForCall = useMemo(
+    () =>
+      resolveProfessionalDisplayPhone(
+        profileDetails as Record<string, unknown> | null,
+        (resolvedProfessionalData ||
+          (persistedProfessional?.name ? persistedProfessional : null) ||
+          professional ||
+          null) as Record<string, unknown> | null
+      ),
+    [profileDetails, resolvedProfessionalData, persistedProfessional, professional]
+  );
+
+  const handleCallNow = useCallback(async () => {
+    if (isCallNowBusy) return;
+
+    if (isLoadingProfileDetails) {
+      toast.message("Please wait", {
+        description: "Loading contact details…",
+      });
+      return;
+    }
+
+    const phone = contactPhoneForCall;
+    if (!phone) {
+      toast.error("No phone number is available for this professional.");
+      return;
+    }
+
+    setIsCallNowBusy(true);
+    try {
+      const copied = await copyTextToClipboard(phone);
+      if (copied) {
+        toast.success("Number copied");
+      } else {
+        toast.error("Could not copy the number. Opening your dialer so you can call manually.");
+      }
+      openTelDialer(phone);
+    } finally {
+      setIsCallNowBusy(false);
+    }
+  }, [contactPhoneForCall, isCallNowBusy, isLoadingProfileDetails]);
+
   // Merge professional data: API details (from View Profile) override list/defaults
   const prof = {
     ...defaultData,
@@ -338,6 +429,70 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
     insurance: defaultData.insurance,
     experience: defaultData.experience
   };
+
+  const handleSendMessageSubmit = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const name = msgFullName.trim();
+      const email = msgEmail.trim();
+      const subject = msgSubject.trim();
+      const messageText = msgBody.trim();
+      const phone = msgPhone.trim();
+
+      if (!name) {
+        toast.error("Please enter your full name.");
+        return;
+      }
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        toast.error("Please enter a valid email address.");
+        return;
+      }
+      if (!subject) {
+        toast.error("Please enter a subject.");
+        return;
+      }
+      if (!messageText) {
+        toast.error("Please enter a message.");
+        return;
+      }
+
+      if (!professionalRecipientEmail) {
+        toast.error(
+          "We could not find this professional's email. Please use Call Now or Book & Pay."
+        );
+        return;
+      }
+
+      setIsSendingMessage(true);
+      try {
+        const successText = await sendProfessionalMail({
+          full_name: name,
+          pro_email: professionalRecipientEmail,
+          email,
+          phone: phone || "",
+          subject,
+          message: messageText,
+        });
+        toast.success(successText);
+        setSendMessageOpen(false);
+        resetSendMessageForm();
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Failed to send message. Please try again.";
+        toast.error(message);
+      } finally {
+        setIsSendingMessage(false);
+      }
+    },
+    [
+      msgFullName,
+      msgEmail,
+      msgPhone,
+      msgSubject,
+      msgBody,
+      professionalRecipientEmail,
+      resetSendMessageForm,
+    ]
+  );
 
   // Map API reviews to display format
   const formatReviewDate = (dateStr: string): string => {
@@ -379,9 +534,6 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
       })),
     [profilePricing]
   );
-  const minPriceFromApi = profilePricing.length > 0
-    ? Math.min(...profilePricing.map((item) => Number(item.price) || 0))
-    : null;
 
   const PRICING_PAGE_SIZE = 3;
   const pricingPageCount = Math.max(1, Math.ceil(pricing.length / PRICING_PAGE_SIZE));
@@ -435,7 +587,7 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+    <div className="min-h-screen bg-gray-50 pb-8 md:pb-12">
       {/* Header */}
       <header className="bg-[#0A1A2F] text-white py-4 px-4 md:px-6">
         <div className="max-w-7xl mx-auto flex items-center gap-2">
@@ -589,7 +741,7 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
                         View More
                       </Button>
                       <Dialog open={certificationsModalOpen} onOpenChange={setCertificationsModalOpen}>
-                        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0" style={{ marginBottom: '150px' }}>
+                        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0">
                           <DialogHeader className="flex-shrink-0 border-b pl-6 pr-14 py-4">
                             <DialogTitle className="text-[#0A1A2F]">
                               All Qualifications & Certifications ({profileCertifications.length})
@@ -766,7 +918,7 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
                       </Button>
                       {/* All Reviews Modal — scrollable */}
                       <Dialog open={reviewsModalOpen} onOpenChange={setReviewsModalOpen}>
-                        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0" style={{marginBottom: '150px'}}>
+                        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0">
                           <DialogHeader className="flex-shrink-0 border-b pl-6 pr-14 py-4">
                             <DialogTitle className="text-[#0A1A2F]">All Reviews ({reviewCount})</DialogTitle>
                           </DialogHeader>
@@ -928,12 +1080,29 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      <Button variant="outline" className="w-full justify-start">
-                        <Phone className="w-4 h-4 mr-2" />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full justify-start"
+                        disabled={isCallNowBusy}
+                        aria-busy={isCallNowBusy}
+                        aria-label="Call now: copy number to clipboard and open phone dialer"
+                        onClick={() => void handleCallNow()}
+                      >
+                        {isCallNowBusy ? (
+                          <Loader2 className="w-4 h-4 mr-2 shrink-0 animate-spin" aria-hidden />
+                        ) : (
+                          <Phone className="w-4 h-4 mr-2 shrink-0" aria-hidden />
+                        )}
                         Call Now
                       </Button>
-                      <Button variant="outline" className="w-full justify-start">
-                        <Mail className="w-4 h-4 mr-2" />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full justify-start"
+                        onClick={() => setSendMessageOpen(true)}
+                      >
+                        <Mail className="w-4 h-4 mr-2 shrink-0" aria-hidden />
                         Send Message
                       </Button>
                     </div>
@@ -945,22 +1114,121 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
         </div>
       </main>
 
-      {/* Sticky Bottom Button */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50">
-        <div className="max-w-6xl mx-auto px-4 md:px-6 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="hidden md:block">
-              <p className="text-sm text-gray-500">Fire Risk Assessment</p>
-              <p className="font-semibold text-gray-900">
-                {minPriceFromApi != null ? `From £${minPriceFromApi.toFixed(2)}` : "Price on request"}
+      <Dialog open={sendMessageOpen} onOpenChange={onSendMessageModalOpenChange}>
+        <DialogContent
+          className="max-w-md w-full max-h-[min(88vh,calc(100vh-7rem))] overflow-hidden p-0 flex flex-col rounded-2xl"
+        >
+          <form onSubmit={(e) => void handleSendMessageSubmit(e)} className="flex min-h-0 w-full flex-col">
+            <DialogHeader className="flex-shrink-0 border-b border-gray-100 px-5 pt-5 pb-4 pr-12 sm:px-6 sm:pt-6">
+              <DialogTitle className="text-lg sm:text-xl font-bold text-[#0A1A2F] tracking-tight leading-tight">
+                Send Us a Message
+              </DialogTitle>
+              <DialogDescription className="text-sm leading-relaxed text-gray-600 mt-2 max-w-prose">
+                Fill out the form below and we&apos;ll get back to you as soon as possible.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4 sm:px-6 space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5 sm:col-span-1">
+                  <Label htmlFor="contact-msg-name" className="text-sm font-semibold text-gray-900">
+                    Full Name <span className="text-red-600">*</span>
+                  </Label>
+                  <Input
+                    id="contact-msg-name"
+                    name="fullName"
+                    autoComplete="name"
+                    placeholder="John Smith"
+                    value={msgFullName}
+                    onChange={(e) => setMsgFullName(e.target.value)}
+                    className="h-11 border-gray-300 text-base"
+                    disabled={isSendingMessage}
+                  />
+                </div>
+                <div className="space-y-1.5 sm:col-span-1">
+                  <Label htmlFor="contact-msg-email" className="text-sm font-semibold text-gray-900">
+                    Email Address <span className="text-red-600">*</span>
+                  </Label>
+                  <Input
+                    id="contact-msg-email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="john@example.com"
+                    value={msgEmail}
+                    onChange={(e) => setMsgEmail(e.target.value)}
+                    className="h-11 border-gray-300 text-base"
+                    disabled={isSendingMessage}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="contact-msg-phone" className="text-sm font-semibold text-gray-900">
+                  Phone Number <span className="font-normal text-gray-500">(optional)</span>
+                </Label>
+                <Input
+                  id="contact-msg-phone"
+                  name="phone"
+                  type="tel"
+                  autoComplete="tel"
+                  placeholder="07123 456789"
+                  value={msgPhone}
+                  onChange={(e) => setMsgPhone(e.target.value)}
+                  className="h-11 border-gray-300 text-base"
+                  disabled={isSendingMessage}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="contact-msg-subject" className="text-sm font-semibold text-gray-900">
+                  Subject <span className="text-red-600">*</span>
+                </Label>
+                <Input
+                  id="contact-msg-subject"
+                  name="subject"
+                  placeholder="How can we help?"
+                  value={msgSubject}
+                  onChange={(e) => setMsgSubject(e.target.value)}
+                  className="h-11 border-gray-300 text-base"
+                  disabled={isSendingMessage}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="contact-msg-body" className="text-sm font-semibold text-gray-900">
+                  Message <span className="text-red-600">*</span>
+                </Label>
+                <Textarea
+                  id="contact-msg-body"
+                  name="message"
+                  placeholder="Tell us more about your inquiry..."
+                  rows={7}
+                  value={msgBody}
+                  onChange={(e) => setMsgBody(e.target.value)}
+                  className="min-h-[11rem] sm:min-h-[12.5rem] max-h-[min(40vh,18rem)] border-gray-300 resize-y text-base leading-relaxed"
+                  disabled={isSendingMessage}
+                />
+              </div>
+            </div>
+
+            <div className="flex-shrink-0 border-t border-gray-100 bg-gray-50/80 px-5 py-4 sm:px-6 space-y-2.5">
+              <Button
+                type="submit"
+                disabled={isSendingMessage}
+                className="w-full h-11 bg-red-600 hover:bg-red-700 text-white font-semibold text-base gap-2 shadow-sm"
+              >
+                {isSendingMessage ? (
+                  <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
+                ) : (
+                  <Send className="h-5 w-5 shrink-0" aria-hidden />
+                )}
+                Send Message
+              </Button>
+              <p className="text-center text-xs text-gray-500 leading-relaxed">
+                We typically respond within 24 hours during business days
               </p>
             </div>
-            <Button className="bg-red-600 hover:bg-red-700 px-12 py-6 text-lg w-full md:w-auto" onClick={onBook}>
-              Book & Pay
-            </Button>
-          </div>
-        </div>
-      </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

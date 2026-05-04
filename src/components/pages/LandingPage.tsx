@@ -2,6 +2,7 @@ import React, { startTransition, useEffect, useLayoutEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { isLiveBookingHash } from "../../lib/liveBookingNav";
+import { professionalBenefitsJoinTo } from "../../lib/professionalBenefitsNavigation";
 import { LandingPage as LandingPageComponent } from "../LandingPage";
 
 export default function LandingPage() {
@@ -54,7 +55,7 @@ export default function LandingPage() {
       }}
       onProfessionalLogin={() => {
         startTransition(() => {
-          navigate("/professional/benefits");
+          navigate(professionalBenefitsJoinTo());
         });
       }}
       onAdminLogin={() => {
@@ -78,6 +79,12 @@ export default function LandingPage() {
         startTransition(() => {
           navigate("/about");
         });
+      }}
+      onNavigateAboutPage={() => {
+        startTransition(() => navigate("/about"));
+      }}
+      onNavigateToContactPage={() => {
+        startTransition(() => navigate("/about#contact"));
       }}
       onNavigateToDashboard={() => {
         if (currentUser) {

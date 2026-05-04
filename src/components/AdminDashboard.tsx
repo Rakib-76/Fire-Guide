@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -27,7 +27,15 @@ import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { getApiToken } from "../lib/auth";
-import { getAdminOverviewSummary, AdminOverviewSummaryData, getAdminRecentBookings, AdminRecentBookingItem } from "../api/adminService";
+import { ADMIN_NOTIFICATION_SUMMARY_UPDATED } from "../lib/adminNotificationSummaryEvents";
+import {
+  getAdminOverviewSummary,
+  AdminOverviewSummaryData,
+  getAdminRecentBookings,
+  AdminRecentBookingItem,
+  getAdminNotificationsSummary,
+  fetchAdminNotificationsByPath,
+} from "../api/adminService";
 import { AdminCustomers } from "./AdminCustomers";
 import { AdminProfessionals } from "./AdminProfessionals";
 import { AdminBookings } from "./AdminBookings";
@@ -70,6 +78,50 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [recentBookings, setRecentBookings] = useState<AdminRecentBookingItem[]>([]);
   const [recentBookingsLoading, setRecentBookingsLoading] = useState(false);
+  const [adminUnreadNotificationCount, setAdminUnreadNotificationCount] = useState(0);
+
+  const refreshAdminHeaderUnread = useCallback(async () => {
+    const token = getApiToken();
+    if (!token) {
+      setAdminUnreadNotificationCount(0);
+      return;
+    }
+    try {
+      // Summary `unread` is sometimes missing/0 while `/admin/notifications/unread` still returns rows
+      // (same fallback as AdminNotifications `unreadTabCount` vs list filter).
+      const [cards, unreadRows] = await Promise.all([
+        getAdminNotificationsSummary({ api_token: token }),
+        fetchAdminNotificationsByPath(token, "/admin/notifications/unread").catch(() => []),
+      ]);
+      const fromSummary = cards?.unread ?? 0;
+      const fromList = Array.isArray(unreadRows)
+        ? unreadRows.filter((n) => n.is_read === 0).length
+        : 0;
+      setAdminUnreadNotificationCount(Math.max(fromSummary, fromList));
+    } catch {
+      setAdminUnreadNotificationCount(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshAdminHeaderUnread();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refreshAdminHeaderUnread();
+    }, 90_000);
+    const onFocus = () => void refreshAdminHeaderUnread();
+    window.addEventListener("focus", onFocus);
+    const onSummaryEvent = () => void refreshAdminHeaderUnread();
+    window.addEventListener(ADMIN_NOTIFICATION_SUMMARY_UPDATED, onSummaryEvent);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener(ADMIN_NOTIFICATION_SUMMARY_UPDATED, onSummaryEvent);
+    };
+  }, [refreshAdminHeaderUnread]);
+
+  useEffect(() => {
+    if (currentView === "notifications") void refreshAdminHeaderUnread();
+  }, [currentView, refreshAdminHeaderUnread]);
 
   // Fetch admin overview summary when dashboard view is shown
   useEffect(() => {
@@ -391,11 +443,25 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
           {/* Admin Actions - Right */}
           <div className="flex items-center gap-3">
             <button
-              className="relative text-white hover:text-red-500 transition-colors"
-              onClick={() => handleViewChange("notifications")}
+              type="button"
+              className="relative text-white hover:text-red-500 transition-colors overflow-visible p-1.5 shrink-0"
+              onClick={() => {
+                void refreshAdminHeaderUnread();
+                handleViewChange("notifications");
+              }}
+              aria-label={`Notifications${adminUnreadNotificationCount > 0 ? `, ${adminUnreadNotificationCount} unread` : ""}`}
             >
-              <Bell className="w-5 h-5" />
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full"></span>
+              <span className="relative inline-flex h-9 w-9 items-center justify-center">
+                <Bell className="h-5 w-5" aria-hidden />
+                {adminUnreadNotificationCount > 0 && (
+                  <span
+                    className="absolute -right-0.5 -top-0.5 z-10 flex h-[1.375rem] min-w-[1.375rem] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold leading-none text-white shadow-sm ring-2 ring-[#1a2942] tabular-nums sm:h-6 sm:min-w-6 sm:text-xs"
+                    aria-hidden
+                  >
+                    {adminUnreadNotificationCount > 99 ? "99+" : adminUnreadNotificationCount}
+                  </span>
+                )}
+              </span>
             </button>
             <button
               className="text-white hover:text-red-500 transition-colors"
@@ -448,8 +514,13 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         : "text-gray-700 hover:bg-gray-50"
                     }`}
                   >
-                    <Icon className="w-4 h-4" />
-                    <span>{item.label}</span>
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="flex-1 text-left">{item.label}</span>
+                    {item.id === "notifications" && adminUnreadNotificationCount > 0 && (
+                      <Badge className="ml-auto shrink-0 bg-red-600 text-white min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full text-xs tabular-nums border-0">
+                        {adminUnreadNotificationCount > 99 ? "99+" : adminUnreadNotificationCount}
+                      </Badge>
+                    )}
                   </button>
                 );
               })}

@@ -24,6 +24,14 @@ export interface CustomQuoteRequestData {
   emergency_light?: number;
   /** Fire Marshal Training custom: number of people for training */
   people?: number;
+  /** Preferred appointment / assessment date (final step) */
+  preferred_date?: string;
+  /** Human-readable questionnaire summary (equipment, access, etc.) */
+  access_note?: string;
+  duration_id?: number;
+  fra_assessment_type?: string;
+  consultation_mode?: string;
+  consultation_hours?: string;
 }
 
 export interface CustomQuoteStoreResponse {
@@ -55,8 +63,23 @@ export interface MyQuoteRequestItem {
   status: string;
   created_at: string;
   updated_at: string;
+  /** From POST /custom-quote-requests/my-requests when assigned (e.g. "420.00"). */
+  quoted_price?: string | number | null;
+  professional_booking_id?: number | string | null;
+  booking_id?: number | string | null;
+  professional_booking?: { id?: number } | null;
+  is_paid?: boolean | number | string | null;
+  payment_status?: string | null;
   service?: { id: number; service_name: string };
-  professional?: { id: number; name: string; email?: string } | null;
+  professional?: {
+    id: number;
+    name?: string;
+    full_name?: string;
+    email?: string;
+    phone?: string;
+    mobile?: string;
+    phone_number?: string;
+  } | null;
 }
 
 export interface MyQuoteRequestsResponse {
@@ -162,10 +185,14 @@ export interface ProfessionalQuoteRequestItem {
   customer_name: string;
   customer_email: string;
   customer_phone: string;
-  request_data: string;
+  request_data: string | Record<string, unknown>;
   status: string;
   created_at: string;
   updated_at: string;
+  quoted_price?: string | number | null;
+  /** From POST /custom-quote-requests/professional-requests — drives Paid / Unpaid in details modal. */
+  is_paid?: boolean | number | string | null;
+  payment_status?: string | null;
   service?: { id: number; service_name: string };
   user?: { id: number; full_name: string; email: string } | null;
 }
@@ -228,7 +255,7 @@ export const getMyQuoteRequests = async (apiToken: string): Promise<MyQuoteReque
  * Create a custom quote request
  * POST https://fireguide.attoexasolutions.com/api/custom-quote-requests/store
  * Body: { api_token?, service_id, customer_name, customer_email, customer_phone, request_data }
- * request_data: { building_type, people_count, floors } only.
+ * request_data: core pricing keys plus optional questionnaire fields (preferred_date, access_note, …).
  */
 export const storeCustomQuoteRequest = async (
   apiToken: string | null,
@@ -254,6 +281,12 @@ export const storeCustomQuoteRequest = async (
         ...(requestData.extinguisher != null && { extinguisher: requestData.extinguisher }),
         ...(requestData.emergency_light != null && { emergency_light: requestData.emergency_light }),
         ...(requestData.people != null && { people: requestData.people }),
+        ...(requestData.preferred_date != null && requestData.preferred_date !== "" && { preferred_date: requestData.preferred_date }),
+        ...(requestData.access_note != null && requestData.access_note !== "" && { access_note: requestData.access_note }),
+        ...(requestData.duration_id != null && !Number.isNaN(requestData.duration_id) && { duration_id: requestData.duration_id }),
+        ...(requestData.fra_assessment_type != null && requestData.fra_assessment_type !== "" && { fra_assessment_type: requestData.fra_assessment_type }),
+        ...(requestData.consultation_mode != null && requestData.consultation_mode !== "" && { consultation_mode: requestData.consultation_mode }),
+        ...(requestData.consultation_hours != null && requestData.consultation_hours !== "" && { consultation_hours: requestData.consultation_hours }),
       },
     };
     if (apiToken) {
@@ -301,6 +334,34 @@ export const updateQuoteRequestStatus = async (
     if (axios.isAxiosError(err)) {
       const msg = err.response?.data?.message ?? err.response?.data?.error ?? err.message;
       throw new Error(typeof msg === 'string' ? msg : 'Failed to update status');
+    }
+    throw err;
+  }
+};
+
+/**
+ * Professional marks own assigned custom quote as completed
+ * POST /custom-quote-requests/mark-as-completed
+ * Body: { api_token, id }
+ */
+export const markQuoteRequestAsCompleted = async (
+  apiToken: string,
+  quoteRequestId: number
+): Promise<AdminQuoteRequestSingleResponse> => {
+  try {
+    const response = await apiClient.post<AdminQuoteRequestSingleResponse>(
+      '/custom-quote-requests/mark-as-completed',
+      { api_token: apiToken, id: quoteRequestId }
+    );
+    const data = response.data;
+    if (!data?.status) {
+      throw new Error((data as { message?: string })?.message || 'Mark completed failed');
+    }
+    return data;
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) {
+      const msg = err.response?.data?.message ?? err.response?.data?.error ?? err.message;
+      throw new Error(typeof msg === 'string' ? msg : 'Failed to mark quote as completed');
     }
     throw err;
   }

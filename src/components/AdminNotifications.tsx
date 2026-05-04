@@ -1,9 +1,18 @@
-import React, { useState, useEffect } from "react";
-import { Bell, Users, DollarSign, AlertCircle, CheckCircle, Info, Trash2, Send, X } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { Bell, Users, DollarSign, AlertCircle, CheckCircle, Info, Trash2, Send, Loader2 } from "lucide-react";
 import { getApiToken } from "../lib/auth";
-import { getAdminNotificationDetails, AdminNotificationItem } from "../api/adminService";
+import {
+  getAdminNotificationsSummary,
+  fetchAdminNotificationsByPath,
+  adminMarkAllNotificationsAsRead,
+  // adminClearAllNotifications,
+  adminMarkNotificationAsRead,
+  adminDeleteSingleNotification,
+  AdminNotificationItem,
+  type AdminNotificationCards,
+} from "../api/adminService";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Input } from "./ui/input";
@@ -12,6 +21,29 @@ import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { toast } from "sonner";
+import axios from "axios";
+import { emitAdminNotificationSummaryUpdated } from "../lib/adminNotificationSummaryEvents";
+
+function toastMutationError(e: unknown, fallback: string) {
+  if (axios.isAxiosError(e)) {
+    const m = (e.response?.data as { message?: string } | undefined)?.message;
+    toast.error(m && m.trim() ? m : e.message || fallback);
+  } else {
+    toast.error(e instanceof Error ? e.message : fallback);
+  }
+}
+
+/** Admin "All" list: `/admin/notifications/all`. */
+const ADMIN_NOTIFICATIONS_ALL_PATH = "/admin/notifications/all";
+
+const ADMIN_NOTIFICATION_TAB_PATH: Record<string, string> = {
+  all: ADMIN_NOTIFICATIONS_ALL_PATH,
+  unread: "/admin/notifications/unread",
+  user: "/admin/notifications/users",
+  professional: "/admin/notifications/professionals",
+  payment: "/admin/notifications/payments",
+  system: "/admin/notifications/system",
+};
 
 function categoryToType(category: string): "user" | "professional" | "payment" | "system" | "alert" {
   const c = (category || "").toLowerCase();
@@ -25,33 +57,78 @@ function categoryToType(category: string): "user" | "professional" | "payment" |
 export function AdminNotifications() {
   const [notifications, setNotifications] = useState<AdminNotificationItem[]>([]);
   const [activeTab, setActiveTab] = useState("all");
-  const [notificationCards, setNotificationCards] = useState<{ total_notifications: number; unread: number; critical: number; system_alerts: number } | null>(null);
+  const [notificationCards, setNotificationCards] = useState<AdminNotificationCards | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
+  const [pendingBulk, setPendingBulk] = useState<null | "mark_all" | "clear_all">(null);
+  const [pendingRow, setPendingRow] = useState<null | { id: number; action: "read" | "delete" }>(null);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
 
+  /** Summary stat cards (separate from per-tab list APIs). */
   useEffect(() => {
     const token = getApiToken();
     if (!token) return;
     let cancelled = false;
     setDetailsLoading(true);
-    getAdminNotificationDetails({ api_token: token })
-      .then((res) => {
-        if (!cancelled && res.status && res.data) {
-          setNotificationCards(res.data.cards);
-          setNotifications(Array.isArray(res.data.notifications) ? res.data.notifications : []);
+    getAdminNotificationsSummary({ api_token: token })
+      .then((cards) => {
+        if (!cancelled && cards) {
+          setNotificationCards(cards);
+          emitAdminNotificationSummaryUpdated();
         }
       })
       .catch(() => {
-        if (!cancelled) {
-          setNotificationCards(null);
-          setNotifications([]);
-        }
+        if (!cancelled) setNotificationCards(null);
       })
       .finally(() => {
         if (!cancelled) setDetailsLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const refreshSummaryQuiet = useCallback(async () => {
+    const token = getApiToken();
+    if (!token) return;
+    try {
+      const cards = await getAdminNotificationsSummary({ api_token: token });
+      if (cards) {
+        setNotificationCards(cards);
+        emitAdminNotificationSummaryUpdated();
+      }
+    } catch {
+      /* keep existing summary on transient errors */
+    }
+  }, []);
+
+  const loadNotificationsForTab = useCallback(async (tab: string) => {
+    const token = getApiToken();
+    if (!token) {
+      setNotifications([]);
+      return;
+    }
+    const path = ADMIN_NOTIFICATION_TAB_PATH[tab];
+    setListLoading(true);
+    try {
+      if (path) {
+        const rows = await fetchAdminNotificationsByPath(token, path);
+        setNotifications(rows);
+      } else {
+        setNotifications([]);
+      }
+    } catch (e: unknown) {
+      console.error("Admin notifications list:", e);
+      toast.error(e instanceof Error ? e.message : "Failed to load notifications");
+      setNotifications([]);
+    } finally {
+      setListLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadNotificationsForTab(activeTab);
+  }, [activeTab, loadNotificationsForTab]);
   const [notificationTitle, setNotificationTitle] = useState("");
   const [notificationMessage, setNotificationMessage] = useState("");
   const [recipientType, setRecipientType] = useState("all_users");
@@ -89,30 +166,87 @@ export function AdminNotifications() {
     }
   };
 
-  const markAsRead = (id: number) => {
-    setNotifications(notifications.map(notif =>
-      notif.id === id ? { ...notif, is_read: 1 } : notif
-    ));
-    setNotificationCards((prev) => prev ? { ...prev, unread: Math.max(0, (prev.unread ?? 0) - 1) } : prev);
-    toast.success("Marked as read");
+  const markAsRead = async (id: number) => {
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Not signed in");
+      return;
+    }
+    setPendingRow({ id, action: "read" });
+    try {
+      await adminMarkNotificationAsRead({ api_token: token, notification_id: id });
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, is_read: 1 } : n))
+      );
+      setPendingRow(null);
+      toast.success("Marked as read");
+      await refreshSummaryQuiet();
+      await loadNotificationsForTab(activeTab);
+    } catch (e: unknown) {
+      toastMutationError(e, "Failed to mark as read");
+    } finally {
+      setPendingRow(null);
+    }
   };
 
-  const markAllAsRead = () => {
-    setNotifications(notifications.map(notif => ({ ...notif, is_read: 1 })));
-    setNotificationCards((prev) => prev ? { ...prev, unread: 0 } : prev);
-    toast.success("All notifications marked as read");
+  const markAllAsRead = async () => {
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Not signed in");
+      return;
+    }
+    setPendingBulk("mark_all");
+    try {
+      await adminMarkAllNotificationsAsRead({ api_token: token });
+      toast.success("All notifications marked as read");
+      await refreshSummaryQuiet();
+      await loadNotificationsForTab(activeTab);
+    } catch (e: unknown) {
+      toastMutationError(e, "Failed to mark all as read");
+    } finally {
+      setPendingBulk(null);
+    }
   };
 
-  const deleteNotification = (id: number) => {
-    setNotifications(notifications.filter(notif => notif.id !== id));
-    toast.success("Notification deleted");
+  const deleteNotification = async (id: number) => {
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Not signed in");
+      return;
+    }
+    setPendingRow({ id, action: "delete" });
+    try {
+      await adminDeleteSingleNotification({ api_token: token, notification_id: id });
+      toast.success("Notification deleted");
+      await refreshSummaryQuiet();
+      await loadNotificationsForTab(activeTab);
+    } catch (e: unknown) {
+      toastMutationError(e, "Failed to delete notification");
+    } finally {
+      setPendingRow(null);
+    }
   };
 
-  const clearAll = () => {
-    setNotifications([]);
-    setNotificationCards((prev) => prev ? { ...prev, total_notifications: 0, unread: 0, critical: 0, system_alerts: 0 } : prev);
-    toast.success("All notifications cleared");
+  /* Admin "Clear All" hidden — restore with the button block below.
+  const clearAll = async () => {
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Not signed in");
+      return;
+    }
+    setPendingBulk("clear_all");
+    try {
+      await adminClearAllNotifications({ api_token: token });
+      toast.success("All notifications cleared");
+      await refreshSummaryQuiet();
+      await loadNotificationsForTab(activeTab);
+    } catch (e: unknown) {
+      toastMutationError(e, "Failed to clear notifications");
+    } finally {
+      setPendingBulk(null);
+    }
   };
+  */
 
   const sendNotification = () => {
     if (!notificationTitle || !notificationMessage) {
@@ -128,32 +262,33 @@ export function AdminNotifications() {
     setNotificationPriority("medium");
   };
 
-  const categoryMatchesTab = (category: string, tab: string): boolean => {
-    const c = (category || "").toLowerCase();
-    if (tab === "user") return c.includes("review") || c.includes("user") || c.includes("customer");
-    if (tab === "professional") return c.includes("professional");
-    if (tab === "payment") return c.includes("payment");
-    if (tab === "alert") return c.includes("platform") || c.includes("alert");
-    if (tab === "system") return c.includes("system");
-    return false;
-  };
-
-  const filterNotifications = (type: string) => {
-    if (type === "all") return notifications;
-    if (type === "unread") return notifications.filter(n => n.is_read === 0);
-    return notifications.filter(n => categoryMatchesTab(n.category, type));
-  };
-
-  const unreadCount = notifications.filter(n => n.is_read === 0).length;
-  const filteredNotifications = filterNotifications(activeTab);
+  const unreadCount = notifications.filter((n) => n.is_read === 0).length;
+  const unreadTabCount =
+    notificationCards?.unread != null ? notificationCards.unread : unreadCount;
+  const displayUnreadCount = unreadTabCount;
+  const allTabCount =
+    notificationCards?.total_notifications != null
+      ? notificationCards.total_notifications
+      : activeTab === "all"
+        ? notifications.length
+        : 0;
 
   const stats = {
-    total: detailsLoading ? "—" : (notificationCards?.total_notifications ?? notifications.length),
-    unread: detailsLoading ? "—" : (notificationCards?.unread ?? unreadCount),
-    critical: detailsLoading ? "—" : (notificationCards?.critical ?? notifications.filter(n => n.priority === "critical").length),
-    systemAlerts: detailsLoading ? "—" : (notificationCards?.system_alerts ?? notifications.filter(n => (n.category || "").toLowerCase().includes("system")).length),
+    total:
+      detailsLoading
+        ? "—"
+        : notificationCards?.total_notifications ??
+          (activeTab === "all" ? notifications.length : 0),
+    unread: detailsLoading ? "—" : unreadTabCount,
+    payments:
+      detailsLoading
+        ? "—"
+        : notificationCards?.payments ??
+          notificationCards?.critical ??
+          notifications.filter((n) => (n.category || "").toLowerCase().includes("payment")).length,
+    systemAlerts:
+      detailsLoading ? "—" : (notificationCards?.system_alerts ?? notifications.filter((n) => (n.category || "").toLowerCase().includes("system")).length),
   };
-  const displayUnreadCount = typeof stats.unread === "number" ? stats.unread : unreadCount;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -265,24 +400,34 @@ export function AdminNotifications() {
             {displayUnreadCount > 0 && (
               <Button 
                 variant="outline" 
-                onClick={markAllAsRead} 
+                onClick={() => void markAllAsRead()} 
+                disabled={pendingBulk !== null || pendingRow !== null || listLoading}
                 className="w-full h-11 text-sm font-medium justify-center rounded-lg border-gray-300 md:w-auto md:h-10"
               >
-                <CheckCircle className="w-4 h-4 mr-2" />
+                {pendingBulk === "mark_all" ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden />
+                ) : (
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                )}
                 Mark All as Read
               </Button>
             )}
 
-            {notifications.length > 0 && (
-              <Button 
-                variant="outline" 
-                onClick={clearAll} 
+            {/* {notifications.length > 0 && (
+              <Button
+                variant="outline"
+                onClick={() => void clearAll()}
+                disabled={pendingBulk !== null || pendingRow !== null || listLoading}
                 className="w-full h-11 text-sm font-medium justify-center rounded-lg border-gray-300 md:w-auto md:h-10"
               >
-                <Trash2 className="w-4 h-4 mr-2" />
+                {pendingBulk === "clear_all" ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden />
+                ) : (
+                  <Trash2 className="w-4 h-4 mr-2" />
+                )}
                 Clear All
               </Button>
-            )}
+            )} */}
           </div>
 
           {/* 3. STATS CARDS - Clean vertical stack, NO floating icons, 12px spacing */}
@@ -303,14 +448,14 @@ export function AdminNotifications() {
 
             <Card className="w-full border-gray-200 shadow-sm rounded-lg">
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 mb-1">Critical</p>
-                <p className="text-3xl font-semibold text-[#0A1A2F]">{stats.critical}</p>
+                <p className="text-xs text-gray-500 mb-1">Payments</p>
+                <p className="text-3xl font-semibold text-[#0A1A2F]">{stats.payments}</p>
               </CardContent>
             </Card>
 
             <Card className="w-full border-gray-200 shadow-sm rounded-lg">
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 mb-1">System Alerts</p>
+                <p className="text-xs text-gray-500 mb-1">System</p>
                 <p className="text-3xl font-semibold text-[#0A1A2F]">{stats.systemAlerts}</p>
               </CardContent>
             </Card>
@@ -319,15 +464,15 @@ export function AdminNotifications() {
           {/* 4. TABS - Horizontal scroll, 44px height, 72px min width per tab */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="w-full overflow-x-auto -mx-4 px-4 scrollbar-hide md:mx-0 md:px-0">
-              <TabsList className="inline-flex h-11 gap-1 bg-gray-100 p-1 rounded-lg md:grid md:w-full md:grid-cols-7">
+              <TabsList className="inline-flex h-11 gap-1 bg-gray-100 p-1 rounded-lg md:grid md:w-full md:grid-cols-6">
                 <TabsTrigger 
                   value="all" 
                   className="flex items-center justify-center gap-1.5 min-w-[72px] px-3 text-sm whitespace-nowrap rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
                 >
                   All
-                  {notifications.length > 0 && (
+                  {allTabCount > 0 && (
                     <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-gray-300 text-gray-700 rounded-full text-[10px] font-medium">
-                      {notifications.length}
+                      {allTabCount}
                     </span>
                   )}
                 </TabsTrigger>
@@ -361,12 +506,6 @@ export function AdminNotifications() {
                   Payments
                 </TabsTrigger>
                 <TabsTrigger 
-                  value="alert" 
-                  className="flex items-center justify-center min-w-[72px] px-3 text-sm whitespace-nowrap rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
-                >
-                  Alerts
-                </TabsTrigger>
-                <TabsTrigger 
                   value="system" 
                   className="flex items-center justify-center min-w-[72px] px-3 text-sm whitespace-nowrap rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
                 >
@@ -377,7 +516,14 @@ export function AdminNotifications() {
 
             {/* 5. NOTIFICATION ALERT CARDS - Vertical layout, 16px padding */}
             <TabsContent value={activeTab} className="mt-3.5">
-              {filteredNotifications.length === 0 ? (
+              {listLoading ? (
+                <Card className="w-full border-gray-200 shadow-sm rounded-lg">
+                  <CardContent className="p-12 flex flex-col items-center justify-center gap-3">
+                    <Loader2 className="w-10 h-10 text-gray-400 animate-spin" aria-hidden />
+                    <p className="text-sm text-gray-600">Loading notifications…</p>
+                  </CardContent>
+                </Card>
+              ) : notifications.length === 0 ? (
                 <Card className="w-full border-gray-200 shadow-sm rounded-lg">
                   <CardContent className="p-12 text-center">
                     <div className="flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4">
@@ -393,7 +539,11 @@ export function AdminNotifications() {
                 </Card>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {filteredNotifications.map((notification) => (
+                  {notifications.map((notification) => {
+                    const rowLocked =
+                      pendingBulk !== null ||
+                      (pendingRow !== null && pendingRow.id === notification.id);
+                    return (
                     <Card 
                       key={notification.id} 
                       className={`w-full shadow-sm rounded-lg transition-shadow hover:shadow-md ${
@@ -455,14 +605,19 @@ export function AdminNotifications() {
                             <p className="text-xs text-gray-400 ml-7">{notification.date}</p>
                             
                             <div className="flex flex-col gap-2 ml-7">
-                              {notification.actions?.can_mark_read && (
+                              {notification.actions?.can_mark_read && notification.is_read === 0 && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => markAsRead(notification.id)}
+                                  onClick={() => void markAsRead(notification.id)}
+                                  disabled={rowLocked}
                                   className="w-full h-9 justify-start text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-md"
                                 >
-                                  <CheckCircle className="w-3.5 h-3.5 mr-2" />
+                                  {pendingRow?.id === notification.id && pendingRow.action === "read" ? (
+                                    <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin shrink-0" aria-hidden />
+                                  ) : (
+                                    <CheckCircle className="w-3.5 h-3.5 mr-2 shrink-0" />
+                                  )}
                                   Mark as read
                                 </Button>
                               )}
@@ -470,10 +625,15 @@ export function AdminNotifications() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => deleteNotification(notification.id)}
+                                  onClick={() => void deleteNotification(notification.id)}
+                                  disabled={rowLocked}
                                   className="w-full h-9 justify-start text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5 mr-2" />
+                                  {pendingRow?.id === notification.id && pendingRow.action === "delete" ? (
+                                    <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin shrink-0" aria-hidden />
+                                  ) : (
+                                    <Trash2 className="w-3.5 h-3.5 mr-2 shrink-0" />
+                                  )}
                                   Delete
                                 </Button>
                               )}
@@ -482,7 +642,8 @@ export function AdminNotifications() {
                         </div>
                       </CardContent>
                     </Card>
-                  ))}
+                  );
+                  })}
                 </div>
               )}
             </TabsContent>

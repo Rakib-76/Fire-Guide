@@ -3,6 +3,8 @@
  * Handles secure storage and retrieval of authentication tokens
  */
 
+import { isPaymentResultRoutePath } from "./paymentAppUrls";
+
 const TOKEN_KEY = 'fireguide_auth_token';
 const USER_EMAIL_KEY = 'fireguide_user_email';
 const USER_NAME_KEY = 'fireguide_user_name';
@@ -161,6 +163,36 @@ export const getUserInfo = (): { name: string; role: "customer" | "professional"
 };
 
 /**
+ * Best-effort session user for UI (header, etc.): prefers `getUserInfo()`, then reconstructs
+ * from `user_role` + full name/email when display keys were missing (e.g. ordering quirks with `setUserRole`).
+ */
+export const getSessionUserDisplay = (): { name: string; role: "customer" | "professional" | "admin" } | null => {
+  const primary = getUserInfo();
+  if (primary) return primary;
+  if (!isAuthenticated()) return null;
+  try {
+    const roleRaw = localStorage.getItem("user_role");
+    const roleUpper = roleRaw ? roleRaw.toUpperCase() : "";
+    if (!roleUpper) return null;
+    const role: "customer" | "professional" | "admin" =
+      roleUpper === "PROFESSIONAL"
+        ? "professional"
+        : roleUpper === "ADMIN"
+          ? "admin"
+          : "customer";
+    const storedFull = getUserFullName();
+    const email = getUserEmail();
+    const raw =
+      (storedFull && storedFull.trim()) ||
+      (email ? email.split("@")[0] : "") ||
+      "User";
+    return { name: getFirstName(raw), role };
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Store professional ID
  * @param professionalId - The professional ID to store
  */
@@ -297,8 +329,10 @@ export const isAuthenticated = (): boolean => {
 export const handleTokenExpired = (): void => {
   console.log('Token expired, clearing auth and redirecting to home...');
   removeAuthToken();
-  // Redirect to home page
-  window.location.href = '/';
+  if (typeof window !== "undefined" && isPaymentResultRoutePath(window.location.pathname)) {
+    return;
+  }
+  window.location.href = "/";
 };
 
 /**

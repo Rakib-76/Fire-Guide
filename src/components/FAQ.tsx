@@ -102,7 +102,8 @@ export function FAQ({ onContactSupport }: FAQProps) {
           <p className="text-gray-600 mb-6">
             Our support team is here to help. Get in touch and we'll respond within 24 hours.
           </p>
-          <Button 
+          <Button
+            type="button"
             onClick={onContactSupport}
             className="bg-red-600 hover:bg-red-700 px-8 py-6 text-lg"
           >

@@ -16,11 +16,16 @@ import {
   Loader2
 } from "lucide-react";
 import type { BookingData } from "./BookingFlow";
-import { storePaymentInvoice } from "../api/paymentService";
+import {
+  storePaymentInvoice,
+  isPaymentInvoiceStoreSuccess,
+  extractStripeCheckoutUrl,
+  extractTxRefFromInvoiceResponse,
+} from "../api/paymentService";
 import { toast } from "sonner";
 import { getApiToken } from "../lib/auth";
 import {
-  getPaymentSuccessPageUrl,
+  getStripeCheckoutSuccessUrl,
   getPaymentFailedPageUrl,
   PAYMENT_RETURN_STORAGE_KEY,
   type PaymentReturnContext,
@@ -109,24 +114,10 @@ export function PaymentPage({
     setProcessing(true);
 
     try {
-      const successUrl = getPaymentSuccessPageUrl();
+      const successUrl = getStripeCheckoutSuccessUrl();
       const failedUrl = getPaymentFailedPageUrl();
       const bookingId = bookingData.customer.professionalBookingId;
       const total = bookingData.pricing.total;
-      const returnCtx: PaymentReturnContext = {
-        amountPaid: total,
-        totalAmount: total,
-        paidIncentives: 0,
-        paidBalance: 0,
-        paidOnline: total,
-        orderIds: [`FG-${bookingId}`],
-        transactionId: "",
-      };
-      try {
-        sessionStorage.setItem(PAYMENT_RETURN_STORAGE_KEY, JSON.stringify(returnCtx));
-      } catch {
-        /* ignore quota / private mode */
-      }
 
       const paymentData = {
         api_token: token,
@@ -138,21 +129,49 @@ export function PaymentPage({
       };
 
       const response = await storePaymentInvoice(paymentData);
+      const checkoutUrl = extractStripeCheckoutUrl(response);
+      const txRef = extractTxRefFromInvoiceResponse(response);
 
-      if (response.status === "success" && response.data?.payment_url) {
+      const returnCtx: PaymentReturnContext = {
+        amountPaid: total,
+        totalAmount: total,
+        paidIncentives: 0,
+        paidBalance: 0,
+        paidOnline: total,
+        orderIds: [`FG-${bookingId}`],
+        transactionId: txRef ?? "",
+      };
+      try {
+        sessionStorage.setItem(PAYMENT_RETURN_STORAGE_KEY, JSON.stringify(returnCtx));
+      } catch {
+        /* ignore quota / private mode */
+      }
+
+      if (isPaymentInvoiceStoreSuccess(response) && checkoutUrl) {
         toast.success("Redirecting to secure payment...");
-        window.location.href = response.data.payment_url;
+        window.location.assign(checkoutUrl);
         return;
       }
-      if (response.status === "success") {
-        toast.success(response.message || "Payment initiated successfully.");
-        onPaymentComplete();
-      } else {
-        throw new Error(response.message || "Failed to initiate payment");
+      // Never advance the booking flow as "paid" without a Stripe redirect — success + no URL means misconfigured API or unpaid session.
+      if (isPaymentInvoiceStoreSuccess(response) && !checkoutUrl) {
+        throw {
+          message:
+            response.message ||
+            "Payment could not be started: no checkout link from server. Nothing has been charged.",
+          status: 502,
+        };
       }
+      throw {
+        message: response.message || "Failed to initiate payment",
+        status: 400,
+      };
     } catch (error: any) {
       console.error("Payment processing error:", error);
       toast.error(error.message || "Failed to process payment. Please try again.");
+      const httpStatus = typeof error?.status === "number" ? error.status : undefined;
+      if (httpStatus !== 401) {
+        window.location.assign(getPaymentFailedPageUrl());
+      }
     } finally {
       setProcessing(false);
     }

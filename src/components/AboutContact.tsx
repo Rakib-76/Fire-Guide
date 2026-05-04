@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { 
   Mail, 
   Phone, 
@@ -24,6 +25,7 @@ import { Textarea } from "./ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Footer } from "./Footer";
 import { toast } from "sonner";
+import { sendContactUsMail } from "../api/contactUsService";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 
 interface AboutContactProps {
@@ -34,7 +36,7 @@ interface AboutContactProps {
   onNavigateServices?: () => void;
   onNavigateProfessionals?: () => void;
   onCustomerLogin?: () => void;
-  /** Navigate home and scroll to the Live Booking Activity section */
+  /** e.g. navigate to /services to start booking */
   onStartBooking?: () => void;
 }
 
@@ -48,6 +50,27 @@ export function AboutContact({
   onCustomerLogin,
   onStartBooking,
 }: AboutContactProps) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isContactNavActive = location.hash === "#contact";
+
+  useEffect(() => {
+    if (location.hash !== "#contact") return;
+    const timer = window.setTimeout(() => {
+      document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [location.pathname, location.hash]);
+
+  const navBtnClass = (active: boolean) =>
+    `relative py-2 transition-colors group cursor-pointer ${
+      active ? "text-red-600" : "hover:text-red-600"
+    }`;
+  const navUnderlineClass = (active: boolean) =>
+    `absolute bottom-0 left-0 h-0.5 bg-red-600 transition-all duration-300 ${
+      active ? "w-full" : "w-0 group-hover:w-full"
+    }`;
+
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -58,22 +81,57 @@ export function AboutContact({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
-    // Simulate form submission
-    setTimeout(() => {
-      toast.success("Thank you! We'll get back to you within 24 hours.");
-      setFormData({
-        name: "",
-        email: "",
-        phone: "",
-        subject: "",
-        message: ""
+    try {
+      const res = await sendContactUsMail({
+        full_name: formData.name.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim(),
+        subject: formData.subject.trim(),
+        message: formData.message.trim(),
       });
+
+      const ok =
+        res.status === true ||
+        res.status === "success" ||
+        res.success === true;
+
+      if (ok) {
+        toast.success(res.message || "Thank you! We'll get back to you within 24 hours.");
+        setFormData({
+          name: "",
+          email: "",
+          phone: "",
+          subject: "",
+          message: "",
+        });
+      } else {
+        toast.error(res.message || res.error || "Failed to send message. Please try again.");
+      }
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        const data = err.response?.data as
+          | { message?: string; error?: string; errors?: Record<string, string[]> }
+          | undefined;
+        const msg =
+          (typeof data?.message === "string" && data.message) ||
+          (typeof data?.error === "string" && data.error) ||
+          err.message;
+        if (data?.errors && typeof data.errors === "object") {
+          const first = Object.values(data.errors).flat()[0];
+          toast.error(typeof first === "string" ? first : msg || "Validation failed.");
+        } else {
+          toast.error(msg || "Failed to send message. Please try again.");
+        }
+      } else {
+        toast.error("Something went wrong. Please try again.");
+      }
+    } finally {
       setIsSubmitting(false);
-    }, 1500);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -152,18 +210,31 @@ export function AboutContact({
               For Professionals
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
             </button>
-            <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="relative py-2 text-red-600 transition-colors group cursor-pointer">
+            <button
+              type="button"
+              onClick={() => {
+                navigate("/about");
+                window.setTimeout(() => {
+                  document.getElementById("about")?.scrollIntoView({ behavior: "smooth" });
+                }, 0);
+              }}
+              className={navBtnClass(!isContactNavActive)}
+            >
               About
-              <span className="absolute bottom-0 left-0 w-full h-0.5 bg-red-600"></span>
+              <span className={navUnderlineClass(!isContactNavActive)} />
             </button>
-            <button type="button" onClick={() => {
-              const contactSection = document.getElementById('contact');
-              if (contactSection) {
-                contactSection.scrollIntoView({ behavior: 'smooth' });
-              }
-            }} className="relative py-2 hover:text-red-600 transition-colors group cursor-pointer">
+            <button
+              type="button"
+              onClick={() => {
+                navigate("/about#contact");
+                window.setTimeout(() => {
+                  document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" });
+                }, 0);
+              }}
+              className={navBtnClass(isContactNavActive)}
+            >
               Contact
-              <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
+              <span className={navUnderlineClass(isContactNavActive)} />
             </button>
           </nav>
 
@@ -224,16 +295,34 @@ export function AboutContact({
               </button>
               <button 
                 type="button"
-                className="text-left py-3 px-4 rounded-lg bg-red-50 text-red-600 cursor-pointer"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  navigate("/about");
+                  window.setTimeout(() => {
+                    document.getElementById("about")?.scrollIntoView({ behavior: "smooth" });
+                  }, 0);
+                }}
+                className={`text-left py-3 px-4 rounded-lg cursor-pointer ${
+                  !isContactNavActive ? "bg-red-50 text-red-600" : "hover:bg-red-50 hover:text-red-600"
+                }`}
               >
                 About
               </button>
-              <a 
-                href="#contact" 
-                className="text-left py-3 px-4 rounded-lg hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer block"
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  navigate("/about#contact");
+                  window.setTimeout(() => {
+                    document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" });
+                  }, 0);
+                }}
+                className={`text-left py-3 px-4 rounded-lg cursor-pointer w-full ${
+                  isContactNavActive ? "bg-red-50 text-red-600" : "hover:bg-red-50 hover:text-red-600"
+                }`}
               >
                 Contact
-              </a>
+              </button>
               <div className="pt-4 mt-2 border-t border-gray-200">
                 {currentUserName ? (
                   <Button 

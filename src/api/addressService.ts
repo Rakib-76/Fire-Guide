@@ -157,7 +157,7 @@ export const fetchAddresses = async (
 };
 
 /**
- * Update an existing address
+ * Update an existing address (backend expects POST, same as Postman /addresses_update)
  * @param data - Address data to update (must include id)
  * @returns Promise with the API response
  */
@@ -165,7 +165,7 @@ export const updateAddress = async (
   data: UpdateAddressRequest
 ): Promise<UpdateAddressResponse> => {
   try {
-    const response = await apiClient.put<UpdateAddressResponse>(
+    const response = await apiClient.post<UpdateAddressResponse>(
       '/addresses_update',
       data
     );
@@ -249,7 +249,7 @@ export const storeAddress = async (
 };
 
 /**
- * Delete an address
+ * Delete an address (backend expects POST with JSON body, same pattern as addresses_update)
  * @param data - Address deletion data (must include api_token and id)
  * @returns Promise with the API response
  */
@@ -257,11 +257,9 @@ export const deleteAddress = async (
   data: DeleteAddressRequest
 ): Promise<DeleteAddressResponse> => {
   try {
-    const response = await apiClient.delete<DeleteAddressResponse>(
+    const response = await apiClient.post<DeleteAddressResponse>(
       '/addresses_delete',
-      {
-        data: data
-      }
+      data
     );
     return response.data;
   } catch (error) {

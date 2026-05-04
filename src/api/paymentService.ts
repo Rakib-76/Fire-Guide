@@ -4,7 +4,22 @@ import { handleTokenExpired, isTokenExpiredError } from '../lib/auth';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 
 // TypeScript types for Payment Invoice Store request
-// POST payment_invoice/store — initiates payment; response includes payment_url for redirect to Stripe Checkout
+// POST payment_invoice/store — should ONLY create a Stripe Checkout Session (or PaymentIntent) and return
+// a checkout URL. Do NOT set booking is_paid / payment_status to "paid" here — users can abandon Stripe.
+//
+// Backend (Laravel) checklist:
+// - On store: persist a pending invoice row + Stripe session id if needed; leave booking unpaid.
+// - On Stripe webhook checkout.session.completed (or payment_intent.succeeded): verify amount/metadata,
+//   then set professional_booking.is_paid (or equivalent) and finalize invoice.
+// - Optional: expose POST verify-checkout that retrieves the session from Stripe server-side for success URL.
+//
+// Response must include a Stripe HTTPS URL (see extractStripeCheckoutUrl) for the customer flow.
+/** Customer quote Pay: backend accepts only token + amount (POST /payment_invoice/store). */
+export interface PaymentInvoiceStoreQuoteCustomerRequest {
+  api_token: string;
+  price: number;
+}
+
 export interface PaymentInvoiceStoreRequest {
   api_token: string;
   professional_booking_id: number;
@@ -18,13 +33,76 @@ export interface PaymentInvoiceStoreRequest {
 }
 
 export interface PaymentInvoiceStoreResponse {
-  status: string;
-  message: string;
+  status?: string | boolean;
+  message?: string;
+  success?: boolean;
   data?: {
     tx_ref?: string;
     payment_url?: string;
+    url?: string;
+    checkout_url?: string;
     [key: string]: unknown;
   };
+  [key: string]: unknown;
+}
+
+/** Laravel / gateways may return status as string, boolean, or omit payment_url under alternate keys. */
+export function isPaymentInvoiceStoreSuccess(res: PaymentInvoiceStoreResponse | null | undefined): boolean {
+  if (!res) return false;
+  const s = res.status;
+  if (s === true || s === "true") return true;
+  if (typeof s === "string" && s.toLowerCase() === "success") return true;
+  if (res.success === true) return true;
+  return false;
+}
+
+export function extractStripeCheckoutUrl(
+  res: PaymentInvoiceStoreResponse | null | undefined
+): string | null {
+  if (!res?.data || typeof res.data !== "object") return null;
+  const d = res.data as Record<string, unknown>;
+  const candidates: unknown[] = [
+    d.payment_url,
+    d.url,
+    d.checkout_url,
+    d.checkoutUrl,
+    d.redirect_url,
+    d.redirectUrl,
+  ];
+  const nested = d.data;
+  if (nested && typeof nested === "object") {
+    const n = nested as Record<string, unknown>;
+    candidates.push(n.payment_url, n.url, n.checkout_url);
+  }
+  for (const c of candidates) {
+    if (typeof c === "string") {
+      const t = c.trim();
+      if (t.startsWith("http://") || t.startsWith("https://")) return t;
+    }
+  }
+  return null;
+}
+
+/** Reference returned with invoice/store (shown on payment-success if Stripe omits query params). */
+export function extractTxRefFromInvoiceResponse(
+  res: PaymentInvoiceStoreResponse | null | undefined
+): string | null {
+  if (!res?.data || typeof res.data !== "object") return null;
+  const d = res.data as Record<string, unknown>;
+  const keys = ["tx_ref", "transaction_id", "reference", "invoice_ref", "ref"];
+  for (const k of keys) {
+    const v = d[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  const nested = d.data;
+  if (nested && typeof nested === "object") {
+    const n = nested as Record<string, unknown>;
+    for (const k of keys) {
+      const v = n[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+  }
+  return null;
 }
 
 // Create axios instance with base configuration
@@ -72,6 +150,45 @@ export const storePaymentInvoice = async (
     return response.data;
   } catch (error) {
     console.error('Error storing payment invoice:', error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          success: false,
+          message: error.response.data?.message || 'Failed to process payment',
+          error: error.response.data?.error || error.message,
+          status: error.response.status,
+        };
+      } else if (error.request) {
+        throw {
+          success: false,
+          message: 'No response from server. Please check your connection.',
+          error: 'Network error',
+        };
+      }
+    }
+    throw {
+      success: false,
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
+
+/**
+ * Start checkout for an assigned custom quote (customer dashboard).
+ * Sends only `{ api_token, price }` to POST /payment_invoice/store (same path as full invoice store).
+ */
+export const storePaymentInvoiceQuoteCustomer = async (
+  data: PaymentInvoiceStoreQuoteCustomerRequest
+): Promise<PaymentInvoiceStoreResponse> => {
+  try {
+    const response = await apiClient.post<PaymentInvoiceStoreResponse>(
+      '/payment_invoice/store',
+      data
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error storing payment invoice (quote customer):', error);
     if (axios.isAxiosError(error)) {
       if (error.response) {
         throw {

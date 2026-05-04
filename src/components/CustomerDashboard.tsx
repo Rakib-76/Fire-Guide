@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, startTransition, type CSSProperties } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback, startTransition, type CSSProperties } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -25,10 +25,16 @@ import {
   Edit,
   Trash2,
   Star,
+  Heart,
+  Bookmark,
   Lock,
   Eye,
   EyeOff,
-  FileText
+  FileText,
+  Activity,
+  MessageSquare,
+  Mail,
+  Phone,
 } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Booking } from "../App";
@@ -45,11 +51,134 @@ import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import { toast } from "sonner";
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
-import { uploadProfileImage, UploadProfileImageRequest, updateUser, UpdateUserRequest, getCustomerDashboardSummary, CustomerDashboardSummaryData, getCustomerUpcomingBookings, CustomerUpcomingBookingItem, getCustomerData, updateCustomerData, UpdateCustomerDataRequest, changePassword, getCustomerNotifications, CustomerNotificationItem, deleteAccount, getRecentActivity, RecentActivityItem, enableNotification, disableNotification, NotificationPreferencesData, getNotificationPreferences } from "../api/authService";
+import { uploadProfileImage, UploadProfileImageRequest, updateUser, UpdateUserRequest, getCustomerDashboardSummary, CustomerDashboardSummaryData, getCustomerUpcomingBookings, CustomerUpcomingBookingItem, getCustomerData, updateCustomerData, UpdateCustomerDataRequest, changePassword, getCustomerNotifications, CustomerNotificationItem, getCustomerNotificationDedupeKey, getCustomerContactAdminMessages, CustomerAdminContactMessageItem, deleteAccount, getRecentActivity, RecentActivityItem, enableNotification, disableNotification, NotificationPreferencesData, getNotificationPreferences } from "../api/authService";
 import { getApiToken, getUserInfo, setUserInfo } from "../lib/auth";
 import { Loader2, Upload, ArrowLeft, Save } from "lucide-react";
 import { storeAddress, StoreAddressRequest, fetchAddresses, AddressResponse, deleteAddress, updateAddress } from "../api/addressService";
 import { getMyQuoteRequests, MyQuoteRequestItem } from "../api/customQuoteRequestsService";
+import {
+  storePaymentInvoiceQuoteCustomer,
+  isPaymentInvoiceStoreSuccess,
+  extractStripeCheckoutUrl,
+  extractTxRefFromInvoiceResponse,
+} from "../api/paymentService";
+import {
+  getPaymentFailedPageUrl,
+  PAYMENT_RETURN_STORAGE_KEY,
+  type PaymentReturnContext,
+} from "../lib/paymentAppUrls";
+import { isCustomQuoteRequestPaidLocally } from "../lib/customQuotePaymentLocal";
+import {
+  getCustomQuoteRequestDisplayRows,
+  loadQuoteRequestDurationLabelMap,
+} from "./CustomQuoteRequestDetailsPanel";
+
+const CUSTOMER_NOTIFICATION_SEEN_KEYS = "fireguide_customer_notification_seen_keys";
+
+function loadCustomerNotificationSeenKeys(): Set<string> {
+  try {
+    const raw = localStorage.getItem(CUSTOMER_NOTIFICATION_SEEN_KEYS);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.filter((x): x is string => typeof x === "string" && x.length > 0));
+  } catch {
+    return new Set();
+  }
+}
+
+function persistCustomerNotificationSeenKeys(keys: Set<string>) {
+  try {
+    localStorage.setItem(CUSTOMER_NOTIFICATION_SEEN_KEYS, JSON.stringify([...keys]));
+  } catch {
+    /* ignore */
+  }
+}
+
+function isNotificationReadFromApi(n: CustomerNotificationItem): boolean {
+  if (n.read === true) return true;
+  const ir = n.is_read as unknown;
+  return ir === true || ir === 1 || ir === "1";
+}
+
+/** API unread flag or not yet dismissed locally after opening the notifications page. */
+function isNotificationUnread(n: CustomerNotificationItem, seenKeys: Set<string>): boolean {
+  if (isNotificationReadFromApi(n)) return false;
+  return !seenKeys.has(getCustomerNotificationDedupeKey(n));
+}
+
+/** API may return default as 1, true, or "1" */
+function isStoredAddressDefault(value: unknown): boolean {
+  return value === 1 || value === true || value === "1";
+}
+
+function normalizeAddressId(id: string | number): number {
+  return typeof id === "string" ? parseInt(id, 10) : id;
+}
+
+function normalizeAddressOwnerId(userId: unknown): number {
+  if (userId === null || userId === undefined) return NaN;
+  return typeof userId === "string" ? parseInt(userId, 10) : Number(userId);
+}
+
+/** True when GET /addresses returned rows for more than one user (backend should not do this). */
+function addressListHasMultipleOwners(list: AddressResponse[]): boolean {
+  const ids = new Set<number>();
+  for (const a of list) {
+    const uid = normalizeAddressOwnerId(a.user_id);
+    if (!Number.isNaN(uid)) ids.add(uid);
+  }
+  return ids.size > 1;
+}
+
+function filterAddressesForCustomerUser(
+  list: AddressResponse[],
+  customerUserId: number | null
+): AddressResponse[] {
+  if (customerUserId == null) return list;
+  return list.filter((a) => normalizeAddressOwnerId(a.user_id) === customerUserId);
+}
+
+function formatActivityDateDisplay(dateString: string): string {
+  try {
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return dateString.split(" ")[0];
+    return date.toISOString().split("T")[0];
+  } catch {
+    return dateString.split(" ")[0];
+  }
+}
+
+function parseQuotedPriceNumberForQuote(quoted: string | number | null | undefined): number {
+  if (quoted == null || quoted === "") return NaN;
+  const n = typeof quoted === "number" ? quoted : parseFloat(String(quoted).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function isQuoteRequestPaid(req: MyQuoteRequestItem): boolean {
+  const ps = req.payment_status;
+  if (ps != null && String(ps).trim() !== "" && String(ps).toLowerCase() === "paid") return true;
+  const st = req.status;
+  if (st != null && String(st).trim().toLowerCase() === "paid") return true;
+  const ir = req.is_paid;
+  if (ir === true || ir === 1 || ir === "1") return true;
+  return isCustomQuoteRequestPaidLocally(req.id);
+}
+
+function isAddressUpdateSuccess(response: {
+  status?: boolean | string;
+  success?: boolean;
+  message?: string;
+  error?: string;
+}): boolean {
+  const s = response.status;
+  return (
+    s === true ||
+    s === "success" ||
+    s === "true" ||
+    response.success === true
+  );
+}
 
 interface CustomerDashboardProps {
   onLogout: () => void;
@@ -60,7 +189,15 @@ interface CustomerDashboardProps {
   onDeleteBooking: (bookingId: string) => void;
 }
 
-type CustomerView = "overview" | "bookings" | "payments" | "quote-requests" | "profile" | "settings" | "notifications";
+type CustomerView =
+  | "overview"
+  | "bookings"
+  | "payments"
+  | "quote-requests"
+  | "profile"
+  | "admin-messages"
+  | "settings"
+  | "notifications";
 
 export function CustomerDashboard({ 
   onLogout, 
@@ -73,7 +210,16 @@ export function CustomerDashboard({
   const navigate = useNavigate();
   const location = useLocation();
   const { view, id: addressIdParam } = useParams<{ view?: string; id?: string }>();
-  const validViews: CustomerView[] = ["overview", "bookings", "payments", "quote-requests", "profile", "settings", "notifications"];
+  const validViews: CustomerView[] = [
+    "overview",
+    "bookings",
+    "payments",
+    "quote-requests",
+    "profile",
+    "admin-messages",
+    "settings",
+    "notifications",
+  ];
   
   // Check if we're on the add or edit address route
   const isAddAddressRoute = location.pathname === "/customer/dashboard/profile/addresses/add";
@@ -96,7 +242,38 @@ export function CustomerDashboard({
     : "overview";
   
   const [currentView, setCurrentView] = useState<CustomerView>(currentViewFromUrl);
+  const currentViewRef = useRef<CustomerView>(currentView);
+  currentViewRef.current = currentView;
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const [addresses, setAddresses] = useState<AddressResponse[]>([]);
+  /** Set when GET /addresses mixes user_ids; we filter to getCustomerData().data.id */
+  const customerUserIdForAddressesRef = useRef<number | null>(null);
+
+  const resolveCustomerUserIdForAddresses = async (token: string): Promise<number | null> => {
+    if (customerUserIdForAddressesRef.current !== null) {
+      return customerUserIdForAddressesRef.current;
+    }
+    try {
+      const cr = await getCustomerData(token);
+      if (cr.status === true && cr.data?.id != null) {
+        customerUserIdForAddressesRef.current = cr.data.id;
+        return cr.data.id;
+      }
+    } catch {
+      /* leave null */
+    }
+    return null;
+  };
+
+  const scopeAddressesIfNeeded = async (
+    raw: AddressResponse[],
+    token: string
+  ): Promise<AddressResponse[]> => {
+    if (!addressListHasMultipleOwners(raw)) return raw;
+    await resolveCustomerUserIdForAddresses(token);
+    return filterAddressesForCustomerUser(raw, customerUserIdForAddressesRef.current);
+  };
   
   // Sync state with URL parameter when it changes (including on mount and URL changes)
   useEffect(() => {
@@ -113,6 +290,7 @@ export function CustomerDashboard({
     const loadAddresses = async () => {
       const token = getApiToken();
       if (!token) {
+        customerUserIdForAddressesRef.current = null;
         return;
       }
 
@@ -120,7 +298,7 @@ export function CustomerDashboard({
       try {
         const response = await fetchAddresses(token);
         if (response.status === "success" && response.data) {
-          setAddresses(response.data);
+          setAddresses(await scopeAddressesIfNeeded(response.data, token));
         } else {
           console.error("Failed to fetch addresses:", response.message || response.error);
           // Set empty array on error to show empty state
@@ -162,11 +340,11 @@ export function CustomerDashboard({
         const response = await fetchAddresses(token);
         
         if (response.status === "success" && response.data) {
-          // Update addresses state
-          setAddresses(response.data);
+          const scoped = await scopeAddressesIfNeeded(response.data, token);
+          setAddresses(scoped);
           
           // Validate address ID type matching (ensure both are numbers for comparison)
-          const addressToEdit = response.data.find(addr => {
+          const addressToEdit = scoped.find(addr => {
             const addrId = typeof addr.id === 'string' ? parseInt(addr.id, 10) : addr.id;
             const editId = addressIdToEdit;
             return addrId === editId && !isNaN(addrId) && !isNaN(editId);
@@ -230,8 +408,7 @@ export function CustomerDashboard({
     });
   };
   
-  // Address management state
-  const [addresses, setAddresses] = useState<AddressResponse[]>([]);
+  // Address management state (continued)
   const [isLoadingAddresses, setIsLoadingAddresses] = useState(false);
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [editingAddress, setEditingAddress] = useState<any>(null);
@@ -272,6 +449,27 @@ export function CustomerDashboard({
   const [isDeleteAddressModalOpen, setIsDeleteAddressModalOpen] = useState(false);
   const [addressIdToDelete, setAddressIdToDelete] = useState<number | null>(null);
   const [isDeletingAddress, setIsDeletingAddress] = useState(false);
+  /** Address id currently being promoted to default (star click) */
+  const [settingDefaultAddressId, setSettingDefaultAddressId] = useState<number | null>(null);
+  /** Single row that shows the Star "make default" control; others use Bookmark */
+  const [starredAddressId, setStarredAddressId] = useState<number | null>(null);
+
+  // Exactly one Star among non-default rows; repair when list changes (load/delete/add)
+  // Must run after `addresses` / `starredAddressId` are declared (dependency array reads `addresses` during render).
+  useEffect(() => {
+    setStarredAddressId((prev) => {
+      if (addresses.length === 0) return null;
+      const nonDefaults = addresses.filter((a) => !isStoredAddressDefault(a.is_default_address));
+      if (nonDefaults.length === 0) return null;
+      if (prev !== null) {
+        const prevRow = addresses.find((a) => normalizeAddressId(a.id) === prev);
+        if (prevRow && !isStoredAddressDefault(prevRow.is_default_address)) {
+          return prev;
+        }
+      }
+      return normalizeAddressId(nonDefaults[0].id);
+    });
+  }, [addresses]);
 
   // Password change state
   const [isChangePasswordDialogOpen, setIsChangePasswordDialogOpen] = useState(false);
@@ -286,6 +484,13 @@ export function CustomerDashboard({
   // Notifications state
   const [notifications, setNotifications] = useState<CustomerNotificationItem[]>([]);
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
+  const [adminContactMessages, setAdminContactMessages] = useState<CustomerAdminContactMessageItem[]>([]);
+  const [isLoadingAdminContactMessages, setIsLoadingAdminContactMessages] = useState(false);
+  const [seenNotificationKeys, setSeenNotificationKeys] = useState<Set<string>>(loadCustomerNotificationSeenKeys);
+
+  const unreadNotificationCount = useMemo(() => {
+    return notifications.reduce((acc, n) => acc + (isNotificationUnread(n, seenNotificationKeys) ? 1 : 0), 0);
+  }, [notifications, seenNotificationKeys]);
 
   // Delete account state
   const [isDeleteAccountDialogOpen, setIsDeleteAccountDialogOpen] = useState(false);
@@ -303,6 +508,78 @@ export function CustomerDashboard({
   // Quote requests state
   const [quoteRequests, setQuoteRequests] = useState<MyQuoteRequestItem[]>([]);
   const [isLoadingQuoteRequests, setIsLoadingQuoteRequests] = useState(false);
+  /** FRA duration_id → label (GET /fra-durations); used to show wording instead of raw id on quote cards. */
+  const [fraDurationLabels, setFraDurationLabels] = useState<ReadonlyMap<number, string>>(() => new Map());
+  const [payingQuoteRequestId, setPayingQuoteRequestId] = useState<number | null>(null);
+  const [selectedQuoteRequest, setSelectedQuoteRequest] = useState<MyQuoteRequestItem | null>(null);
+
+  const handlePayAssignedQuoteRequest = useCallback(async (req: MyQuoteRequestItem) => {
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Please log in to complete payment.");
+      return;
+    }
+    const price = parseQuotedPriceNumberForQuote(req.quoted_price);
+    if (!Number.isFinite(price) || price <= 0) {
+      toast.error("Could not read the quoted amount. Please contact support.");
+      return;
+    }
+    if (isQuoteRequestPaid(req)) {
+      toast.info("This quote is already paid.");
+      return;
+    }
+
+    setPayingQuoteRequestId(req.id);
+    try {
+      const response = await storePaymentInvoiceQuoteCustomer({
+        api_token: token,
+        price,
+        custom_quote_id: req.id
+      });
+
+      const checkoutUrl = extractStripeCheckoutUrl(response);
+      const txRef = extractTxRefFromInvoiceResponse(response);
+      const returnCtx: PaymentReturnContext = {
+        amountPaid: price,
+        totalAmount: price,
+        paidIncentives: 0,
+        paidBalance: 0,
+        paidOnline: price,
+        orderIds: [`Quote #${req.id}`],
+        transactionId: txRef ?? "",
+        quoteRequestId: req.id,
+      };
+      try {
+        sessionStorage.setItem(PAYMENT_RETURN_STORAGE_KEY, JSON.stringify(returnCtx));
+      } catch {
+        /* ignore */
+      }
+
+      if (isPaymentInvoiceStoreSuccess(response) && checkoutUrl) {
+        toast.success("Redirecting to secure payment…");
+        window.location.assign(checkoutUrl);
+        return;
+      }
+      // Do not mark quote paid locally unless user completes Stripe — that happens after return + webhook (server truth).
+      if (isPaymentInvoiceStoreSuccess(response) && !checkoutUrl) {
+        throw {
+          message:
+            (response as { message?: string })?.message ||
+            "Could not start checkout: no Stripe link from server. Your quote has not been recorded as paid.",
+        };
+      }
+      throw { message: (response as { message?: string })?.message || "Failed to start payment" };
+    } catch (error: unknown) {
+      console.error("Pay assigned quote error:", error);
+      const err = error as { message?: string; status?: number };
+      toast.error(err.message || "Could not start payment. Please try again.");
+      if (typeof err.status === "number" && err.status !== 401) {
+        window.location.assign(getPaymentFailedPageUrl());
+      }
+    } finally {
+      setPayingQuoteRequestId(null);
+    }
+  }, []);
 
   // Load user data from localStorage or use defaults
   const getUserData = () => {
@@ -471,42 +748,113 @@ export function CustomerDashboard({
     }
   }, [currentView]);
 
-  // Fetch notifications from API on mount and when notifications view is shown
+  // Fetch notifications: POST /notifications — refresh on view change, tab focus, and interval while logged in
   useEffect(() => {
-    const fetchNotifications = async () => {
+    let cancelled = false;
+
+    const run = async () => {
       const token = getApiToken();
       if (!token) {
-        console.log('No API token available for notifications');
+        setNotifications([]);
         setIsLoadingNotifications(false);
         return;
       }
 
-      // Only show loading spinner when on notifications view
-      if (currentView === 'notifications') {
+      const showLoading = currentViewRef.current === "notifications";
+      if (showLoading) {
         setIsLoadingNotifications(true);
       }
 
       try {
         const response = await getCustomerNotifications({ api_token: token });
-        if (response.status === true && response.data) {
-          setNotifications(Array.isArray(response.data) ? response.data : []);
-          console.log('Notifications loaded from API:', response.data);
-        } else {
-          console.log('No notifications found:', response.message);
+        if (cancelled) return;
+        const list = Array.isArray(response.data) ? response.data : [];
+        setNotifications(list);
+        if (currentViewRef.current === "notifications" && list.length > 0) {
+          setSeenNotificationKeys((prev) => {
+            const next = new Set(prev);
+            list.forEach((n) => next.add(getCustomerNotificationDedupeKey(n)));
+            persistCustomerNotificationSeenKeys(next);
+            return next;
+          });
+        }
+      } catch (error: unknown) {
+        if (!cancelled) {
+          console.error("Error fetching notifications:", error);
           setNotifications([]);
         }
-      } catch (error: any) {
-        console.error('Error fetching notifications:', error);
-        setNotifications([]);
       } finally {
-        if (currentView === 'notifications') {
+        if (!cancelled) {
           setIsLoadingNotifications(false);
         }
       }
     };
 
-    fetchNotifications();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    run();
+
+    const token = getApiToken();
+    if (!token) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      run();
+    }, 90_000);
+
+    const onFocus = () => run();
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [currentView]);
+
+  // Admin messages — POST /contact-customer/get when this section is open
+  useEffect(() => {
+    if (currentView !== "admin-messages") return;
+
+    let cancelled = false;
+
+    const load = async () => {
+      const token = getApiToken();
+      if (!token) {
+        setAdminContactMessages([]);
+        setIsLoadingAdminContactMessages(false);
+        toast.error("Please log in to view admin messages.");
+        return;
+      }
+
+      setIsLoadingAdminContactMessages(true);
+      try {
+        const response = await getCustomerContactAdminMessages({ api_token: token });
+        if (cancelled) return;
+        setAdminContactMessages(Array.isArray(response.data) ? response.data : []);
+      } catch (error: unknown) {
+        if (!cancelled) {
+          console.error("Error fetching admin messages:", error);
+          setAdminContactMessages([]);
+          const msg =
+            error && typeof error === "object" && "message" in error
+              ? String((error as { message?: string }).message)
+              : "Failed to load admin messages.";
+          toast.error(msg);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingAdminContactMessages(false);
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, [currentView]);
 
   // Fetch quote requests when quote-requests view is shown
@@ -539,6 +887,17 @@ export function CustomerDashboard({
     if (currentView === "quote-requests") {
       fetchQuoteRequests();
     }
+  }, [currentView]);
+
+  useEffect(() => {
+    if (currentView !== "quote-requests") return;
+    let cancelled = false;
+    loadQuoteRequestDurationLabelMap().then((m) => {
+      if (!cancelled) setFraDurationLabels(m);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [currentView]);
 
   // Fetch recent activity from API when overview is shown
@@ -914,7 +1273,7 @@ export function CustomerDashboard({
           try {
             const addressesResponse = await fetchAddresses(token);
             if (addressesResponse.status === "success" && addressesResponse.data) {
-              setAddresses(addressesResponse.data);
+              setAddresses(await scopeAddressesIfNeeded(addressesResponse.data, token));
             }
           } catch (error) {
             console.error("Error refreshing addresses:", error);
@@ -1071,7 +1430,7 @@ export function CustomerDashboard({
           try {
             const addressesResponse = await fetchAddresses(token);
             if (addressesResponse.status === "success" && addressesResponse.data) {
-              setAddresses(addressesResponse.data);
+              setAddresses(await scopeAddressesIfNeeded(addressesResponse.data, token));
             }
           } catch (refreshError) {
             console.error("Error refreshing addresses after update:", refreshError);
@@ -1187,7 +1546,7 @@ export function CustomerDashboard({
         try {
           const addressesResponse = await fetchAddresses(token);
           if (addressesResponse.status === "success" && addressesResponse.data) {
-            setAddresses(addressesResponse.data);
+            setAddresses(await scopeAddressesIfNeeded(addressesResponse.data, token));
           }
         } catch (refreshError) {
           console.error("Error refreshing addresses after delete:", refreshError);
@@ -1238,44 +1597,111 @@ export function CustomerDashboard({
       return;
     }
 
-    // Find address with proper ID comparison
     const addressToUpdate = addresses.find(addr => {
       const addrId = typeof addr.id === 'string' ? parseInt(addr.id, 10) : addr.id;
       return addrId === id;
     });
-    
+
     if (!addressToUpdate) {
       toast.error("Address not found. Please refresh the page.");
       return;
     }
 
+    // Only clear "default" on rows that belong to this customer. If GET /addresses ever mixes
+    // other users' rows, a previous default could be someone else's id — the API then returns "Address not found".
+    const ownerId = normalizeAddressOwnerId(addressToUpdate.user_id);
+    const previousDefault = addresses.find((addr) => {
+      const addrId = typeof addr.id === "string" ? parseInt(addr.id, 10) : addr.id;
+      const sameOwner = normalizeAddressOwnerId(addr.user_id) === ownerId;
+      return addrId !== id && sameOwner && isStoredAddressDefault(addr.is_default_address);
+    });
+
+    setSettingDefaultAddressId(id);
     try {
+      // Clear the old default on the server so only one row is default and the former default can show the star again
+      if (previousDefault) {
+        const prevId =
+          typeof previousDefault.id === "string"
+            ? parseInt(previousDefault.id, 10)
+            : previousDefault.id;
+        const clearRes = await updateAddress({
+          api_token: token,
+          id: prevId,
+          tag: previousDefault.tag,
+          adress_line: previousDefault.adress_line,
+          city: previousDefault.city,
+          postal_code: previousDefault.postal_code,
+          country: previousDefault.country,
+          is_default_address: false,
+          is_favourite_address: Number(previousDefault.is_favourite_address) === 1,
+        });
+        if (!isAddressUpdateSuccess(clearRes)) {
+          toast.error(
+            clearRes.message || clearRes.error || "Failed to clear the previous default address"
+          );
+          return;
+        }
+      }
+
       const response = await updateAddress({
         api_token: token,
-        id: id,
+        id,
         tag: addressToUpdate.tag,
         adress_line: addressToUpdate.adress_line,
         city: addressToUpdate.city,
         postal_code: addressToUpdate.postal_code,
         country: addressToUpdate.country,
         is_default_address: true,
-        is_favourite_address: addressToUpdate.is_favourite_address === 1
+        is_favourite_address: Number(addressToUpdate.is_favourite_address) === 1,
       });
 
-      const setDefaultStatus = response.status as any; // Can be boolean or string
-      if ((setDefaultStatus === true || setDefaultStatus === "success" || setDefaultStatus === "true") || response.success === true) {
-        // Refresh addresses from API
-        const addressesResponse = await fetchAddresses(token);
-        if (addressesResponse.status === "success" && addressesResponse.data) {
-          setAddresses(addressesResponse.data);
-        }
-        toast.success(response.message || "Default address updated");
-      } else {
-        toast.error(response.message || response.error || "Failed to update address");
+      if (!isAddressUpdateSuccess(response)) {
+        toast.error(response.message || response.error || "Failed to set default address");
+        return;
       }
-    } catch (error: any) {
+
+      // Exactly one default locally: chosen card is default (no star); former default loses badge and gains the Star
+      setAddresses((prev) =>
+        prev.map((addr) => {
+          const addrId = typeof addr.id === "string" ? parseInt(addr.id, 10) : addr.id;
+          return { ...addr, is_default_address: addrId === id ? 1 : 0 };
+        })
+      );
+
+      const nextStarredId =
+        previousDefault != null
+          ? normalizeAddressId(previousDefault.id)
+          : (() => {
+              const other = addresses.find((a) => normalizeAddressId(a.id) !== id);
+              return other ? normalizeAddressId(other.id) : null;
+            })();
+      setStarredAddressId(nextStarredId);
+
+      try {
+        const addressesResponse = await fetchAddresses(token);
+        const listStatus = addressesResponse.status as boolean | string | undefined;
+        if (
+          (listStatus === "success" || listStatus === true || listStatus === "true") &&
+          Array.isArray(addressesResponse.data)
+        ) {
+          const scoped = await scopeAddressesIfNeeded(addressesResponse.data, token);
+          setAddresses(
+            scoped.map((addr) => ({
+              ...addr,
+              is_default_address: isStoredAddressDefault(addr.is_default_address) ? 1 : 0,
+            }))
+          );
+        }
+      } catch (refreshErr) {
+        console.error("Error refreshing addresses after set default:", refreshErr);
+      }
+      toast.success(response.message || "Default address updated");
+    } catch (error: unknown) {
       console.error("Error updating address:", error);
-      toast.error(error?.message || "Failed to update address. Please try again.");
+      const err = error as { message?: string };
+      toast.error(err?.message || "Failed to update address. Please try again.");
+    } finally {
+      setSettingDefaultAddressId(null);
     }
   };
 
@@ -1311,7 +1737,7 @@ export function CustomerDashboard({
           // Refresh addresses from API
           const addressesResponse = await fetchAddresses(token);
           if (addressesResponse.status === "success" && addressesResponse.data) {
-            setAddresses(addressesResponse.data);
+            setAddresses(await scopeAddressesIfNeeded(addressesResponse.data, token));
           }
           toast.success(response.message || "Address updated successfully");
         } else {
@@ -1343,6 +1769,7 @@ export function CustomerDashboard({
     { id: "payments" as CustomerView, label: "Payments", icon: CreditCard },
     { id: "quote-requests" as CustomerView, label: "My Quote Request", icon: FileText },
     { id: "profile" as CustomerView, label: "My Profile", icon: User },
+    { id: "admin-messages" as CustomerView, label: "Admin-Message", icon: MessageSquare },
     { id: "notifications" as CustomerView, label: "Notifications", icon: Bell },
     { id: "settings" as CustomerView, label: "Settings", icon: Settings },
   ];
@@ -1522,8 +1949,27 @@ export function CustomerDashboard({
 
         <Card>
           <CardContent className="p-6">
-            <h3 className="text-[#0A1A2F] mb-4">Recent Activity</h3>
-            <div className="space-y-4">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-[#0A1A2F]">Recent Activity</h3>
+                {!isLoadingRecentActivity && recentActivity.length > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {recentActivity.length} update{recentActivity.length === 1 ? "" : "s"}
+                    {recentActivity.length > 10 ? " — scroll the list for older items" : ""}
+                  </p>
+                )}
+              </div>
+              {!isLoadingRecentActivity && recentActivity.length > 0 && (
+                <Button
+                  variant="link"
+                  className="text-red-600 p-0 h-auto shrink-0 text-sm"
+                  onClick={() => handleViewChange("notifications")}
+                >
+                  Notifications →
+                </Button>
+              )}
+            </div>
+            <div>
               {isLoadingRecentActivity ? (
                 <div className="text-center py-8">
                   <Loader2 className="w-8 h-8 text-gray-400 mx-auto mb-3 animate-spin" />
@@ -1535,38 +1981,58 @@ export function CustomerDashboard({
                   <p className="text-gray-600">No activity yet</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {recentActivity.map((activity, index) => {
-                    // Format date from "2026-01-26 07:56:11" to "2026-01-26"
-                    const formatDate = (dateString: string): string => {
-                      try {
-                        const date = new Date(dateString);
-                        return date.toISOString().split('T')[0];
-                      } catch (error) {
-                        return dateString.split(' ')[0]; // Fallback to first part if date parsing fails
-                      }
-                    };
+                <div
+                  className={
+                    recentActivity.length > 10
+                      ? "max-h-96 overflow-y-auto overscroll-y-contain pr-1 -mr-1 [scrollbar-gutter:stable]"
+                      : ""
+                  }
+                >
+                  <div className="space-y-2 pb-0.5">
+                    {recentActivity.map((activity, index) => {
+                      const titleLower = activity.title.toLowerCase();
+                      const isPayment =
+                        titleLower.includes("payment") ||
+                        titleLower.includes("paid") ||
+                        titleLower.includes("processed");
 
-                    // Check if activity title contains payment-related keywords
-                    const isPayment = activity.title.toLowerCase().includes('payment') || 
-                                     activity.title.toLowerCase().includes('paid') ||
-                                     activity.title.toLowerCase().includes('processed');
-
-                    return (
-                      <div key={index} className="flex items-start gap-3 border-l-2 border-gray-200 pl-4 pb-3">
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-900">
-                            {activity.title}
-                          </p>
-                          <p className="text-xs text-gray-600">{activity.service_name}</p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {formatDate(activity.date)}
-                            {activity.amount && ` • ${activity.amount}`}
-                          </p>
+                      return (
+                        <div
+                          key={`${activity.date}-${activity.title}-${index}`}
+                          className="flex items-start gap-3 rounded-lg border border-gray-100 bg-gray-50/80 p-3 hover:bg-gray-100/90 transition-colors"
+                        >
+                          <div
+                            className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${
+                              isPayment ? "bg-emerald-100" : "bg-red-100"
+                            }`}
+                          >
+                            {isPayment ? (
+                              <CreditCard className="h-5 w-5 text-emerald-700" />
+                            ) : (
+                              <Activity className="h-5 w-5 text-red-600" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-gray-900 leading-snug">
+                              {activity.title}
+                            </p>
+                            {activity.service_name ? (
+                              <p className="text-xs text-gray-600 mt-0.5 truncate">
+                                {activity.service_name}
+                              </p>
+                            ) : null}
+                            <p className="text-xs text-gray-500 mt-1 flex flex-wrap items-center gap-x-1">
+                              <Clock className="w-3 h-3 flex-shrink-0" />
+                              <span>{formatActivityDateDisplay(activity.date)}</span>
+                              {activity.amount ? (
+                                <span className="text-gray-600">• {activity.amount}</span>
+                              ) : null}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -1784,7 +2250,10 @@ export function CustomerDashboard({
             </div>
           ) : (
             <div className="space-y-4">
-              {addresses.map((address) => (
+              {addresses.map((address) => {
+                const addrId = normalizeAddressId(address.id);
+                const showStarForDefault = starredAddressId !== null && addrId === starredAddressId;
+                return (
                 <div 
                   key={address.id} 
                   className="flex items-start gap-4 p-4 border border-gray-200 rounded-lg hover:border-red-300 transition-colors"
@@ -1795,15 +2264,15 @@ export function CustomerDashboard({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <p className="font-medium text-gray-900">{address.tag}</p>
-                      {address.is_default_address === 1 && (
+                      {isStoredAddressDefault(address.is_default_address) && (
                         <Badge className="bg-green-100 text-green-700">
-                          <Star className="w-3 h-3 mr-1" />
+                          <CheckCircle className="w-3 h-3 mr-1" aria-hidden />
                           Default
                         </Badge>
                       )}
-                      {address.is_favourite_address === 1 && (
+                      {Number(address.is_favourite_address) === 1 && (
                         <Badge className="bg-yellow-100 text-yellow-700">
-                          <Star className="w-3 h-3 mr-1" />
+                          <Heart className="w-3 h-3 mr-1" aria-hidden />
                           Favourite
                         </Badge>
                       )}
@@ -1822,12 +2291,12 @@ export function CustomerDashboard({
                     >
                       <Edit className="w-4 h-4" />
                     </Button>
-                    {address.is_default_address !== 1 && (
+                    {!isStoredAddressDefault(address.is_default_address) && (
                       <Button
                         variant="ghost"
                         size="sm"
+                        disabled={settingDefaultAddressId !== null}
                         onClick={() => {
-                          const addrId = typeof address.id === 'string' ? parseInt(address.id, 10) : address.id;
                           if (!isNaN(addrId) && addrId > 0) {
                             handleSetDefault(addrId);
                           } else {
@@ -1835,29 +2304,38 @@ export function CustomerDashboard({
                           }
                         }}
                         title="Set as default"
+                        aria-label="Set as default address"
                       >
-                        <Star className="w-4 h-4" />
+                        {settingDefaultAddressId === addrId ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-gray-500" aria-hidden />
+                        ) : showStarForDefault ? (
+                          <Star className="h-4 w-4" aria-hidden />
+                        ) : (
+                          <Bookmark className="h-4 w-4 text-gray-600" aria-hidden />
+                        )}
                       </Button>
                     )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        const addrId = typeof address.id === 'string' ? parseInt(address.id, 10) : address.id;
-                        if (!isNaN(addrId) && addrId > 0) {
-                          handleDeleteAddress(addrId);
-                        } else {
-                          toast.error("Invalid address ID");
-                        }
-                      }}
-                      className="text-red-600 hover:text-red-700"
-                      title="Delete address"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    {!isStoredAddressDefault(address.is_default_address) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          if (!isNaN(addrId) && addrId > 0) {
+                            handleDeleteAddress(addrId);
+                          } else {
+                            toast.error("Invalid address ID");
+                          }
+                        }}
+                        className="text-red-600 hover:text-red-700"
+                        title="Delete address"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -2072,7 +2550,7 @@ export function CustomerDashboard({
             >
               Change Password
             </Button>
-            <Button variant="outline" className="w-full justify-start">Enable Two-Factor Authentication</Button>
+            {/* <Button variant="outline" className="w-full justify-start">Enable Two-Factor Authentication</Button> */}
             <Button 
               variant="outline" 
               className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -2407,6 +2885,67 @@ export function CustomerDashboard({
     }
   };
 
+  const adminMessageRowKey = (item: CustomerAdminContactMessageItem, index: number): string => {
+    if (typeof item.id === "number" && item.id > 0) return `id:${item.id}`;
+    const stamp = item.created_at || "";
+    const head = (item.message || "").slice(0, 80);
+    return `h:${stamp}|${head}|${index}`;
+  };
+
+  const renderAdminMessages = () => (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl text-[#0A1A2F] mb-2">Admin-Message</h1>
+        <p className="text-gray-600">Messages from the Fire Guide team about your account or bookings.</p>
+      </div>
+
+      {isLoadingAdminContactMessages ? (
+        <div className="text-center py-12">
+          <Loader2 className="w-8 h-8 text-gray-400 mx-auto mb-3 animate-spin" />
+          <p className="text-gray-600">Loading messages...</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {adminContactMessages.length > 0 ? (
+            [...adminContactMessages]
+              .sort((a, b) => {
+                const ta = new Date(a.created_at || 0).getTime();
+                const tb = new Date(b.created_at || 0).getTime();
+                return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+              })
+              .map((row, index) => (
+                <Card key={adminMessageRowKey(row, index)}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <MessageSquare className="w-5 h-5 text-red-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900">{row.title || "Admin message"}</p>
+                        <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap break-words">
+                          {row.message || ""}
+                        </p>
+                        {row.created_at ? (
+                          <p className="text-xs text-gray-500 mt-2">{formatTimestamp(row.created_at)}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+          ) : (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-600">No admin messages yet.</p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   const renderNotifications = () => (
     <div className="space-y-6">
       <div>
@@ -2422,8 +2961,14 @@ export function CustomerDashboard({
       ) : (
         <div className="space-y-3">
           {notifications.length > 0 ? (
-            notifications.map((notification) => (
-              <Card key={notification.id}>
+            [...notifications]
+              .sort((a, b) => {
+                const ta = new Date(a.created_at || 0).getTime();
+                const tb = new Date(b.created_at || 0).getTime();
+                return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+              })
+              .map((notification) => (
+              <Card key={getCustomerNotificationDedupeKey(notification)}>
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -2843,97 +3388,374 @@ export function CustomerDashboard({
             <CustomerPayments payments={payments} />
           </div>
         );
-      case "quote-requests":
+      case "quote-requests": {
+        const quoteStatusStyleModal = (status: string): CSSProperties => {
+          switch (status?.toLowerCase()) {
+            case "pending":
+              return { backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d" };
+            case "reviewed":
+              return { backgroundColor: "#e0f2fe", color: "#0369a1", border: "1px solid #7dd3fc" };
+            case "quoted":
+              return { backgroundColor: "#d1fae5", color: "#047857", border: "1px solid #6ee7b7" };
+            case "assigned":
+              return { backgroundColor: "#ede9fe", color: "#5b21b6", border: "1px solid #c4b5fd" };
+            case "paid":
+              return { backgroundColor: "#dcfce7", color: "#166534", border: "1px solid #86efac" };
+            default:
+              return { backgroundColor: "#f1f5f9", color: "#334155", border: "1px solid #e2e8f0" };
+          }
+        };
+        const formatQuoteStatusModal = (s: string) =>
+          s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "";
+
+        const modalReq = selectedQuoteRequest;
+        const modalRd =
+          modalReq == null
+            ? ""
+            : typeof modalReq.request_data === "string"
+              ? modalReq.request_data
+              : JSON.stringify(modalReq.request_data ?? {});
+        const modalDetailRows =
+          modalReq == null ? [] : getCustomQuoteRequestDisplayRows(modalRd, fraDurationLabels);
+        let modalNotes = "";
+        let modalPreferredDateRaw = "";
+        if (modalReq != null) {
+          try {
+            const parsed =
+              typeof modalReq.request_data === "string"
+                ? JSON.parse(modalReq.request_data)
+                : modalReq.request_data;
+            if (parsed && typeof parsed === "object" && parsed !== null) {
+              const rec = parsed as Record<string, unknown>;
+              const n = rec.notes;
+              modalNotes = typeof n === "string" ? n.trim() : "";
+              const pd = rec.preferred_date;
+              modalPreferredDateRaw = typeof pd === "string" ? pd.trim() : "";
+            }
+          } catch {
+            modalNotes = "";
+          }
+        }
+        const modalStatusLower = (modalReq?.status || "").toLowerCase();
+        const modalIsAssigned = modalStatusLower === "assigned";
+        const modalQuoted = modalReq == null ? NaN : parseQuotedPriceNumberForQuote(modalReq.quoted_price);
+        const modalHasPrice = Number.isFinite(modalQuoted) && modalQuoted > 0;
+        const modalProName =
+          modalReq?.professional?.name?.trim() || modalReq?.professional?.full_name?.trim() || "";
+        const modalProEmail = modalReq?.professional?.email?.trim() || "";
+        const modalProPhone =
+          modalReq?.professional?.phone?.trim() ||
+          modalReq?.professional?.mobile?.trim() ||
+          modalReq?.professional?.phone_number?.trim() ||
+          "";
+        const modalPaid = modalReq == null ? false : isQuoteRequestPaid(modalReq);
+        const modalBadgeStatus = modalPaid ? "paid" : modalReq?.status ?? "";
+        const modalPriceDisplay =
+          modalHasPrice && modalReq != null
+            ? `£${modalQuoted.toLocaleString("en-GB", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}`
+            : null;
+        const modalPreferredLabel =
+          modalPreferredDateRaw && !Number.isNaN(Date.parse(modalPreferredDateRaw))
+            ? new Date(modalPreferredDateRaw).toLocaleDateString("en-GB")
+            : null;
+
         return (
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-3xl text-[#0A1A2F] mb-2">My Quote Request</h1>
-              <p className="text-gray-600">View your custom quote requests and their status.</p>
-            </div>
-            <Card>
-              <CardContent className="p-6">
-                {isLoadingQuoteRequests ? (
-                  <div className="text-center py-12">
-                    <Loader2 className="w-12 h-12 text-gray-400 mx-auto mb-3 animate-spin" />
+          <>
+            <div className="space-y-6">
+              <div>
+                <h1 className="text-3xl text-[#0A1A2F] mb-2">My Quote Request</h1>
+                <p className="text-gray-600">View your custom quote requests and their status.</p>
+              </div>
+              {isLoadingQuoteRequests ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Loader2 className="w-12 h-12 text-gray-400 mx-auto mb-4 animate-spin" />
                     <p className="text-gray-600">Loading quote requests...</p>
-                  </div>
-                ) : quoteRequests.length === 0 ? (
-                  <div className="text-center py-12">
+                  </CardContent>
+                </Card>
+              ) : quoteRequests.length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
                     <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-gray-600">No quote requests yet.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {(() => {
-                      const quoteStatusStyle = (status: string): CSSProperties => {
-                        switch (status?.toLowerCase()) {
-                          case "pending": return { backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d" };
-                          case "reviewed": return { backgroundColor: "#e0f2fe", color: "#0369a1", border: "1px solid #7dd3fc" };
-                          case "quoted": return { backgroundColor: "#d1fae5", color: "#047857", border: "1px solid #6ee7b7" };
-                          case "assigned": return { backgroundColor: "#ede9fe", color: "#5b21b6", border: "1px solid #c4b5fd" };
-                          default: return { backgroundColor: "#f1f5f9", color: "#334155", border: "1px solid #e2e8f0" };
-                        }
-                      };
-                      const formatQuoteStatus = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "";
-                      return quoteRequests.map((req) => {
-                      let requestData: Record<string, unknown> = {};
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-4">
+                  {(() => {
+                    const quoteStatusStyle = (status: string): CSSProperties => quoteStatusStyleModal(status);
+                    const formatQuoteStatus = (s: string) => formatQuoteStatusModal(s);
+                    return quoteRequests.map((req) => {
+                      let preferredDateRaw = "";
                       try {
-                        requestData = typeof req.request_data === "string" ? JSON.parse(req.request_data) : req.request_data || {};
+                        const parsed =
+                          typeof req.request_data === "string"
+                            ? JSON.parse(req.request_data)
+                            : req.request_data;
+                        if (parsed && typeof parsed === "object" && parsed !== null) {
+                          const pd = (parsed as Record<string, unknown>).preferred_date;
+                          preferredDateRaw = typeof pd === "string" ? pd.trim() : "";
+                        }
                       } catch {
-                        requestData = {};
+                        preferredDateRaw = "";
                       }
-                      const buildingType = (requestData.building_type as string) || "—";
-                      const peopleCount = (requestData.people_count as string) || "—";
-                      const floors = requestData.floors != null ? String(requestData.floors) : "—";
-                      const assessmentType = (requestData.assessment_type as string) || "—";
-                      const notes = (requestData.notes as string) || "";
+                      const statusLower = (req.status || "").toLowerCase();
+                      const isAssignedQuote = statusLower === "assigned";
+                      const quotedAmount = parseQuotedPriceNumberForQuote(req.quoted_price);
+                      const hasQuotedPrice = Number.isFinite(quotedAmount) && quotedAmount > 0;
+                      const professionalName = req.professional?.name?.trim() || "";
+                      const quotePaid = isQuoteRequestPaid(req);
+                      const badgeStatus = quotePaid ? "paid" : req.status;
+                      const priceDisplay = hasQuotedPrice
+                        ? `£${quotedAmount.toLocaleString("en-GB", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}`
+                        : null;
+                      const preferredDateLabel =
+                        preferredDateRaw && !Number.isNaN(Date.parse(preferredDateRaw))
+                          ? new Date(preferredDateRaw).toLocaleDateString("en-GB")
+                          : null;
+
                       return (
-                        <div
-                          key={req.id}
-                          className="border rounded-lg p-4 hover:bg-gray-50 transition-colors"
-                        >
-                          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex flex-wrap items-center gap-2 mb-2">
-                                <h3 className="font-semibold text-[#0A1A2F]">
-                                  {req.service?.service_name || `Service #${req.service_id}`}
-                                </h3>
-                                <Badge variant="custom" style={quoteStatusStyle(req.status)}>{formatQuoteStatus(req.status)}</Badge>
-                              </div>
-                              <p className="text-sm text-gray-500 mb-2">
-                                {new Date(req.created_at).toLocaleString("en-GB", {
-                                  day: "numeric",
-                                  month: "short",
-                                  year: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </p>
-                              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-sm">
-                                <div><span className="text-gray-500">Building:</span> {buildingType}</div>
-                                <div><span className="text-gray-500">People:</span> {peopleCount}</div>
-                                <div><span className="text-gray-500">Floors:</span> {floors}</div>
-                                <div><span className="text-gray-500">Assessment:</span> {assessmentType}</div>
-                              </dl>
-                              {notes && (
-                                <p className="text-sm text-gray-600 mt-2">
-                                  <span className="text-gray-500">Notes:</span> {notes}
+                        <Card key={req.id} className="hover:shadow-lg transition-shadow">
+                          <CardContent className="p-6">
+                            <div className="flex flex-col md:flex-row justify-between gap-4">
+                              <div className="flex-1 min-w-0 space-y-3">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <h3 className="text-[#0A1A2F] mb-1">
+                                      {req.service?.service_name || `Service #${req.service_id}`}
+                                    </h3>
+                                    <p className="text-sm text-gray-600">Ref: Quote #{req.id}</p>
+                                  </div>
+                                  <Badge variant="custom" style={quoteStatusStyle(badgeStatus)} className="shrink-0">
+                                    {formatQuoteStatus(badgeStatus)}
+                                  </Badge>
+                                </div>
+
+                                <p className="text-sm text-gray-500">
+                                  Submitted{" "}
+                                  {new Date(req.created_at).toLocaleString("en-GB", {
+                                    day: "numeric",
+                                    month: "short",
+                                    year: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
                                 </p>
-                              )}
+
+                                {isAssignedQuote && (professionalName || preferredDateLabel) && (
+                                  <div className="grid md:grid-cols-2 gap-3 text-sm">
+                                    {professionalName ? (
+                                      <div className="flex items-center gap-2 text-gray-600">
+                                        <User className="w-4 h-4 shrink-0" />
+                                        <span>{professionalName}</span>
+                                      </div>
+                                    ) : null}
+                                    {preferredDateLabel ? (
+                                      <div className="flex items-center gap-2 text-gray-600">
+                                        <Calendar className="w-4 h-4 shrink-0" />
+                                        <span>{preferredDateLabel}</span>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                )}
+
+                                {isAssignedQuote && hasQuotedPrice && (
+                                  <div className="pt-2 border-t border-gray-200">
+                                    <p className="text-gray-900">
+                                      Total: <span className="font-semibold">{priceDisplay}</span>
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="flex md:flex-col gap-2 shrink-0">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full md:w-auto md:min-w-[140px]"
+                                  onClick={() => setSelectedQuoteRequest(req)}
+                                >
+                                  View Details
+                                </Button>
+                                {isAssignedQuote && hasQuotedPrice && !quotePaid && (
+                                  <Button
+                                    type="button"
+                                    variant="default"
+                                    size="sm"
+                                    className="w-full md:w-auto md:min-w-[140px] bg-red-600 hover:bg-red-700"
+                                    disabled={payingQuoteRequestId === req.id}
+                                    onClick={() => void handlePayAssignedQuoteRequest(req)}
+                                  >
+                                    {payingQuoteRequestId === req.id ? (
+                                      <>
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        Redirecting…
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CreditCard className="w-4 h-4 mr-2" />
+                                        Pay
+                                      </>
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        </div>
+                          </CardContent>
+                        </Card>
                       );
                     });
-                    })()}
-                  </div>
+                  })()}
+                </div>
+              )}
+            </div>
+
+            <Dialog
+              open={selectedQuoteRequest != null}
+              onOpenChange={(open) => {
+                if (!open) setSelectedQuoteRequest(null);
+              }}
+            >
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                {modalReq != null && (
+                  <>
+                    <DialogHeader>
+                      <DialogTitle>Quote request details</DialogTitle>
+                      <DialogDescription>
+                        Reference: Quote #{modalReq.id} · Submitted{" "}
+                        {new Date(modalReq.created_at).toLocaleString("en-GB", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-lg font-semibold text-[#0A1A2F]">
+                          {modalReq.service?.service_name || `Service #${modalReq.service_id}`}
+                        </h4>
+                        <Badge variant="custom" style={quoteStatusStyleModal(modalBadgeStatus)}>
+                          {formatQuoteStatusModal(modalBadgeStatus)}
+                        </Badge>
+                      </div>
+
+                      <div
+                        className={`grid gap-4 text-sm border rounded-lg p-4 bg-gray-50/80 ${
+                          modalIsAssigned ? "sm:grid-cols-1" : ""
+                        }`}
+                      >
+                        {modalIsAssigned && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                              Professional
+                            </p>
+                            <div className="flex items-center gap-2 text-gray-900">
+                              <User className="w-4 h-4 shrink-0 text-gray-500" />
+                              <span>{modalProName || "—"}</span>
+                            </div>
+                            {modalProEmail && (
+                              <div className="flex items-start gap-2 text-gray-600 mt-1 min-w-0">
+                                <Mail className="w-4 h-4 shrink-0 text-gray-500 mt-0.5" aria-hidden />
+                                <span className="break-all">{modalProEmail}</span>
+                              </div>
+                            )}
+                            {modalProPhone && (
+                              <div className="flex items-center gap-2 text-gray-600 mt-1 min-w-0">
+                                <Phone className="w-4 h-4 shrink-0 text-gray-500" aria-hidden />
+                                <span className="break-words">{modalProPhone}</span>
+                              </div>
+                            )}
+                            {modalHasPrice && (
+                              <>
+                                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mt-3 mb-1">
+                                  Total price
+                                </p>
+                                <p className="text-xl font-semibold text-[#0A1A2F]">{modalPriceDisplay}</p>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {modalPreferredLabel && (
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Calendar className="w-4 h-4 shrink-0" />
+                          <span>Preferred date: {modalPreferredLabel}</span>
+                        </div>
+                      )}
+
+                      {modalDetailRows.length > 0 ? (
+                        <div>
+                          <p className="text-sm font-semibold text-[#0A1A2F] mb-3">Request details</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-sm">
+                            {modalDetailRows.map((row) => (
+                              <div key={row.id} className="min-w-0">
+                                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                  {row.label}
+                                </p>
+                                <p className="text-gray-900 font-medium mt-0.5 leading-snug break-words">
+                                  {row.value}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500">No structured request fields to display.</p>
+                      )}
+
+                      {modalNotes ? (
+                        <div className="rounded-lg border p-3 bg-white">
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Notes</p>
+                          <p className="text-sm text-gray-800 whitespace-pre-wrap">{modalNotes}</p>
+                        </div>
+                      ) : null}
+
+                      {modalIsAssigned && modalHasPrice && !modalPaid && (
+                        <DialogFooter className="gap-2 sm:gap-0">
+                          <Button
+                            type="button"
+                            className="bg-red-600 hover:bg-red-700"
+                            disabled={payingQuoteRequestId === modalReq.id}
+                            onClick={() => void handlePayAssignedQuoteRequest(modalReq)}
+                          >
+                            {payingQuoteRequestId === modalReq.id ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Redirecting…
+                              </>
+                            ) : (
+                              <>
+                                <CreditCard className="w-4 h-4 mr-2" />
+                                Pay now
+                              </>
+                            )}
+                          </Button>
+                        </DialogFooter>
+                      )}
+                    </div>
+                  </>
                 )}
-              </CardContent>
-            </Card>
-          </div>
+              </DialogContent>
+            </Dialog>
+          </>
         );
+      }
       case "profile":
         return renderProfile();
+      case "admin-messages":
+        return renderAdminMessages();
       case "settings":
         return renderSettings();
       case "notifications":
@@ -2978,13 +3800,21 @@ export function CustomerDashboard({
             <Button
               variant="ghost"
               size="icon"
-              className="text-white hover:text-red-500 hover:bg-transparent relative p-1.5"
+              className="text-white hover:text-red-500 hover:bg-transparent relative overflow-visible p-1.5 shrink-0"
               onClick={() => handleViewChange("notifications")}
+              aria-label={`Notifications${unreadNotificationCount > 0 ? `, ${unreadNotificationCount} unread` : ""}`}
             >
-              <Bell className="w-5 h-5" />
-              {bookings.filter(b => b.status === "upcoming").length > 0 && (
-                <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
-              )}
+              <span className="relative inline-flex h-9 w-9 items-center justify-center">
+                <Bell className="h-5 w-5" aria-hidden />
+                {unreadNotificationCount > 0 && (
+                  <span
+                    className="absolute -right-0.5 -top-0.5 z-10 flex h-[1.375rem] min-w-[1.375rem] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold leading-none text-white shadow-sm ring-2 ring-white tabular-nums sm:h-6 sm:min-w-6 sm:text-xs"
+                    aria-hidden
+                  >
+                    {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                  </span>
+                )}
+              </span>
             </Button>
             <Button
               variant="ghost"
@@ -3041,9 +3871,9 @@ export function CustomerDashboard({
                   >
                     <Icon className="w-5 h-5" />
                     <span>{item.label}</span>
-                    {item.id === "notifications" && (
-                      <Badge className="ml-auto bg-red-600 text-white h-5 w-5 p-0 flex items-center justify-center rounded-full text-xs">
-                        {notifications.length}
+                    {item.id === "notifications" && unreadNotificationCount > 0 && (
+                      <Badge className="ml-auto bg-red-600 text-white min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full text-xs tabular-nums">
+                        {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
                       </Badge>
                     )}
                   </button> 

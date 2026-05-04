@@ -1,6 +1,5 @@
 import { useNavigate } from "react-router-dom";
 import { startTransition } from "react";
-import { toast } from "sonner";
 import { useApp } from "../../contexts/AppContext";
 import { CustomerAuth } from "../CustomerAuth";
 import { setUserInfo, getUserRole } from "../../lib/auth";
@@ -27,7 +26,6 @@ export default function CustomerAuthPage() {
           setCurrentUser({ name, role: "professional" });
           setUserInfo(name, "professional");
           setCompleteProfileReminderFlag();
-          toast.info("Please complete your profile.");
           startTransition(() => {
             navigate("/professional/dashboard/profile", {
               replace: true,

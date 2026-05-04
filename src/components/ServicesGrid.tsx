@@ -91,7 +91,7 @@ export function ServicesGrid({ onSelectService }: ServicesGridProps) {
             Our Services
           </h2>
           <p className="text-[14px] md:text-[16px] leading-[150%] md:leading-[140%] text-[#666] max-w-2xl mx-auto px-4">
-            Find independent fire safety professionals to support all aspects of fire safety management — in one place.
+          Find trusted professionals for all your fire safety needs
           </p>
         </div>
         

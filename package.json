@@ -3,6 +3,7 @@
       "version": "0.1.0",
       "private": true,
       "dependencies": {
+            "@emailjs/browser": "^4.4.1",
             "@radix-ui/react-alert-dialog": "^1.1.2",
             "@radix-ui/react-aspect-ratio": "^1.1.0",
             "@radix-ui/react-avatar": "^1.1.1",

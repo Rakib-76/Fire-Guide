@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { Star, MapPin, CheckCircle, ArrowRight } from "lucide-react";
 import { Button } from "./ui/button";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
@@ -13,6 +14,8 @@ interface FeaturedProfessionalsProps {
 }
 
 type FeaturedCardDisplay = {
+  /** From API; null for static fallback — then card uses onViewProfile */
+  professionalId: number | null;
   name: string;
   specialty: string;
   location: string;
@@ -66,6 +69,7 @@ const STATIC_TEMPLATES: Omit<FeaturedCardDisplay, "name" | "location" | "startin
 
 const STATIC_FALLBACK_PROFESSIONALS: FeaturedCardDisplay[] = STATIC_TEMPLATES.map((t, i) => ({
   ...t,
+  professionalId: null,
   name: ["James Mitchell", "Emma Richardson", "Robert Davies", "Sophie Anderson"][i],
   location: ["London", "Manchester", "Birmingham", "Leeds"][i],
   startingPrice: ["£150.00", "£120.00", "£80.00", "£250.00"][i],
@@ -76,6 +80,7 @@ function mergeApiWithTemplates(api: ProfessionalsGetItem[]): FeaturedCardDisplay
     const t = STATIC_TEMPLATES[i % STATIC_TEMPLATES.length];
     return {
       ...t,
+      professionalId: p.id,
       name: p.name,
       image: p.image && p.image.trim() ? p.image : t.image,
       location: p.business_location,
@@ -85,7 +90,16 @@ function mergeApiWithTemplates(api: ProfessionalsGetItem[]): FeaturedCardDisplay
 }
 
 export function FeaturedProfessionals({ onViewProfile }: FeaturedProfessionalsProps) {
+  const navigate = useNavigate();
   const [apiList, setApiList] = useState<ProfessionalsGetItem[] | null>(null);
+
+  const openProfessional = (professionalId: number | null) => {
+    if (professionalId != null && Number.isFinite(professionalId) && professionalId > 0) {
+      navigate(`/professionals/${professionalId}`);
+      return;
+    }
+    onViewProfile();
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -124,9 +138,9 @@ export function FeaturedProfessionals({ onViewProfile }: FeaturedProfessionalsPr
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
           {professionals.map((professional, index) => (
             <div
-              key={apiFeaturedSlice ? apiFeaturedSlice[index]?.id ?? index : index}
+              key={professional.professionalId ?? (apiFeaturedSlice ? apiFeaturedSlice[index]?.id : index)}
               className="group grid h-full min-h-0 w-full cursor-pointer grid-rows-[auto_minmax(0,1fr)] transition-all"
-              onClick={onViewProfile}
+              onClick={() => openProfessional(professional.professionalId)}
             >
               {/* Professional Image - Full Width Block */}
               <div className="relative w-full overflow-hidden">
@@ -159,14 +173,14 @@ export function FeaturedProfessionals({ onViewProfile }: FeaturedProfessionalsPr
                     <span>{professional.completedJobs} jobs</span>
                   </div>
 
-                  <div className="mb-4 flex min-h-[4.5rem] flex-wrap content-start gap-2">
+                  <div className="mb-4 flex min-h-[4.5rem] w-full flex-col items-stretch justify-start gap-2">
                     {professional.certifications.map((cert, i) => (
                       <div
                         key={i}
-                        className="flex items-center gap-1 rounded bg-green-50 px-2 py-1 text-xs text-green-700"
+                        className="flex min-w-0 w-full flex-row items-center gap-1.5 rounded bg-green-50 px-2 py-1.5 text-xs text-green-700"
                       >
-                        <CheckCircle className="h-3 w-3 shrink-0" />
-                        {cert}
+                        <CheckCircle className="h-3 w-3 shrink-0 text-green-600" aria-hidden />
+                        <span className="min-w-0 leading-snug">{cert}</span>
                       </div>
                     ))}
                   </div>
@@ -184,7 +198,14 @@ export function FeaturedProfessionals({ onViewProfile }: FeaturedProfessionalsPr
                     </div>
                   </div>
 
-                  <Button className="mt-4 w-full bg-red-600 hover:bg-red-700 group-hover:shadow-lg">
+                  <Button
+                    type="button"
+                    className="mt-4 w-full bg-red-600 hover:bg-red-700 group-hover:shadow-lg"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openProfessional(professional.professionalId);
+                    }}
+                  >
                     View Profile <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </div>

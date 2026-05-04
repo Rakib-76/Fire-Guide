@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, startTransition } from "react";
-import { isAuthenticated, getUserInfo, setUserInfo, removeAuthToken } from "../lib/auth";
+import { isAuthenticated, getSessionUserDisplay, setUserInfo, removeAuthToken } from "../lib/auth";
 
 export interface Booking {
   id: string;
@@ -8,6 +8,8 @@ export interface Booking {
   date: string;
   time: string;
   status: "upcoming" | "completed" | "cancelled";
+  displayStatus?: string;
+  isPaid?: boolean;
   location: string;
   price: string;
   professionalEmail: string;
@@ -24,7 +26,7 @@ export interface Payment {
   service: string;
   professional: string;
   amount: string;
-  status: "paid" | "refunded" | "pending";
+  status: "paid" | "refunded" | "pending" | "unpaid";
   paymentMethod: string;
   invoiceNumber: string;
   bookingRef: string;
@@ -247,7 +249,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [customerBookings, setCustomerBookings] = useState<Booking[]>(loadBookingsFromStorage);
   const [customerPayments, setCustomerPayments] = useState<Payment[]>(loadPaymentsFromStorage);
   const [bookingData, setBookingData] = useState<any>(null);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    try {
+      if (typeof window === "undefined") return null;
+      const u = getSessionUserDisplay();
+      return u ? { name: u.name, role: u.role } : null;
+    } catch {
+      return null;
+    }
+  });
 
   // Save bookings to localStorage whenever they change (debounced to avoid excessive writes)
   useEffect(() => {
@@ -275,10 +285,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timeoutId);
   }, [customerPayments]);
 
-  // Initialize auth state on mount - wrapped in startTransition to prevent Suspense errors
+  // Sync auth display from storage on mount (keeps role/name aligned with token after reload)
   useEffect(() => {
     if (isAuthenticated()) {
-      const userInfo = getUserInfo();
+      const userInfo = getSessionUserDisplay();
       if (userInfo) {
         startTransition(() => {
           setCurrentUser({ name: userInfo.name, role: userInfo.role });

@@ -2033,6 +2033,17 @@ export interface AdminProfessionalService {
   status: string;
 }
 
+export interface AdminProfessionalExperience {
+  id: number;
+  experience_name?: string;
+  years?: string | number | null;
+  description?: string | null;
+  evidence?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface AdminProfessionalSingleData {
   id: number;
   name: string;
@@ -2051,6 +2062,7 @@ export interface AdminProfessionalSingleData {
   professional_image: string | null;
   services: AdminProfessionalService[];
   certificates: AdminProfessionalCertificate[];
+  experiences?: AdminProfessionalExperience[];
   created_at: string;
   updated_at: string;
 }
@@ -2193,6 +2205,44 @@ export const adminProfessionalChangeServiceStatus = async (
   return response.data;
 };
 
+/** Experience status for change/experience-status: "verified" | "rejected" | "pending" */
+export type AdminExperienceStatus = 'verified' | 'rejected' | 'pending';
+
+export interface AdminProfessionalChangeExperienceStatusRequest {
+  api_token: string;
+  professional_id: number;
+  experience_id: number;
+  status: AdminExperienceStatus;
+}
+
+export interface AdminProfessionalChangeExperienceStatusResponse {
+  success: boolean;
+  message: string;
+  data?: {
+    professional_name?: string;
+    experience?: { id: number; status: string; created_at?: string; updated_at?: string };
+  };
+}
+
+/**
+ * Change professional experience status (verified / rejected / pending)
+ * POST https://fireguide.attoexasolutions.com/api/change/experience-status
+ */
+export const adminProfessionalChangeExperienceStatus = async (
+  data: AdminProfessionalChangeExperienceStatusRequest
+): Promise<AdminProfessionalChangeExperienceStatusResponse> => {
+  const response = await apiClient.post<AdminProfessionalChangeExperienceStatusResponse>(
+    '/change/experience-status',
+    {
+      api_token: data.api_token,
+      professional_id: data.professional_id,
+      experience_id: data.experience_id,
+      status: data.status,
+    }
+  );
+  return response.data;
+};
+
 // Admin bookings list (Booking Management page)
 export interface AdminBookingListItem {
   id: number;
@@ -2209,6 +2259,8 @@ export interface AdminBookingListItem {
   status: string;
   ref_code: string;
   professional_name: string;
+  professional_email?: string | null;
+  professional_phone?: string | null;
   service_name: string | null;
   created_at: string;
 }
@@ -2299,6 +2351,10 @@ export interface AdminReviewListItem {
   status: string;
   professional_name: string;
   professional_email: string;
+  /** For admin “Contact professional” (POST /contact-professional/create); number or numeric string from API. */
+  professional_id?: number | string;
+  professional_user_id?: number | string;
+  professional?: { id?: number };
   services: string[];
   created_at: string;
 }
@@ -2322,11 +2378,108 @@ export const getAdminReviewsList = async (
   return response.data;
 };
 
+/** POST /admin-reviews/approved — body: api_token, id (review id). */
+export interface AdminReviewApproveRequest {
+  api_token: string;
+  id: number;
+}
+
+export interface AdminReviewApproveResponse {
+  success?: boolean;
+  status?: string | boolean;
+  message?: string;
+  data?: unknown;
+}
+
+export const approveAdminReview = async (
+  data: AdminReviewApproveRequest
+): Promise<AdminReviewApproveResponse> => {
+  const response = await apiClient.post<AdminReviewApproveResponse>('/admin-reviews/approved', {
+    api_token: data.api_token,
+    id: data.id,
+  });
+  return response.data;
+};
+
+/** POST /admin-reviews/reject — body: api_token, id (review id). */
+export type AdminReviewRejectRequest = AdminReviewApproveRequest;
+export type AdminReviewRejectResponse = AdminReviewApproveResponse;
+
+export const rejectAdminReview = async (
+  data: AdminReviewRejectRequest
+): Promise<AdminReviewRejectResponse> => {
+  const response = await apiClient.post<AdminReviewRejectResponse>('/admin-reviews/reject', {
+    api_token: data.api_token,
+    id: data.id,
+  });
+  return response.data;
+};
+
+/** POST /contact-professional/create — admin message to a professional. */
+export interface ContactProfessionalCreateRequest {
+  api_token: string;
+  professional_id: number;
+  message: string;
+}
+
+export interface ContactProfessionalCreateResponse {
+  success?: boolean;
+  status?: boolean | string;
+  message?: string;
+  data?: unknown;
+}
+
+export const createContactProfessionalMessage = async (
+  data: ContactProfessionalCreateRequest
+): Promise<ContactProfessionalCreateResponse> => {
+  const response = await apiClient.post<ContactProfessionalCreateResponse>(
+    '/contact-professional/create',
+    {
+      api_token: data.api_token,
+      professional_id: data.professional_id,
+      message: data.message,
+    }
+  );
+  return response.data;
+};
+
+/** POST /contact-customer/create — admin message to a customer (reviewer). */
+export interface ContactCustomerCreateRequest {
+  api_token: string;
+  /** Reviewer email from admin reviews list (`reviewer_email`). */
+  customer_email: string;
+  message: string;
+}
+
+export interface ContactCustomerCreateResponse {
+  success?: boolean;
+  status?: boolean | string;
+  message?: string;
+  data?: unknown;
+}
+
+export const createContactCustomerMessage = async (
+  data: ContactCustomerCreateRequest
+): Promise<ContactCustomerCreateResponse> => {
+  const response = await apiClient.post<ContactCustomerCreateResponse>(
+    '/contact-customer/create',
+    {
+      api_token: data.api_token,
+      customer_email: data.customer_email,
+      message: data.message,
+    }
+  );
+  return response.data;
+};
+
 // Admin notification details (Notifications page - cards + list)
 export interface AdminNotificationCards {
   total_notifications: number;
   unread: number;
-  critical: number;
+  /** @deprecated Prefer `payments`; kept for older API responses. */
+  critical?: number;
+  /** Count for the Payments summary card (`/admin/notifications/summary` or legacy details). */
+  payments?: number;
   system_alerts: number;
 }
 
@@ -2340,6 +2493,90 @@ export interface AdminNotificationItem {
   date: string;
   actions: { can_mark_read: boolean; can_delete: boolean };
 }
+
+function isAdminNotifRecord(x: unknown): x is Record<string, unknown> {
+  return x != null && typeof x === "object" && !Array.isArray(x);
+}
+
+function adminNotifStrField(r: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = r[k];
+    if (v != null && String(v).trim() !== "") return String(v);
+  }
+  return "";
+}
+
+/** Pull array from typical Laravel envelopes: `data`, `data.data`, `data.notifications`, `notifications`. */
+export function extractAdminNotificationListRows(body: unknown): unknown[] {
+  if (body == null) return [];
+  if (Array.isArray(body)) return body;
+  if (!isAdminNotifRecord(body)) return [];
+  if (Array.isArray(body.data)) return body.data;
+  const nested = body.data;
+  if (isAdminNotifRecord(nested)) {
+    if (Array.isArray(nested.data)) return nested.data;
+    if (Array.isArray(nested.notifications)) return nested.notifications;
+  }
+  if (Array.isArray(body.notifications)) return body.notifications;
+  return [];
+}
+
+function coerceAdminListPriority(raw: unknown): string {
+  const v = String(raw ?? "medium").toLowerCase();
+  if (v === "critical" || v === "urgent") return "critical";
+  if (v === "high") return "high";
+  if (v === "low") return "low";
+  return "medium";
+}
+
+function normalizeAdminNotificationListRow(row: unknown): AdminNotificationItem | null {
+  if (!isAdminNotifRecord(row)) return null;
+  const idRaw = row.id ?? row.notification_id;
+  const id = typeof idRaw === "number" && Number.isFinite(idRaw) ? idRaw : parseInt(String(idRaw ?? ""), 10);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const title = adminNotifStrField(row, "title", "subject", "heading", "name") || "Notification";
+  const message = adminNotifStrField(row, "message", "content", "body", "description", "text", "details");
+  const category = adminNotifStrField(row, "category", "type") || "general";
+  const date =
+    adminNotifStrField(row, "date", "created_at", "sent_at", "updated_at") ||
+    (typeof row.created_at === "string" ? row.created_at : "");
+  const read =
+    row.is_read === true ||
+    row.is_read === 1 ||
+    row.is_read === "1" ||
+    row.read === true ||
+    row.read === 1;
+  const canMark = row.can_mark_read !== false && row.actions_can_mark_read !== false;
+  const canDel = row.can_delete !== false && row.actions_can_delete !== false;
+  return {
+    id,
+    title,
+    priority: coerceAdminListPriority(row.priority),
+    message,
+    category,
+    is_read: read ? 1 : 0,
+    date,
+    actions: { can_mark_read: canMark, can_delete: canDel },
+  };
+}
+
+/**
+ * POST list endpoints for admin Notifications UI.
+ * Paths: `/notifications` (all), `/admin/notifications/unread`, `/admin/notifications/system`, etc.
+ */
+export const fetchAdminNotificationsByPath = async (
+  api_token: string,
+  path: string
+): Promise<AdminNotificationItem[]> => {
+  const response = await apiClient.post<unknown>(path, { api_token });
+  const rows = extractAdminNotificationListRows(response.data);
+  const out: AdminNotificationItem[] = [];
+  for (const row of rows) {
+    const n = normalizeAdminNotificationListRow(row);
+    if (n) out.push(n);
+  }
+  return out;
+};
 
 export interface AdminNotificationDetailsData {
   cards: AdminNotificationCards;
@@ -2363,6 +2600,155 @@ export const getAdminNotificationDetails = async (
     { api_token: data.api_token }
   );
   return response.data;
+};
+
+function readNonNegativeSummaryInt(r: Record<string, unknown>, keys: string[]): number {
+  for (const k of keys) {
+    const v = r[k];
+    if (typeof v === 'number' && Number.isFinite(v)) return Math.max(0, Math.floor(v));
+    if (typeof v === 'string' && v.trim() !== '') {
+      const n = Number(v);
+      if (Number.isFinite(n)) return Math.max(0, Math.floor(n));
+    }
+  }
+  return 0;
+}
+
+/** Unwrap Laravel-style `{ data }` / nested `data` for summary payloads. */
+function extractAdminNotificationsSummaryRecord(body: unknown): Record<string, unknown> | null {
+  if (!isAdminNotifRecord(body)) return null;
+  const layers: Record<string, unknown>[] = [body];
+  const d1 = body.data;
+  if (isAdminNotifRecord(d1)) {
+    layers.push(d1);
+    const d2 = d1.data;
+    if (isAdminNotifRecord(d2)) layers.push(d2);
+  }
+  const hintKeys = [
+    'total_notifications',
+    'total',
+    'unread',
+    'payments',
+    'critical',
+    'system_alerts',
+    'system',
+  ] as const;
+  for (const layer of layers) {
+    if (hintKeys.some((k) => k in layer && layer[k] != null)) return layer;
+  }
+  if (isAdminNotifRecord(d1)) return d1;
+  return null;
+}
+
+function normalizeAdminNotificationsSummaryCards(payload: Record<string, unknown>): AdminNotificationCards {
+  const total_notifications = readNonNegativeSummaryInt(payload, [
+    'total_notifications',
+    'total',
+    'total_count',
+    'all',
+  ]);
+  const unread = readNonNegativeSummaryInt(payload, [
+    'unread',
+    'unread_count',
+    'unread_notifications',
+    'unread_notifications_count',
+    'total_unread',
+    'notifications_unread',
+    'unRead',
+  ]);
+  const paymentsRaw = readNonNegativeSummaryInt(payload, [
+    'payments',
+    'payment',
+    'payment_notifications',
+    'payments_count',
+  ]);
+  const criticalRaw = readNonNegativeSummaryInt(payload, ['critical']);
+  const paymentsMerged = paymentsRaw || criticalRaw;
+  const system_alerts = readNonNegativeSummaryInt(payload, [
+    'system_alerts',
+    'system',
+    'system_count',
+    'system_notifications',
+  ]);
+  return {
+    total_notifications,
+    unread,
+    payments: paymentsMerged,
+    ...(criticalRaw > 0 && paymentsRaw === 0 ? { critical: criticalRaw } : {}),
+    system_alerts,
+  };
+}
+
+/**
+ * Summary stat cards for admin Notifications (Total, Unread, Payments, System).
+ * POST `/admin/notifications/summary` with `{ api_token }`.
+ */
+export const getAdminNotificationsSummary = async (
+  data: AdminOverviewSummaryRequest
+): Promise<AdminNotificationCards | null> => {
+  const response = await apiClient.post<unknown>('/admin/notifications/summary', {
+    api_token: data.api_token,
+  });
+  const body = response.data;
+  if (isAdminNotifRecord(body)) {
+    if (body.success === false || body.status === false) return null;
+  }
+  const record = extractAdminNotificationsSummaryRecord(body);
+  if (!record) return null;
+  return normalizeAdminNotificationsSummaryCards(record);
+};
+
+function throwIfAdminNotificationMutationFailed(body: unknown): void {
+  if (!isAdminNotifRecord(body)) return;
+  if (body.success === false || body.status === false) {
+    const msg =
+      typeof body.message === 'string'
+        ? body.message
+        : typeof body.error === 'string'
+          ? body.error
+          : 'Request failed';
+    throw new Error(msg);
+  }
+}
+
+export interface AdminNotificationIdRequest extends AdminOverviewSummaryRequest {
+  notification_id: number;
+}
+
+/** POST `/admin/notifications/mark_as_read_all` — body `{ api_token }`. */
+export const adminMarkAllNotificationsAsRead = async (
+  data: AdminOverviewSummaryRequest
+): Promise<void> => {
+  const response = await apiClient.post<unknown>('/admin/notifications/mark_as_read_all', {
+    api_token: data.api_token,
+  });
+  throwIfAdminNotificationMutationFailed(response.data);
+};
+
+/** POST `/notifications/all_delete` — body `{ api_token }` (admin clear-all). */
+export const adminClearAllNotifications = async (data: AdminOverviewSummaryRequest): Promise<void> => {
+  const response = await apiClient.post<unknown>('/notifications/all_delete', {
+    api_token: data.api_token,
+  });
+  throwIfAdminNotificationMutationFailed(response.data);
+};
+
+/** POST `/admin/notifications/mark_as_read` — body `{ api_token, notification_id }`. */
+export const adminMarkNotificationAsRead = async (data: AdminNotificationIdRequest): Promise<void> => {
+  const response = await apiClient.post<unknown>('/admin/notifications/mark_as_read', {
+    api_token: data.api_token,
+    notification_id: data.notification_id,
+  });
+  throwIfAdminNotificationMutationFailed(response.data);
+};
+
+/** POST `/admin/notifications/single-delete` — body `{ api_token, notification_id }`. */
+export const adminDeleteSingleNotification = async (data: AdminNotificationIdRequest): Promise<void> => {
+  const response = await apiClient.post<unknown>('/admin/notifications/single-delete', {
+    api_token: data.api_token,
+    notification_id: data.notification_id,
+  });
+  throwIfAdminNotificationMutationFailed(response.data);
 };
 
 // Admin payment summary (Payment Management stat cards)

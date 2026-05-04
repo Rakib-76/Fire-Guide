@@ -1,35 +1,56 @@
-import React, { lazy, Suspense } from "react";
-import { Routes as RouterRoutes, Route, Navigate } from "react-router-dom";
+import React, { Suspense } from "react";
+import { Routes as RouterRoutes, Route, Navigate, useLocation } from "react-router-dom";
 import { useApp } from "../contexts/AppContext";
 import { isAuthenticated, getUserInfo } from "../lib/auth";
+import { lazyWithRetry } from "../lib/lazyWithRetry";
+import { normalizeSpaPathname } from "../lib/paymentAppUrls";
 import { Loader2 } from "lucide-react";
 
 // Lazy load all page components for code splitting
-const LandingPage = lazy(() => import("./pages/LandingPage"));
-const ServiceSelectionPage = lazy(() => import("./pages/ServiceSelectionPage"));
-const QuestionnairePage = lazy(() => import("./pages/QuestionnairePage"));
-const LocationPage = lazy(() => import("./pages/LocationPage"));
-const ComparisonPage = lazy(() => import("./pages/ComparisonPage"));
-const ProfilePage = lazy(() => import("./pages/ProfilePage"));
-const BookingPage = lazy(() => import("./pages/BookingPage"));
-const ConfirmationPage = lazy(() => import("./pages/ConfirmationPage"));
-const AppointmentDetailsPage = lazy(() => import("./pages/AppointmentDetailsPage"));
-const ProfessionalBenefitsPage = lazy(() => import("./pages/ProfessionalBenefitsPage"));
-const ProfessionalAuthPage = lazy(() => import("./pages/ProfessionalAuthPage"));
-const ProfessionalDashboardPage = lazy(() => import("./pages/ProfessionalDashboardPage"));
-const ProfessionalProfileSetupPage = lazy(() => import("./pages/ProfessionalProfileSetupPage"));
-const ProfessionalPricingPage = lazy(() => import("./pages/ProfessionalPricingPage"));
-const ProfessionalAvailabilityPage = lazy(() => import("./pages/ProfessionalAvailabilityPage"));
-const AdminLoginPage = lazy(() => import("./pages/AdminLoginPage"));
-const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage"));
-const CustomerAuthPage = lazy(() => import("./pages/CustomerAuthPage"));
-const CustomerDashboardPage = lazy(() => import("./pages/CustomerDashboardPage"));
-const PaymentHistoryPage = lazy(() => import("./pages/PaymentHistoryPage"));
-const AboutContactPage = lazy(() => import("./pages/AboutContactPage"));
-const ReportUploadPage = lazy(() => import("./pages/ReportUploadPage"));
-const TestPage = lazy(() => import("./TestPage"));
-const PaymentSuccessPage = lazy(() => import("./pages/PaymentSuccessPage"));
-const PaymentFailedPage = lazy(() => import("./pages/PaymentFailedPage"));
+const LandingPage = lazyWithRetry(() => import("./pages/LandingPage"));
+const ServiceSelectionPage = lazyWithRetry(() => import("./pages/ServiceSelectionPage"));
+const QuestionnairePage = lazyWithRetry(() => import("./pages/QuestionnairePage"));
+const LocationPage = lazyWithRetry(() => import("./pages/LocationPage"));
+const ComparisonPage = lazyWithRetry(() => import("./pages/ComparisonPage"));
+const ProfilePage = lazyWithRetry(() => import("./pages/ProfilePage"));
+const BookingPage = lazyWithRetry(() => import("./pages/BookingPage"));
+const ConfirmationPage = lazyWithRetry(() => import("./pages/ConfirmationPage"));
+const AppointmentDetailsPage = lazyWithRetry(() => import("./pages/AppointmentDetailsPage"));
+const ProfessionalBenefitsPage = lazyWithRetry(() => import("./pages/ProfessionalBenefitsPage"));
+const ProfessionalAuthPage = lazyWithRetry(() => import("./pages/ProfessionalAuthPage"));
+const ProfessionalDashboardPage = lazyWithRetry(() => import("./pages/ProfessionalDashboardPage"));
+const ProfessionalProfileSetupPage = lazyWithRetry(() => import("./pages/ProfessionalProfileSetupPage"));
+const ProfessionalPricingPage = lazyWithRetry(() => import("./pages/ProfessionalPricingPage"));
+const ProfessionalAvailabilityPage = lazyWithRetry(() => import("./pages/ProfessionalAvailabilityPage"));
+const AdminLoginPage = lazyWithRetry(() => import("./pages/AdminLoginPage"));
+const AdminDashboardPage = lazyWithRetry(() => import("./pages/AdminDashboardPage"));
+const CustomerAuthPage = lazyWithRetry(() => import("./pages/CustomerAuthPage"));
+const CustomerDashboardPage = lazyWithRetry(() => import("./pages/CustomerDashboardPage"));
+const PaymentHistoryPage = lazyWithRetry(() => import("./pages/PaymentHistoryPage"));
+const AboutContactPage = lazyWithRetry(() => import("./pages/AboutContactPage"));
+const ReportUploadPage = lazyWithRetry(() => import("./pages/ReportUploadPage"));
+const TestPage = lazyWithRetry(() => import("./TestPage"));
+const PaymentSuccessPage = lazyWithRetry(() => import("./pages/PaymentSuccessPage"));
+const PaymentFailedPage = lazyWithRetry(() => import("./pages/PaymentFailedPage"));
+
+/**
+ * Laravel often builds `frontend_url . '/payment-success'`. If `frontend_url` has a trailing slash,
+ * the browser pathname can be `//payment-success`, which does NOT match `<Route path="/payment-success">`
+ * and previously fell through to `*` → home. Normalize during render before redirecting home.
+ */
+function CatchAllRedirect() {
+  const location = useLocation();
+  const normalized = normalizeSpaPathname(location.pathname || "");
+  if (normalized === "/payment-success" || normalized === "/payment-failed") {
+    return (
+      <Navigate
+        to={{ pathname: normalized, search: location.search, hash: location.hash }}
+        replace
+      />
+    );
+  }
+  return <Navigate to="/" replace />;
+}
 
 // Loading fallback component
 const PageLoader = () => (
@@ -357,8 +378,8 @@ export default function Routes() {
         } 
       />
       
-      {/* Catch all - redirect to home */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      {/* Catch all — normalize payment return URLs, then home */}
+      <Route path="*" element={<CatchAllRedirect />} />
     </RouterRoutes>
   );
 }

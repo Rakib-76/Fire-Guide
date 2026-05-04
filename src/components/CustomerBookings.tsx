@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -14,7 +14,8 @@ import {
   CheckCircle,
   Building2,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  CreditCard,
 } from "lucide-react";
 import {
   Dialog,
@@ -34,9 +35,22 @@ import {
   SelectValue,
 } from "./ui/select";
 import { toast } from "sonner";
+import jsPDF from "jspdf";
 import { Booking } from "../App";
 import { getCustomerAllBookings, CustomerAllBookingItem, cancelCustomerBooking, rescheduleCustomerBooking } from "../api/authService";
 import { getApiToken } from "../lib/auth";
+import {
+  storePaymentInvoice,
+  isPaymentInvoiceStoreSuccess,
+  extractStripeCheckoutUrl,
+  extractTxRefFromInvoiceResponse,
+} from "../api/paymentService";
+import {
+  getStripeCheckoutSuccessUrl,
+  getPaymentFailedPageUrl,
+  PAYMENT_RETURN_STORAGE_KEY,
+  type PaymentReturnContext,
+} from "../lib/paymentAppUrls";
 
 // Available time slots for rescheduling
 const TIME_SLOTS = [
@@ -57,6 +71,20 @@ interface CustomerBookingsProps {
   bookings: Booking[];
   onUpdateBooking: (bookingId: string, updates: Partial<Booking>) => void;
   onDeleteBooking: (bookingId: string) => void;
+}
+
+/** Laravel may send is_paid as bool, 1/0, or "1"/"0"; some rows use payment_status. */
+function parseApiBookingPaid(apiBooking: CustomerAllBookingItem): boolean {
+  const raw = apiBooking.is_paid;
+  if (raw === true) return true;
+  if (raw === false || raw === 0 || raw === "0") return false;
+  if (raw === 1 || raw === "1") return true;
+  if (typeof raw === "string" && ["true", "yes", "paid"].includes(raw.toLowerCase())) return true;
+
+  const ps = (apiBooking.payment_status ?? "").toString().trim().toLowerCase();
+  if (ps === "paid" || ps === "completed" || ps === "succeeded" || ps === "success") return true;
+
+  return false;
 }
 
 // Transform API booking to local Booking format
@@ -92,14 +120,112 @@ const transformApiBooking = (apiBooking: CustomerAllBookingItem): Booking => {
     date: apiBooking.selected_date,
     time: apiBooking.selected_time,
     location: fullAddress || 'Address not specified',
-    price: `£${parseFloat(apiBooking.price || '0').toFixed(2)}`,
+    price: `£${parseFloat(String(apiBooking.price ?? "0")).toFixed(2)}`,
     status: mapStatusToCategory(apiBooking.status),
     // Store the original API status for display
     displayStatus: apiBooking.status.charAt(0).toUpperCase() + apiBooking.status.slice(1).toLowerCase(),
     bookingRef: apiBooking.ref_code || `FG-${apiBooking.id}`,
     hasReport: apiBooking.status.toLowerCase() === 'completed',
+    isPaid: parseApiBookingPaid(apiBooking),
   };
 };
+
+/** Show Pay when API reported the booking is not yet paid. */
+const bookingNeedsPayment = (booking: Booking): boolean => booking.isPaid !== true;
+
+/** Paid bookings should not offer customer self-service cancel (refund flows are separate). */
+const bookingAllowsCustomerCancel = (booking: Booking): boolean =>
+  booking.status === "upcoming" && booking.isPaid !== true;
+
+const parseBookingPriceNumber = (priceLabel: string): number => {
+  const n = parseFloat(String(priceLabel).replace(/[^0-9.]/g, ""));
+  return Number.isFinite(n) ? n : NaN;
+};
+
+function sanitizeReportFilenamePart(ref: string): string {
+  return ref.replace(/[^a-zA-Z0-9-_]+/g, "-").replace(/^-+|-+$/g, "") || "booking";
+}
+
+/** PDF summary for completed bookings (uses booking data from My Bookings). */
+function downloadCustomerBookingReportPdf(booking: Booking): void {
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 14;
+  const primary: [number, number, number] = [10, 26, 47];
+  const gray: [number, number, number] = [100, 100, 100];
+
+  doc.setFillColor(220, 38, 38);
+  doc.rect(margin, 10, 14, 10, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "bold");
+  doc.text("FG", margin + 3.5, 17);
+
+  doc.setTextColor(...primary);
+  doc.setFontSize(15);
+  doc.setFont("helvetica", "bold");
+  doc.text("Fire Guide", margin + 18, 17);
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...gray);
+  doc.text("Service completion report", pageWidth - margin, 14, { align: "right" });
+  doc.setFontSize(8);
+  doc.text(`Generated: ${new Date().toLocaleString("en-GB")}`, pageWidth - margin, 20, { align: "right" });
+
+  let y = 28;
+  doc.setDrawColor(200, 200, 200);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 10;
+
+  const ref = booking.bookingRef || `FG-${booking.id}`;
+  const labelX = margin;
+  const valueX = margin + 46;
+  const valueWidth = pageWidth - valueX - margin;
+
+  const row = (label: string, value: string) => {
+    if (y > 265) {
+      doc.addPage();
+      y = 20;
+    }
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...primary);
+    doc.text(label, labelX, y);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(40, 40, 40);
+    const lines = doc.splitTextToSize(value || "—", valueWidth);
+    doc.text(lines, valueX, y);
+    y += Math.max(7, lines.length * 5 + 2);
+  };
+
+  row("Booking reference", ref);
+  row("Service", booking.service);
+  row("Professional", booking.professional);
+  row("Professional email", booking.professionalEmail);
+  row("Professional phone", booking.professionalPhone);
+  row("Appointment date", new Date(booking.date).toLocaleDateString("en-GB"));
+  row("Appointment time", booking.time);
+  row("Service address", booking.location);
+  row("Amount", booking.price);
+  row("Booking status", booking.displayStatus || booking.status);
+  row("Payment", booking.isPaid === true ? "Paid" : "Not recorded as paid");
+
+  y += 6;
+  doc.setFontSize(8);
+  doc.setTextColor(...gray);
+  const disclaimer = doc.splitTextToSize(
+    "This PDF summarises your completed booking on Fire Guide. For full technical compliance documentation from your visit, contact your professional or Fire Guide support.",
+    pageWidth - 2 * margin
+  );
+  if (y + disclaimer.length * 4 > 285) {
+    doc.addPage();
+    y = 20;
+  }
+  doc.text(disclaimer, margin, y);
+
+  doc.save(`FireGuide-Report-${sanitizeReportFilenamePart(ref)}.pdf`);
+}
 
 export const CustomerBookings = React.memo(function CustomerBookings({ bookings: propBookings, onUpdateBooking, onDeleteBooking }: CustomerBookingsProps) {
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -109,7 +235,8 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
   const [apiBookings, setApiBookings] = useState<Booking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCancelling, setIsCancelling] = useState<string | null>(null); // Track which booking is being cancelled
-  
+  const [payingBookingId, setPayingBookingId] = useState<string | null>(null);
+
   // Reschedule modal state
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [bookingToReschedule, setBookingToReschedule] = useState<Booking | null>(null);
@@ -120,39 +247,57 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
     reason: ''
   });
 
-  // Fetch bookings from API
-  useEffect(() => {
-    const fetchBookings = async () => {
-      const token = getApiToken();
-      if (!token) {
-        console.log('No API token available for bookings');
-        setIsLoading(false);
-        return;
-      }
+  const fetchBookingsFromApi = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    const token = getApiToken();
+    if (!token) {
+      console.log("No API token available for bookings");
+      if (!silent) setIsLoading(false);
+      return;
+    }
 
-      setIsLoading(true);
-      try {
-        const response = await getCustomerAllBookings(token);
-        if (response.status === 'success' && response.data?.bookings) {
-          const transformedBookings = response.data.bookings.map(transformApiBooking);
-          setApiBookings(transformedBookings);
-        } else {
-          console.error('Failed to fetch bookings:', response.message || response.error);
-          setApiBookings([]);
-        }
-      } catch (error: any) {
-        console.error('Error fetching bookings:', error);
+    if (!silent) setIsLoading(true);
+    try {
+      const response = await getCustomerAllBookings(token);
+      if (response.status === "success" && response.data?.bookings) {
+        const transformedBookings = response.data.bookings.map(transformApiBooking);
+        setApiBookings(transformedBookings);
+      } else {
+        console.error("Failed to fetch bookings:", response.message || response.error);
         setApiBookings([]);
-      } finally {
-        setIsLoading(false);
       }
-    };
-
-    fetchBookings();
+    } catch (error: unknown) {
+      console.error("Error fetching bookings:", error);
+      setApiBookings([]);
+    } finally {
+      if (!silent) setIsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void fetchBookingsFromApi();
+  }, [fetchBookingsFromApi]);
+
+  // After Stripe / webhook, `is_paid` updates on the server — refresh when user returns to the tab.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void fetchBookingsFromApi({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [fetchBookingsFromApi]);
 
   // Use API bookings
   const bookings = apiBookings;
+
+  // Keep details modal in sync after silent refetch (e.g. `is_paid` from webhook).
+  useEffect(() => {
+    setSelectedBooking((prev) => {
+      if (!prev) return null;
+      const next = apiBookings.find((b) => b.id === prev.id);
+      return next ?? prev;
+    });
+  }, [apiBookings]);
 
   const filteredBookings = useMemo(() => {
     return bookings.filter(booking => 
@@ -209,8 +354,90 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
     }
   };
 
-  const handleDownloadReport = (bookingRef: string) => {
-    toast.success(`Downloading report for ${bookingRef}...`);
+  const handleDownloadReport = (booking: Booking) => {
+    try {
+      downloadCustomerBookingReportPdf(booking);
+      toast.success(`Report downloaded for ${booking.bookingRef || booking.id}`);
+    } catch (e) {
+      console.error("Report PDF error:", e);
+      toast.error("Could not generate the PDF. Please try again.");
+    }
+  };
+
+  const handlePayBooking = async (booking: Booking) => {
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Please log in to complete payment.");
+      return;
+    }
+
+    const professionalBookingId = parseInt(booking.id, 10);
+    if (!Number.isFinite(professionalBookingId) || professionalBookingId <= 0) {
+      toast.error("Invalid booking reference. Please refresh and try again.");
+      return;
+    }
+
+    const price = parseBookingPriceNumber(booking.price);
+    if (!Number.isFinite(price) || price <= 0) {
+      toast.error("Could not read the booking amount. Please contact support.");
+      return;
+    }
+
+    setPayingBookingId(booking.id);
+    try {
+      const successUrl = getStripeCheckoutSuccessUrl();
+      const failedUrl = getPaymentFailedPageUrl();
+
+      const response = await storePaymentInvoice({
+        api_token: token,
+        professional_booking_id: professionalBookingId,
+        price,
+        success_url: successUrl,
+        cancel_url: failedUrl,
+        failure_url: failedUrl,
+      });
+
+      const checkoutUrl = extractStripeCheckoutUrl(response);
+      const txRef = extractTxRefFromInvoiceResponse(response);
+
+      const returnCtx: PaymentReturnContext = {
+        amountPaid: price,
+        totalAmount: price,
+        paidIncentives: 0,
+        paidBalance: 0,
+        paidOnline: price,
+        orderIds: [booking.bookingRef || `FG-${professionalBookingId}`],
+        transactionId: txRef ?? "",
+      };
+      try {
+        sessionStorage.setItem(PAYMENT_RETURN_STORAGE_KEY, JSON.stringify(returnCtx));
+      } catch {
+        /* ignore */
+      }
+
+      if (isPaymentInvoiceStoreSuccess(response) && checkoutUrl) {
+        toast.success("Redirecting to secure payment…");
+        window.location.assign(checkoutUrl);
+        return;
+      }
+      if (isPaymentInvoiceStoreSuccess(response) && !checkoutUrl) {
+        throw {
+          message:
+            (response as { message?: string })?.message ||
+            "Could not start checkout: server did not return a Stripe link. Your booking has not been marked paid.",
+        };
+      }
+      throw { message: (response as { message?: string })?.message || "Failed to start payment" };
+    } catch (error: unknown) {
+      console.error("Pay booking error:", error);
+      const err = error as { message?: string; status?: number };
+      toast.error(err.message || "Could not start payment. Please try again.");
+      if (typeof err.status === "number" && err.status !== 401) {
+        window.location.assign(getPaymentFailedPageUrl());
+      }
+    } finally {
+      setPayingBookingId(null);
+    }
   };
 
   // Open reschedule modal
@@ -427,13 +654,34 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                     >
                       View Details
                     </Button>
-                    {booking.status === "upcoming" && (
+                    {bookingNeedsPayment(booking) && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="flex-1 md:flex-none bg-red-600 hover:bg-red-700"
+                        onClick={() => handlePayBooking(booking)}
+                        disabled={payingBookingId === booking.id || isCancelling === booking.id}
+                      >
+                        {payingBookingId === booking.id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Redirecting…
+                          </>
+                        ) : (
+                          <>
+                            <CreditCard className="w-4 h-4 mr-2" />
+                            Pay
+                          </>
+                        )}
+                      </Button>
+                    )}
+                    {bookingAllowsCustomerCancel(booking) && (
                       <Button
                         variant="outline"
                         size="sm"
                         className="flex-1 md:flex-none text-red-600 hover:text-red-700"
                         onClick={() => handleCancelBooking(booking.id)}
-                        disabled={isCancelling === booking.id}
+                        disabled={isCancelling === booking.id || payingBookingId === booking.id}
                       >
                         {isCancelling === booking.id ? (
                           <>
@@ -450,7 +698,7 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                         variant="outline"
                         size="sm"
                         className="flex-1 md:flex-none"
-                        onClick={() => handleDownloadReport(booking.bookingRef)}
+                        onClick={() => handleDownloadReport(booking)}
                       >
                         <Download className="w-4 h-4 mr-2" />
                         Report
@@ -550,10 +798,17 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                   <div>
                     <p className="text-sm font-medium text-gray-500 mb-1">Payment</p>
                     <p className="text-2xl font-bold text-[#0A1A2F]">{selectedBooking.price}</p>
-                    <p className="text-sm text-green-600 flex items-center gap-1 mt-1">
-                      <CheckCircle className="w-4 h-4" />
-                      Paid
-                    </p>
+                    {!selectedBooking.isPaid ? (
+                      <p className="text-sm text-amber-700 flex items-center gap-1 mt-1">
+                        <AlertCircle className="w-4 h-4" />
+                        Payment required — use Pay to complete checkout
+                      </p>
+                    ) : (
+                      <p className="text-sm text-green-600 flex items-center gap-1 mt-1">
+                        <CheckCircle className="w-4 h-4" />
+                        Paid
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -569,7 +824,7 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                       </div>
                     </div>
                     <Button
-                      onClick={() => handleDownloadReport(selectedBooking.bookingRef)}
+                      onClick={() => handleDownloadReport(selectedBooking)}
                       className="bg-green-600 hover:bg-green-700"
                     >
                       <Download className="w-4 h-4 mr-2" />
@@ -580,30 +835,53 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
               )}
 
               {selectedBooking.status === "upcoming" && (
-                <div className="flex gap-2 pt-4 border-t">
-                  <Button
-                    variant="outline"
-                    onClick={() => handleOpenReschedule(selectedBooking)}
-                    className="flex-1"
-                    disabled={isCancelling === selectedBooking.id}
-                  >
-                    Reschedule
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleCancelBooking(selectedBooking.id)}
-                    className="flex-1 text-red-600 hover:text-red-700"
-                    disabled={isCancelling === selectedBooking.id}
-                  >
-                    {isCancelling === selectedBooking.id ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Cancelling...
-                      </>
-                    ) : (
-                      'Cancel Booking'
+                <div className="space-y-2 pt-4 border-t">
+                  {bookingNeedsPayment(selectedBooking) && (
+                    <Button
+                      className="w-full bg-red-600 hover:bg-red-700"
+                      onClick={() => handlePayBooking(selectedBooking)}
+                      disabled={payingBookingId === selectedBooking.id || isCancelling === selectedBooking.id}
+                    >
+                      {payingBookingId === selectedBooking.id ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Redirecting…
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard className="w-4 h-4 mr-2" />
+                          Pay now
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => handleOpenReschedule(selectedBooking)}
+                      className="flex-1"
+                      disabled={isCancelling === selectedBooking.id || payingBookingId === selectedBooking.id}
+                    >
+                      Reschedule
+                    </Button>
+                    {bookingAllowsCustomerCancel(selectedBooking) && (
+                      <Button
+                        variant="outline"
+                        onClick={() => handleCancelBooking(selectedBooking.id)}
+                        className="flex-1 text-red-600 hover:text-red-700"
+                        disabled={isCancelling === selectedBooking.id || payingBookingId === selectedBooking.id}
+                      >
+                        {isCancelling === selectedBooking.id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Cancelling...
+                          </>
+                        ) : (
+                          'Cancel Booking'
+                        )}
+                      </Button>
                     )}
-                  </Button>
+                  </div>
                 </div>
               )}
             </div>

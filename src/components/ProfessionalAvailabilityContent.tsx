@@ -37,14 +37,13 @@ import { getUpcomingBookings, UpcomingBookingItem } from "../api/bookingService"
 import { toast } from "sonner";
 
 /**
- * Blocked ranges for the Availability page: POST booking-days-list with `professional_id`
- * (and optional `api_token`) so `blocked_ranges` include server `id` values for
- * booking-days-delete. Falls back to token-only list if `professional_id` is not stored.
+ * Blocked ranges for the Availability page: POST booking-days-list with `{ professional_id }` only
+ * when we have a stored professional id; otherwise token-only list for booking-days-delete ids.
  */
 async function fetchBlockedBookingRangesForAvailability(apiToken: string): Promise<BlockedBookingDayItem[]> {
   const professionalId = getProfessionalId();
   if (professionalId != null) {
-    return (await getBlockedBookingDaysListForProfessional(professionalId, apiToken)) ?? [];
+    return (await getBlockedBookingDaysListForProfessional(professionalId)) ?? [];
   }
   return (await getBlockedBookingDaysList(apiToken)) ?? [];
 }
@@ -202,7 +201,7 @@ export function ProfessionalAvailabilityContent() {
     try {
       const professionalId = resolveProfessionalIdForNoticeApi(blockedList);
       if (professionalId != null) {
-        const noticeDates = await getNoticeBlockedBookingDates(apiToken, professionalId);
+        const noticeDates = await getNoticeBlockedBookingDates(professionalId);
         setNoticeBlockedDates(noticeDates);
       }
     } catch {
@@ -322,6 +321,11 @@ export function ProfessionalAvailabilityContent() {
     }
   };
 
+  const requestRemoveBlockedRow = (blocked: BlockedBookingDayItem) => {
+    if (blocked.synthetic || blocked.id <= 0) return;
+    setItemToDelete(blocked);
+  };
+
   const handleCancelAddBlock = () => {
     resetAddBlockForm();
     setIsAddBlockModalOpen(false);
@@ -349,9 +353,9 @@ export function ProfessionalAvailabilityContent() {
         }
         const professionalId =
           getProfessionalId() ?? resolveProfessionalIdForNoticeApi(blockedBookingDayList);
-        if (apiToken && professionalId != null) {
+        if (professionalId != null) {
           try {
-            const noticeDates = await getNoticeBlockedBookingDates(apiToken, professionalId);
+            const noticeDates = await getNoticeBlockedBookingDates(professionalId);
             setNoticeBlockedDates(noticeDates);
           } catch {
             /* keep previous notice-blocked dates */
@@ -400,7 +404,7 @@ export function ProfessionalAvailabilityContent() {
         const professionalId = resolveProfessionalIdForNoticeApi(list);
         if (professionalId != null) {
           try {
-            const noticeDates = await getNoticeBlockedBookingDates(apiToken, professionalId);
+            const noticeDates = await getNoticeBlockedBookingDates(professionalId);
             setNoticeBlockedDates(noticeDates);
           } catch {
             setNoticeBlockedDates([]);
@@ -481,7 +485,7 @@ export function ProfessionalAvailabilityContent() {
         const pid = response.data?.professional_id;
         if (typeof pid === "number" && !Number.isNaN(pid)) {
           try {
-            const noticeDates = await getNoticeBlockedBookingDates(apiToken, pid);
+            const noticeDates = await getNoticeBlockedBookingDates(pid);
             setNoticeBlockedDates(noticeDates);
           } catch {
             /* leave existing notice-blocked dates */
@@ -986,19 +990,19 @@ export function ProfessionalAvailabilityContent() {
             </CardContent>
           </Card>
 
-          {/* Blocked Dates — title, Add Block, and list live inside one card */}
+          {/* Blocked Dates — matches design: white card, red Add Block, pale pink rows, circular X chip */}
           <Card className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-            <div className="flex flex-row items-start justify-between gap-4 border-b border-gray-100 px-8 pt-9 pb-6 sm:px-10 sm:pt-10">
+            <div className="flex flex-row items-start justify-between gap-4 border-b border-gray-100 px-6 pt-6 pb-5 sm:px-8">
               <div className="min-w-0 flex-1 pr-3">
-                <h2 className="mt-3 text-xl font-bold text-gray-900">Blocked Dates</h2>
-                <p className="mt-1.5 text-sm text-gray-600">
+                <h2 className="text-lg font-semibold tracking-tight text-gray-900">Blocked Dates</h2>
+                <p className="mt-1 text-sm font-normal leading-relaxed text-gray-600">
                   Block specific days when you are not available for bookings.
                 </p>
               </div>
               <Button
                 type="button"
                 size="sm"
-                className="mt-0.5 shrink-0 rounded-lg bg-red-600 px-4 font-medium text-white hover:bg-red-700 mt-3"
+                className="shrink-0 rounded-lg bg-red-600 px-4 font-medium text-white shadow-none hover:bg-red-700 cursor-pointer"
                 onClick={() => openAddBlockModal()}
               >
                 + Add Block
@@ -1006,17 +1010,17 @@ export function ProfessionalAvailabilityContent() {
             </div>
             <CardContent className="p-0">
               {loadingBlockedDates ? (
-                <div className="px-8 py-12 text-center text-gray-500 sm:px-10">
+                <div className="px-6 py-12 text-center text-gray-500 sm:px-8">
                   <CalendarX2 className="mx-auto mb-3 h-12 w-12 animate-spin text-gray-300" />
                   <p>Loading blocked dates...</p>
                 </div>
               ) : blockedBookingDayList.length === 0 ? (
-                <div className="px-8 py-12 text-center text-gray-500 sm:px-10">
+                <div className="px-6 py-12 text-center text-gray-500 sm:px-8">
                   <CalendarX2 className="mx-auto mb-3 h-12 w-12 text-gray-300" />
                   <p>No blocked dates. Click &quot;Add Block&quot; to block unavailable days.</p>
                 </div>
               ) : (
-                <div className="space-y-3 px-8 pb-8 pt-2 sm:px-10">
+                <div className="space-y-3 px-6 pb-6 pt-3 sm:px-8">
                   {blockedBookingDayList.map((blocked, index) => {
                     const canRemove = !blocked.synthetic && blocked.id > 0;
                     const rowKey =
@@ -1024,7 +1028,7 @@ export function ProfessionalAvailabilityContent() {
                     return (
                       <div
                         key={rowKey}
-                        className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200/60 bg-red-50 px-4 py-4 sm:px-5 ${
+                        className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3.5 sm:px-5 sm:py-4 ${
                           canRemove ? "cursor-pointer" : ""
                         }`}
                         onDoubleClick={(e) => {
@@ -1035,14 +1039,25 @@ export function ProfessionalAvailabilityContent() {
                         title={canRemove ? "Double-click to change dates" : undefined}
                       >
                         <div className="flex min-w-0 flex-1 items-center gap-3.5">
-                          <div
-                            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-red-600 shadow-sm"
-                            aria-hidden
+                          <button
+                            type="button"
+                            className="group flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-100 p-0 transition-colors hover:bg-red-200/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:hover:bg-gray-200"
+                            disabled={!canRemove || deletingBookingDayId === blocked.id}
+                            aria-label={canRemove ? "Remove blocked period" : "This block cannot be removed"}
+                            title={canRemove ? "Remove this blocked period" : "This period cannot be removed from here"}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              requestRemoveBlockedRow(blocked);
+                            }}
                           >
-                            <X className="h-[18px] w-[18px] text-white" strokeWidth={2.75} />
-                          </div>
+                            <X
+                              className="h-[15px] w-[15px] shrink-0 text-red-700 group-disabled:text-gray-500"
+                              strokeWidth={2}
+                              aria-hidden
+                            />
+                          </button>
                           <div className="min-w-0">
-                            <p className="text-base font-bold leading-snug text-gray-900">
+                            <p className="text-base font-medium leading-snug text-gray-900">
                               {formatBlockedRangeHeadline(blocked.start_day, blocked.end_day)}
                             </p>
                             <p className="mt-0.5 text-sm font-normal leading-snug text-gray-500">
@@ -1053,12 +1068,15 @@ export function ProfessionalAvailabilityContent() {
                         <div className="flex shrink-0 items-center self-center sm:self-auto">
                           <button
                             type="button"
-                            className={`text-sm font-normal ${
+                            className={`text-sm font-normal cursor-pointer p-6 ${
                               canRemove
-                                ? "text-gray-900 underline-offset-2 hover:underline"
+                                ? "text-red-600 underline-offset-2 "
                                 : "cursor-not-allowed text-gray-400 no-underline"
                             } disabled:opacity-60`}
-                            onClick={() => canRemove && setItemToDelete(blocked)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (canRemove) requestRemoveBlockedRow(blocked);
+                            }}
                             disabled={!canRemove || deletingBookingDayId === blocked.id}
                             title={
                               canRemove
@@ -1164,7 +1182,7 @@ export function ProfessionalAvailabilityContent() {
                   type="button"
                   className="bg-red-600 hover:bg-red-700"
                   onClick={handleConfirmDeleteBookingDay}
-                  disabled={deletingBookingDayId !== null}
+                  disabled={deletingBookingDayId !== null}     
                 >
                   {deletingBookingDayId === itemToDelete?.id ? "Deleting…" : "Delete"}
                 </Button>

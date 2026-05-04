@@ -1,6 +1,7 @@
 import { startTransition } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
+import { professionalBenefitsJoinTo } from "../../lib/professionalBenefitsNavigation";
 import { ServiceSelection } from "../ServiceSelection";
 
 export default function ServiceSelectionPage() {
@@ -32,7 +33,7 @@ export default function ServiceSelectionPage() {
       }}
       onNavigateProfessionals={() => {
         startTransition(() => {
-          navigate("/professional/benefits");
+          navigate(professionalBenefitsJoinTo());
         });
       }}
       onNavigateAbout={() => {
