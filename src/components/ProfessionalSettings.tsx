@@ -35,6 +35,7 @@ export function ProfessionalSettings() {
   const [paymentAlerts, setPaymentAlerts] = useState(false);
   const [marketingEmails, setMarketingEmails] = useState(false);
   const [notificationLoading, setNotificationLoading] = useState(true);
+  const [isSavingNotifications, setIsSavingNotifications] = useState(false);
 
   // Privacy Settings
   const [profileVisibility, setProfileVisibility] = useState("public");
@@ -300,8 +301,8 @@ export function ProfessionalSettings() {
         return;
       }
 
-      console.log("Saving notification settings...");
-      // Send boolean values directly (API accepts boolean, not 1/0)
+      setIsSavingNotifications(true);
+
       const response = await createOrUpdateNotificationSettings({
         api_token: apiToken,
         is_email_notifications: emailNotifications,
@@ -312,15 +313,14 @@ export function ProfessionalSettings() {
         is_marketing_emails: marketingEmails,
       });
       
-      console.log("Save notification settings response:", response);
-      
-      // Refresh notification settings to get updated data
       await fetchNotificationSettings();
       
-      toast.success("Notification preferences saved successfully!");
+      toast.success(response.message || "Notification preferences saved successfully!");
     } catch (error: any) {
       console.error("Error saving notification settings:", error);
       toast.error(error.message || "Failed to save notification preferences");
+    } finally {
+      setIsSavingNotifications(false);
     }
   };
 
@@ -743,9 +743,13 @@ export function ProfessionalSettings() {
             />
           </div>
 
-          <Button onClick={handleSaveNotifications} className="bg-red-600 hover:bg-red-700">
+          <Button
+            onClick={handleSaveNotifications}
+            className="bg-red-600 hover:bg-red-700"
+            disabled={isSavingNotifications || notificationLoading}
+          >
             <Save className="w-4 h-4 mr-2" />
-            Save Notification Preferences
+            {isSavingNotifications ? "Saving…" : "Save Notification Preferences"}
           </Button>
         </CardContent>
       </Card>

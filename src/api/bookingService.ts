@@ -577,6 +577,10 @@ export interface ProfessionalBookingItem {
     id: number;
     full_name: string;
   };
+  payout_request?: boolean | number | string | null;
+  is_payout_requested?: boolean | number | string | null;
+  payout_requested?: boolean | number | string | null;
+  payout_request_status?: string | null;
 }
 
 export interface GetProfessionalBookingsResponse {
@@ -928,6 +932,59 @@ export const getBookingSummary = async (
         throw {
           success: false,
           message: error.response.data?.message || 'Failed to fetch booking summary',
+          error: error.response.data?.error || error.message,
+          status: error.response.status,
+        };
+      } else if (error.request) {
+        throw {
+          success: false,
+          message: 'No response from server. Please check your connection.',
+          error: 'Network error',
+        };
+      }
+    }
+    throw {
+      success: false,
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
+
+export interface ProfessionalPayoutRequestBody {
+  api_token: string;
+  booking_id: number;
+}
+
+export interface ProfessionalPayoutRequestResponse {
+  status: boolean | string;
+  message?: string;
+  data?: unknown;
+}
+
+/**
+ * Request payout to admin for a completed booking.
+ * POST /professional/payout-request — body: { api_token, booking_id }
+ */
+export const requestProfessionalPayout = async (
+  data: ProfessionalPayoutRequestBody
+): Promise<ProfessionalPayoutRequestResponse> => {
+  try {
+    const response = await apiClient.post<ProfessionalPayoutRequestResponse>(
+      '/professional/payout-request',
+      {
+        api_token: data.api_token,
+        booking_id: data.booking_id,
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error requesting professional payout:', error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          success: false,
+          message: error.response.data?.message || 'Failed to submit payout request',
           error: error.response.data?.error || error.message,
           status: error.response.status,
         };

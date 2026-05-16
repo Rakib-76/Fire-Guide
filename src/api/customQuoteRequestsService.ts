@@ -79,6 +79,8 @@ export interface MyQuoteRequestItem {
     phone?: string;
     mobile?: string;
     phone_number?: string;
+    /** Some payloads use `number` for phone (e.g. Laravel). */
+    number?: string | number | null;
   } | null;
 }
 
@@ -190,6 +192,8 @@ export interface ProfessionalQuoteRequestItem {
   created_at: string;
   updated_at: string;
   quoted_price?: string | number | null;
+  /** Customer's preferred appointment date from the quote request. */
+  preferred_date?: string | null;
   /** From POST /custom-quote-requests/professional-requests — drives Paid / Unpaid in details modal. */
   is_paid?: boolean | number | string | null;
   payment_status?: string | null;

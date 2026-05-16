@@ -20,7 +20,7 @@ import { handleTokenExpired, isTokenExpiredError } from '../lib/auth';
  * 6. Profile Completion: '/professional/profile_completion_percentage'
  * 7. Certificates: '/professional/get_certificate'
  * 8. Store Service Prices: '/professional/service_price_store' (note: singular "price" and no "/store" suffix)
- * 9. Working Days: '/professional_working_days/list' (note: underscore format with "/list" suffix)
+ * 9. Working Hours: GET list '/professional/get-working-hours', save '/professional/update-working-hours'
  * 10. Blocked Days: '/professional_days/block' (note: underscore format with "/block" suffix)
  * 11. Monthly Availability Summary: '/professional/monthly_availability/summary' (note: nested path format)
  * 12. Create Professional Day: '/professional_days/create' (note: underscore format with "/create" suffix)
@@ -702,6 +702,18 @@ export interface UpdateProfessionalIdentityResponse {
   error?: string;
 }
 
+export interface CreateProfessionalIdentityRequest {
+  api_token: string;
+  file: string | File;
+}
+
+export interface CreateProfessionalIdentityResponse {
+  status: boolean;
+  message: string;
+  data?: ProfessionalIdentityItem;
+  error?: string;
+}
+
 export const getProfessionalWiseIdentity = async (
   data: GetProfessionalWiseIdentityRequest
 ): Promise<GetProfessionalWiseIdentityResponse> => {
@@ -719,6 +731,71 @@ export const getProfessionalWiseIdentity = async (
         throw {
           success: false,
           message: error.response.data?.message || 'Failed to fetch professional identity',
+          error: error.response.data?.error || error.message,
+          status: error.response.status,
+        };
+      } else if (error.request) {
+        throw {
+          success: false,
+          message: 'No response from server. Please check your connection.',
+          error: 'Network error',
+        };
+      }
+    }
+    throw {
+      success: false,
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
+
+/** POST /professional_identity/create — body: { api_token, file } (base64 data URL for images) */
+export const createProfessionalIdentity = async (
+  data: CreateProfessionalIdentityRequest
+): Promise<CreateProfessionalIdentityResponse> => {
+  try {
+    const isFileObject = data.file instanceof File;
+    let response: any;
+
+    if (isFileObject) {
+      const formData = new FormData();
+      formData.append('api_token', data.api_token);
+      formData.append('file', data.file as File);
+
+      response = await apiClient.post<CreateProfessionalIdentityResponse>(
+        '/professional_identity/create',
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+    } else {
+      response = await apiClient.post<CreateProfessionalIdentityResponse>(
+        '/professional_identity/create',
+        {
+          api_token: data.api_token,
+          file: data.file as string,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    }
+
+    console.log('POST /professional_identity/create - Response:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Error creating professional identity:', error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          success: false,
+          message: error.response.data?.message || 'Failed to upload identity document',
           error: error.response.data?.error || error.message,
           status: error.response.status,
         };
@@ -1020,9 +1097,10 @@ export interface VerificationSummaryData {
   subtitle?: string;
   checks?: {
     identity?: boolean;
+    certificate?: boolean;
+    insurance?: boolean;
     dbs?: boolean;
     qualifications?: boolean;
-    insurance?: boolean;
     [key: string]: boolean | undefined;
   };
 }
@@ -1426,18 +1504,22 @@ export interface CreateNotificationSettingsResponse {
   data: NotificationSettings;
 }
 
+function notificationSettingsResponseOk(status: unknown): boolean {
+  return status === true || status === "success" || status === 1 || status === "1";
+}
+
 export const getNotificationSettings = async (
   api_token: string
 ): Promise<NotificationSettings | null> => {
   try {
-    const response = await apiClient.post<GetNotificationSettingsResponse>(
+    const response = await apiClient.post<GetNotificationSettingsResponse & { status?: boolean | string }>(
       '/professional_notification_settings/show',
       { api_token }
     );
     
     console.log('POST /professional_notification_settings/show - Response:', response.data);
     
-    if (response.data.status === true && response.data.data) {
+    if (notificationSettingsResponseOk(response.data.status) && response.data.data) {
       console.log('Notification settings fetched successfully');
       return response.data.data;
     }
@@ -1472,26 +1554,29 @@ export const getNotificationSettings = async (
 
 export const createOrUpdateNotificationSettings = async (
   data: CreateNotificationSettingsRequest
-): Promise<NotificationSettings> => {
+): Promise<CreateNotificationSettingsResponse> => {
   try {
-    const response = await apiClient.post<CreateNotificationSettingsResponse>(
+    const body = {
+      api_token: data.api_token,
+      is_email_notifications: Boolean(data.is_email_notifications),
+      is_sms_notifications: Boolean(data.is_sms_notifications),
+      is_push_notifications: Boolean(data.is_push_notifications),
+      is_booking_alert: Boolean(data.is_booking_alert),
+      is_payment_alert: Boolean(data.is_payment_alert),
+      is_marketing_emails: Boolean(data.is_marketing_emails),
+    };
+
+    const response = await apiClient.post<CreateNotificationSettingsResponse & { status?: boolean | string }>(
       '/professional_notification_settings/create',
-      {
-        api_token: data.api_token,
-        is_email_notifications: data.is_email_notifications,
-        is_sms_notifications: data.is_sms_notifications,
-        is_push_notifications: data.is_push_notifications,
-        is_booking_alert: data.is_booking_alert,
-        is_payment_alert: data.is_payment_alert,
-        is_marketing_emails: data.is_marketing_emails,
-      }
+      body
     );
     
+    console.log('POST /professional_notification_settings/create - Request:', body);
     console.log('POST /professional_notification_settings/create - Response:', response.data);
     
-    if (response.data.status === true && response.data.data) {
+    if (notificationSettingsResponseOk(response.data.status)) {
       console.log('Notification settings created/updated successfully');
-      return response.data.data;
+      return response.data;
     }
     
     throw {
@@ -2030,15 +2115,46 @@ export interface ProfessionalDayResponse {
   updated_at?: string;
 }
 
+export interface WorkingDayHourRecord {
+  id?: number;
+  day?: string;
+  week_day?: string;
+  start_time?: string | null;
+  end_time?: string | null;
+  is_closed?: boolean | number;
+}
+
 export interface WorkingDayResponse {
-  status: boolean;
-  message: string;
-  data: ProfessionalDayResponse[];
+  status?: boolean | number | string;
+  success?: boolean | number;
+  message?: string;
+  data?: unknown;
+  hours?: WorkingDayHourRecord[];
+  working_hours?: WorkingDayHourRecord[];
   error?: string;
 }
 
 export interface GetWorkingDaysRequest {
   api_token: string;
+}
+
+export interface WorkingHourItem {
+  day: string;
+  start_time: string | null;
+  end_time: string | null;
+  is_closed: boolean;
+}
+
+export interface SaveWorkingHoursRequest {
+  api_token: string;
+  hours: WorkingHourItem[];
+}
+
+export interface SaveWorkingHoursResponse {
+  status: boolean;
+  message: string;
+  data?: WorkingDayHourRecord[];
+  error?: string;
 }
 
 export interface CreateProfessionalDayRequest {
@@ -2131,18 +2247,57 @@ export const getWorkingDays = async (
 ): Promise<WorkingDayResponse> => {
   try {
     const response = await apiClient.post<WorkingDayResponse>(
-      '/professional_working_days/list',
+      '/professional/get-working-hours',
       { api_token: data.api_token }
     );
-    console.log('POST /professional_working_days/list - Response:', response.data);
+    console.log('POST /professional/get-working-hours - Response:', response.data);
     return response.data;
   } catch (error) {
-    console.error('Error fetching working days:', error);
+    console.error('Error fetching working hours:', error);
     if (axios.isAxiosError(error)) {
       if (error.response) {
         throw {
           success: false,
-          message: error.response.data?.message || 'Failed to fetch working days',
+          message: error.response.data?.message || 'Failed to fetch working hours',
+          error: error.response.data?.error || error.message,
+          status: error.response.status,
+        };
+      } else if (error.request) {
+        throw {
+          success: false,
+          message: 'No response from server. Please check your connection.',
+          error: 'Network error',
+        };
+      }
+    }
+    throw {
+      success: false,
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
+
+/** POST /professional/update-working-hours — body: { api_token, hours: [{ day, start_time, end_time, is_closed }] } */
+export const saveWorkingHours = async (
+  data: SaveWorkingHoursRequest
+): Promise<SaveWorkingHoursResponse> => {
+  try {
+    const response = await apiClient.post<SaveWorkingHoursResponse>(
+      '/professional/update-working-hours',
+      {
+        api_token: data.api_token,
+        hours: data.hours,
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error saving working hours:', error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          success: false,
+          message: error.response.data?.message || 'Failed to save working hours',
           error: error.response.data?.error || error.message,
           status: error.response.status,
         };
@@ -2377,8 +2532,18 @@ export interface DashboardSummaryData {
     this_month: string;
   };
   reports: {
-    pending: number;
+    total: number;
   };
+}
+
+/** Display API money strings exactly (e.g. `2,147.00` → `£2,147.00`). */
+export function formatProfessionalDashboardMoney(
+  raw: string | number | null | undefined
+): string {
+  const s = String(raw ?? "").trim();
+  if (!s) return "£0.00";
+  if (s.startsWith("£")) return s;
+  return `£${s}`;
 }
 
 function dashboardSummaryIsRecord(x: unknown): x is Record<string, unknown> {
@@ -2404,6 +2569,7 @@ function dashboardSummaryStr(v: unknown, fallback = '0'): string {
 function extractDashboardSummaryPayload(body: unknown): Record<string, unknown> | null {
   if (!dashboardSummaryIsRecord(body)) return null;
   if (body.success === false || body.status === false) return null;
+  if (body.status === 'error' || body.status === 'failed') return null;
 
   const d = body.data;
   if (dashboardSummaryIsRecord(d)) {
@@ -2477,10 +2643,10 @@ export function parseDashboardSummaryFromResponse(body: unknown): DashboardSumma
 
   const repRaw = dashboardSummaryIsRecord(raw.reports) ? raw.reports : null;
   const reports = {
-    pending: dashboardSummaryNum(
-      repRaw?.pending ??
+    total: dashboardSummaryNum(
+      repRaw?.total ??
+        repRaw?.pending ??
         repRaw?.count ??
-        repRaw?.total ??
         raw.reports_pending ??
         raw.total_reports ??
         raw.all_reports
@@ -2585,6 +2751,65 @@ export const uploadReport = async (
         throw {
           success: false,
           message: error.response.data?.message || 'Failed to upload report',
+          error: error.response.data?.error || error.message,
+          status: error.response.status,
+        };
+      } else if (error.request) {
+        throw {
+          success: false,
+          message: 'No response from server. Please check your connection.',
+          error: 'Network error',
+        };
+      }
+    }
+    throw {
+      success: false,
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
+
+export interface GetBookingReportRequest {
+  api_token: string;
+  booking_id: number;
+}
+
+export interface GetBookingReportData {
+  id?: number;
+  booking_id?: number;
+  report_image?: string;
+  report_file?: string;
+  note?: string;
+  [key: string]: unknown;
+}
+
+export interface GetBookingReportResponse {
+  status: string | boolean;
+  message?: string;
+  data?: GetBookingReportData;
+}
+
+/**
+ * Fetch uploaded completion report for a booking (customer download).
+ * POST /reports/get — body: { api_token, booking_id }
+ */
+export const getBookingReport = async (
+  data: GetBookingReportRequest
+): Promise<GetBookingReportResponse> => {
+  try {
+    const response = await apiClient.post<GetBookingReportResponse>('/reports/get', {
+      api_token: data.api_token,
+      booking_id: data.booking_id,
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching booking report:', error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          success: false,
+          message: error.response.data?.message || 'Failed to fetch report',
           error: error.response.data?.error || error.message,
           status: error.response.status,
         };

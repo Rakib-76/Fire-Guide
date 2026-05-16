@@ -25,12 +25,13 @@ import { Button } from "./ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { getProfessionalBookings, ProfessionalBookingItem } from "../api/bookingService";
-import { getApiToken, getProfessionalId } from "../lib/auth";
+import { getApiToken, getProfessionalId, getSessionUserDisplay, getUserFullName } from "../lib/auth";
 import {
   getProfileCompletionPercentage,
   ProfileCompletionDetails,
   getDashboardSummary,
   DashboardSummaryData,
+  formatProfessionalDashboardMoney,
   getProfessionalContactAdminMessages,
   type ProfessionalAdminContactMessageItem,
 } from "../api/professionalsService";
@@ -260,6 +261,17 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummaryData | null>(null);
   const [isLoadingDashboardSummary, setIsLoadingDashboardSummary] = useState(false);
 
+  const professionalWelcomeName = useMemo(() => {
+    const session = getSessionUserDisplay();
+    if (session?.name?.trim()) return session.name.trim();
+    const fullName = getUserFullName();
+    if (fullName?.trim()) {
+      const first = fullName.trim().split(/\s+/)[0];
+      return first || fullName.trim();
+    }
+    return "there";
+  }, []);
+
   // Fetch dashboard summary from API
   const fetchDashboardSummary = async () => {
     try {
@@ -284,11 +296,8 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
   const stats = [
     {
       title: "Upcoming Jobs",
-      value: dashboardSummary?.upcoming_jobs?.count?.toString() || "0",
-      change:
-        dashboardSummary?.upcoming_jobs?.this_week != null
-          ? `+${dashboardSummary.upcoming_jobs.this_week} this week`
-          : "+0 this week",
+      value: dashboardSummary?.upcoming_jobs?.count?.toString() ?? "0",
+      change: `+${dashboardSummary?.upcoming_jobs?.this_week ?? 0} this week`,
       icon: Briefcase,
       color: "blue",
       bgColor: "bg-blue-100",
@@ -297,12 +306,8 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
     },
     {
       title: "Total Earnings",
-      value: dashboardSummary?.earnings?.total 
-        ? `£${parseFloat(dashboardSummary.earnings.total).toLocaleString()}` 
-        : "£0",
-      change: dashboardSummary?.earnings?.this_month 
-        ? `+£${parseFloat(dashboardSummary.earnings.this_month).toLocaleString()} this month` 
-        : "+£0 this month",
+      value: formatProfessionalDashboardMoney(dashboardSummary?.earnings?.total),
+      change: `+${formatProfessionalDashboardMoney(dashboardSummary?.earnings?.this_month)} this month`,
       icon: TrendingUp,
       color: "green",
       bgColor: "bg-green-100",
@@ -311,7 +316,7 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
     },
     {
       title: "All Reports",
-      value: dashboardSummary?.reports?.pending?.toString() || "0",
+      value: dashboardSummary?.reports?.total?.toString() ?? "0",
       icon: FileText,
       color: "orange",
       bgColor: "bg-orange-100",
@@ -679,7 +684,7 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
       {/* Page Header */}
       <div className="mb-8">
         <h1 className="text-[#0A1A2F] mb-2">
-          Welcome back, John
+          Welcome back, {professionalWelcomeName}
         </h1>
         <p className="text-gray-600">
           Here's what's happening with your business today
@@ -711,9 +716,13 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="text-sm text-gray-600 mb-1">{stat.title}</p>
-                    <p className="text-3xl text-[#0A1A2F] mb-1">{stat.value}</p>
+                    <p className="text-3xl text-[#0A1A2F] mb-1">
+                      {isLoadingDashboardSummary ? "…" : stat.value}
+                    </p>
                     {"change" in stat && stat.change ? (
-                      <p className={`text-sm ${stat.textColor}`}>{stat.change}</p>
+                      <p className={`text-sm ${stat.textColor}`}>
+                        {isLoadingDashboardSummary ? "…" : stat.change}
+                      </p>
                     ) : null}
                   </div>
                   <div className={`w-12 h-12 ${stat.iconBg} rounded-lg flex items-center justify-center`}>

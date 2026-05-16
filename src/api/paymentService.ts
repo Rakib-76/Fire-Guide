@@ -313,6 +313,69 @@ export const getPaymentInvoices = async (
   }
 };
 
+export type PaymentInvoiceFilterPeriod =
+  | "all_time"
+  | "this_month"
+  | "this_quarter"
+  | "this_year";
+
+export interface FilterPaymentInvoicesRequest {
+  api_token: string;
+  filter: PaymentInvoiceFilterPeriod;
+}
+
+export interface FilterPaymentInvoicesResponse {
+  status: string;
+  message?: string;
+  data: PaymentInvoiceItem[];
+}
+
+/**
+ * Filter payment invoices by period.
+ * POST /payment_invoice/filter — body: { api_token, filter }
+ */
+export const filterPaymentInvoices = async (
+  api_token: string,
+  filter: PaymentInvoiceFilterPeriod
+): Promise<PaymentInvoiceItem[]> => {
+  try {
+    const response = await apiClient.post<FilterPaymentInvoicesResponse>(
+      '/payment_invoice/filter',
+      { api_token, filter }
+    );
+
+    if (response.data.status === 'success' && Array.isArray(response.data.data)) {
+      return response.data.data;
+    }
+
+    console.warn('Unexpected payment invoice filter API response:', response.data);
+    return [];
+  } catch (error) {
+    console.error('Error filtering payment invoices:', error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          success: false,
+          message: error.response.data?.message || 'Failed to filter payment invoices',
+          error: error.response.data?.error || error.message,
+          status: error.response.status,
+        };
+      } else if (error.request) {
+        throw {
+          success: false,
+          message: 'No response from server. Please check your connection.',
+          error: 'Network error',
+        };
+      }
+    }
+    throw {
+      success: false,
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
+
 // TypeScript types for Earnings Summary request
 export interface EarningsSummaryRequest {
   api_token: string;

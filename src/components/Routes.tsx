@@ -1,7 +1,7 @@
 import React, { Suspense } from "react";
 import { Routes as RouterRoutes, Route, Navigate, useLocation } from "react-router-dom";
 import { useApp } from "../contexts/AppContext";
-import { isAuthenticated, getUserInfo } from "../lib/auth";
+import { isAuthenticated, getUserInfo, getSessionUserDisplay } from "../lib/auth";
 import { lazyWithRetry } from "../lib/lazyWithRetry";
 import { normalizeSpaPathname } from "../lib/paymentAppUrls";
 import { Loader2 } from "lucide-react";
@@ -79,7 +79,7 @@ function ProtectedRoute({
   // Check role from localStorage first (available immediately on reload)
   // before checking currentUser from context (which may be null initially)
   if (requiredRole) {
-    const userInfo = getUserInfo();
+    const userInfo = getUserInfo() ?? getSessionUserDisplay();
     // If userInfo exists and role matches, allow access even if currentUser is null
     // (currentUser will be set by useEffect soon)
     if (userInfo?.role === requiredRole) {

@@ -2,6 +2,7 @@ import { startTransition } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { professionalBenefitsJoinTo } from "../../lib/professionalBenefitsNavigation";
+import { navigateToProfessionalHome } from "../../lib/professionalDashboardNavigation";
 import { ServiceSelection } from "../ServiceSelection";
 
 export default function ServiceSelectionPage() {
@@ -59,17 +60,17 @@ export default function ServiceSelectionPage() {
         });
       }}
       onNavigateToDashboard={() => {
-        if (currentUser) {
-          startTransition(() => {
-            if (currentUser.role === "admin") {
-              navigate("/admin/dashboard");
-            } else if (currentUser.role === "professional") {
-              navigate("/professional/dashboard");
-            } else {
-              navigate("/customer/dashboard");
-            }
-          });
-        }
+        const user = currentUser;
+        if (!user) return;
+        startTransition(() => {
+          if (user.role === "admin") {
+            navigate("/admin/dashboard");
+          } else if (user.role === "professional") {
+            navigateToProfessionalHome(navigate);
+          } else {
+            navigate("/customer/dashboard");
+          }
+        });
       }}
     />
   );

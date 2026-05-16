@@ -36,6 +36,39 @@ function formatDate(dateStr: string) {
   });
 }
 
+function formatPreferredDate(dateStr: string | null | undefined): string {
+  const raw = dateStr != null ? String(dateStr).trim() : "";
+  if (!raw) return "—";
+  const d = new Date(raw.includes("T") ? raw : `${raw}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/** Top-level `preferred_date` or nested inside `request_data` (API varies). */
+function getQuoteRequestPreferredDate(record: ProfessionalQuoteRequestItem): string | null {
+  const top = record.preferred_date;
+  if (top != null && String(top).trim()) return String(top).trim();
+
+  try {
+    const parsed =
+      typeof record.request_data === "string"
+        ? JSON.parse(record.request_data)
+        : record.request_data;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const rec = parsed as Record<string, unknown>;
+      const fromJson = rec.preferred_date ?? rec.preffered_date;
+      if (fromJson != null && String(fromJson).trim()) return String(fromJson).trim();
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 function formatQuotedPrice(value: string | number | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   const num = typeof value === "number" ? value : parseFloat(String(value).replace(/[^0-9.]/g, ""));
@@ -183,8 +216,8 @@ export function ProfessionalCustomQuoteContent() {
               >
                 <option value="all">All status</option>
                 <option value="pending">Pending</option>
-                <option value="reviewed">Reviewed</option>
-                <option value="quoted">Quoted</option>
+                {/* <option value="reviewed">Reviewed</option> */}
+                {/* <option value="quoted">Quoted</option> */}
                 <option value="assigned">Assigned</option>
                 <option value="completed">Completed</option>
               </select>
@@ -226,7 +259,7 @@ export function ProfessionalCustomQuoteContent() {
                     <th className="text-left p-4 text-sm font-medium text-gray-700">Customer</th>
                     <th className="text-left p-4 text-sm font-medium text-gray-700">Service</th>
                     <th className="text-left p-4 text-sm font-medium text-gray-700">Status</th>
-                    <th className="text-left p-4 text-sm font-medium text-gray-700">Date</th>
+                    <th className="text-left p-4 text-sm font-medium text-gray-700">Preferred Date</th>
                     <th className="text-left p-4 text-sm font-medium text-gray-700">Professional</th>
                     <th className="text-right p-4 text-sm font-medium text-gray-700 min-w-[7rem]">Actions</th>
                   </tr>
@@ -255,7 +288,9 @@ export function ProfessionalCustomQuoteContent() {
                           </Badge>
                         </td>
                         <td className="p-4">
-                          <p className="text-sm text-gray-700">{formatDate(record.created_at)}</p>
+                          <p className="text-sm text-gray-700">
+                            {formatPreferredDate(getQuoteRequestPreferredDate(record))}
+                          </p>
                         </td>
                         <td className="p-4">
                           <p className="text-sm text-gray-700">{professionalName}</p>
@@ -381,6 +416,14 @@ export function ProfessionalCustomQuoteContent() {
                   <div>
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Service</p>
                     <p className="text-gray-900 mt-0.5">{detailsRecord.service?.service_name ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Preferred date</p>
+                    <p className="text-gray-900 mt-0.5">
+                      {formatPreferredDate(
+                        detailsRecord ? getQuoteRequestPreferredDate(detailsRecord) : null
+                      )}
+                    </p>
                   </div>
                   <div>
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Dates</p>

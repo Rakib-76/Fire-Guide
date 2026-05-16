@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { Flame, ChevronRight, Star, Award, Shield, Clock, MapPin, CheckCircle2, Phone, Mail, Calendar, ArrowLeft, Briefcase, Loader2, Send } from "lucide-react";
+import { ChevronRight, Star, Award, Shield, Clock, MapPin, CheckCircle2, Phone, Mail, Calendar, ArrowLeft, Briefcase, Loader2, Send } from "lucide-react";
+import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
@@ -37,7 +38,7 @@ interface ProfessionalProfileProps {
   onBack: () => void;
 }
 
-export function ProfessionalProfile({ professional, professionalIdFromUrl, onBack }: ProfessionalProfileProps) {
+export function ProfessionalProfile({ professional, professionalIdFromUrl, onBook, onBack }: ProfessionalProfileProps) {
   const { professionalId: urlProfessionalId } = useParams<{ professionalId?: string }>();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [profileDetails, setProfileDetails] = useState<ProfessionalProfileDetailsData | null>(null);
@@ -66,6 +67,7 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBac
   const [msgSubject, setMsgSubject] = useState("");
   const [msgBody, setMsgBody] = useState("");
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isBooking, setIsBooking] = useState(false);
 
   // Restore professional data from sessionStorage on mount if not provided in props
   useEffect(() => {
@@ -586,15 +588,28 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBac
     return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
   };
 
+  const handleBookNow = useCallback(async () => {
+    if (!onBook) return;
+    setIsBooking(true);
+    try {
+      await onBook();
+    } finally {
+      setIsBooking(false);
+    }
+  }, [onBook]);
+
   return (
     <div className="min-h-screen bg-gray-50 pb-8 md:pb-12">
-      {/* Header */}
-      <header className="bg-[#0A1A2F] text-white py-4 px-4 md:px-6">
-        <div className="max-w-7xl mx-auto flex items-center gap-2">
-         <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity" aria-label="Go to home">
-          <Flame className="w-8 h-8 text-red-500" />
-          <span className="text-xl">Fire Guide</span>
-        </a>
+      {/* Header — same logo as compare / booking flow */}
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm text-[#0A1A2F] py-3 px-4 md:px-6">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+          <a href="/" className="flex items-center hover:opacity-90 transition-opacity" aria-label="Go to home">
+            <img src={logoImage} alt="Fire Guide" className="h-12 w-auto" />
+          </a>
+          <Button type="button" variant="ghost" size="sm" onClick={onBack} className="text-[#0A1A2F] shrink-0">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Results
+          </Button>
         </div>
       </header>
 
@@ -604,7 +619,9 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBac
           <div className="flex items-center gap-2 text-sm text-gray-600">
             <a href="/" className="hover:text-red-600 transition-colors">Home</a>
             <ChevronRight className="w-4 h-4" />
-            <a href="#" className="hover:text-red-600 transition-colors">Compare Professionals</a>
+            <button type="button" onClick={onBack} className="hover:text-red-600 transition-colors">
+              Compare Professionals
+            </button>
             <ChevronRight className="w-4 h-4" />
             <span className="text-gray-900">{prof.name}</span>
           </div>
@@ -614,15 +631,9 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBac
       {/* Main Content */}
       <main className="py-8 px-4 md:px-6">
         <div className="max-w-6xl mx-auto">
-          {/* Back Button */}
-          <Button variant="ghost" className="mb-6" onClick={onBack}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Results
-          </Button>
-
           <div className="grid lg:grid-cols-3 gap-6 lg:items-start">
-            {/* Left Column - Main Content (scrollable on large screens; right column stays sticky) */}
-            <div className="lg:col-span-2 space-y-6 lg:min-h-0 lg:max-h-[calc(100dvh-15rem)] lg:overflow-y-auto lg:overscroll-y-contain lg:pr-1 [scrollbar-gutter:stable]">
+            {/* Left column: profile header and detail cards */}
+            <div className="lg:col-span-2">
               {/* Profile Header */}
               <Card>
                 <CardContent className="p-8">
@@ -675,6 +686,8 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBac
                   </div>
                 </CardContent>
               </Card>
+
+              <div className="mt-6 space-y-6" aria-label="Professional profile details">
               {/* Bio */}
               <Card>
                 <CardHeader>
@@ -949,11 +962,26 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBac
                   )}
                 </CardContent>
               </Card>
+              </div>
             </div>
 
             {/* Right Column - Booking Sidebar */}
             <div className="lg:col-span-1">
-              <div className="sticky top-6 space-y-6">
+              <div className="sticky top-20 space-y-6 lg:top-24">
+                {/* {onBook && (
+                  <Button
+                    type="button"
+                    className="w-full bg-red-600 hover:bg-red-700 text-white"
+                    disabled={isBooking}
+                    aria-busy={isBooking}
+                    onClick={() => void handleBookNow()}
+                  >
+                    {isBooking ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden />
+                    ) : null}
+                    Book Now
+                  </Button>
+                )} */}
                 {/* Pricing — API data (professional_id from Professional List → View Profile) */}
                 <Card>
                   <CardHeader>

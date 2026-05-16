@@ -155,13 +155,28 @@ function parseQuotedPriceNumberForQuote(quoted: string | number | null | undefin
   return Number.isFinite(n) ? n : NaN;
 }
 
+/**
+ * True when API `is_paid` explicitly means paid — hide Pay when true.
+ * Handles bool, 0/1, and common string forms from Laravel/JSON.
+ */
+function isQuoteRequestIsPaidFieldTrue(req: MyQuoteRequestItem): boolean {
+  const ir = req.is_paid;
+  if (ir === false || ir === 0 || ir === "0") return false;
+  if (typeof ir === "string") {
+    const t = ir.trim().toLowerCase();
+    if (t === "" || t === "false" || t === "no" || t === "unpaid") return false;
+    if (t === "true" || t === "yes" || t === "paid" || t === "1") return true;
+  }
+  if (ir === true || ir === 1 || ir === "1") return true;
+  return false;
+}
+
 function isQuoteRequestPaid(req: MyQuoteRequestItem): boolean {
+  if (isQuoteRequestIsPaidFieldTrue(req)) return true;
   const ps = req.payment_status;
   if (ps != null && String(ps).trim() !== "" && String(ps).toLowerCase() === "paid") return true;
   const st = req.status;
   if (st != null && String(st).trim().toLowerCase() === "paid") return true;
-  const ir = req.is_paid;
-  if (ir === true || ir === 1 || ir === "1") return true;
   return isCustomQuoteRequestPaidLocally(req.id);
 }
 
@@ -522,6 +537,11 @@ export function CustomerDashboard({
     const price = parseQuotedPriceNumberForQuote(req.quoted_price);
     if (!Number.isFinite(price) || price <= 0) {
       toast.error("Could not read the quoted amount. Please contact support.");
+      return;
+    }
+    const reqStatusLower = String(req.status || "").trim().toLowerCase();
+    if (reqStatusLower === "completed") {
+      toast.info("This quote request is already completed.");
       return;
     }
     if (isQuoteRequestPaid(req)) {
@@ -3399,6 +3419,8 @@ export function CustomerDashboard({
               return { backgroundColor: "#d1fae5", color: "#047857", border: "1px solid #6ee7b7" };
             case "assigned":
               return { backgroundColor: "#ede9fe", color: "#5b21b6", border: "1px solid #c4b5fd" };
+            case "completed":
+              return { backgroundColor: "#e0f2fe", color: "#0c4a6e", border: "1px solid #7dd3fc" };
             case "paid":
               return { backgroundColor: "#dcfce7", color: "#166534", border: "1px solid #86efac" };
             default:
@@ -3438,6 +3460,7 @@ export function CustomerDashboard({
         }
         const modalStatusLower = (modalReq?.status || "").toLowerCase();
         const modalIsAssigned = modalStatusLower === "assigned";
+        const modalIsCompleted = modalStatusLower === "completed";
         const modalQuoted = modalReq == null ? NaN : parseQuotedPriceNumberForQuote(modalReq.quoted_price);
         const modalHasPrice = Number.isFinite(modalQuoted) && modalQuoted > 0;
         const modalProName =
@@ -3447,9 +3470,16 @@ export function CustomerDashboard({
           modalReq?.professional?.phone?.trim() ||
           modalReq?.professional?.mobile?.trim() ||
           modalReq?.professional?.phone_number?.trim() ||
+          (typeof modalReq?.professional?.number === "string" && modalReq.professional.number.trim()) ||
+          (modalReq?.professional?.number != null && String(modalReq.professional.number).trim()) ||
           "";
         const modalPaid = modalReq == null ? false : isQuoteRequestPaid(modalReq);
-        const modalBadgeStatus = modalPaid ? "paid" : modalReq?.status ?? "";
+        const modalIsPaidField = modalReq != null && isQuoteRequestIsPaidFieldTrue(modalReq);
+        const modalBadgeStatus = modalIsCompleted
+          ? "completed"
+          : modalPaid
+            ? "paid"
+            : modalReq?.status ?? "";
         const modalPriceDisplay =
           modalHasPrice && modalReq != null
             ? `£${modalQuoted.toLocaleString("en-GB", {
@@ -3504,11 +3534,21 @@ export function CustomerDashboard({
                       }
                       const statusLower = (req.status || "").toLowerCase();
                       const isAssignedQuote = statusLower === "assigned";
+                      const isCompletedQuote = statusLower === "completed";
                       const quotedAmount = parseQuotedPriceNumberForQuote(req.quoted_price);
                       const hasQuotedPrice = Number.isFinite(quotedAmount) && quotedAmount > 0;
                       const professionalName = req.professional?.name?.trim() || "";
                       const quotePaid = isQuoteRequestPaid(req);
-                      const badgeStatus = quotePaid ? "paid" : req.status;
+                      const badgeStatus = isCompletedQuote
+                        ? "completed"
+                        : quotePaid
+                          ? "paid"
+                          : req.status;
+                      const showQuotePayButton =
+                        isAssignedQuote &&
+                        hasQuotedPrice &&
+                        !isQuoteRequestIsPaidFieldTrue(req) &&
+                        !isCompletedQuote;
                       const priceDisplay = hasQuotedPrice
                         ? `£${quotedAmount.toLocaleString("en-GB", {
                             minimumFractionDigits: 2,
@@ -3548,7 +3588,7 @@ export function CustomerDashboard({
                                   })}
                                 </p>
 
-                                {isAssignedQuote && (professionalName || preferredDateLabel) && (
+                                {(isAssignedQuote || isCompletedQuote) && (professionalName || preferredDateLabel) && (
                                   <div className="grid md:grid-cols-2 gap-3 text-sm">
                                     {professionalName ? (
                                       <div className="flex items-center gap-2 text-gray-600">
@@ -3565,7 +3605,7 @@ export function CustomerDashboard({
                                   </div>
                                 )}
 
-                                {isAssignedQuote && hasQuotedPrice && (
+                                {(isAssignedQuote || isCompletedQuote) && hasQuotedPrice && (
                                   <div className="pt-2 border-t border-gray-200">
                                     <p className="text-gray-900">
                                       Total: <span className="font-semibold">{priceDisplay}</span>
@@ -3584,7 +3624,7 @@ export function CustomerDashboard({
                                 >
                                   View Details
                                 </Button>
-                                {isAssignedQuote && hasQuotedPrice && !quotePaid && (
+                                {showQuotePayButton && (
                                   <Button
                                     type="button"
                                     variant="default"
@@ -3650,42 +3690,52 @@ export function CustomerDashboard({
                         </Badge>
                       </div>
 
-                      <div
-                        className={`grid gap-4 text-sm border rounded-lg p-4 bg-gray-50/80 ${
-                          modalIsAssigned ? "sm:grid-cols-1" : ""
-                        }`}
-                      >
-                        {modalIsAssigned && (
-                          <div>
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-                              Professional
+                      {(modalPaid || modalIsPaidField) && (
+                        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+                          <CheckCircle className="w-4 h-4 shrink-0 text-green-600" aria-hidden />
+                          <span className="font-medium">Paid</span>
+                        </div>
+                      )}
+
+                      <div className="grid gap-4 text-sm border rounded-lg p-4 bg-gray-50/80 sm:grid-cols-1">
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                            Professional
+                          </p>
+                          {modalProName || modalProEmail || modalProPhone ? (
+                            <>
+                              <div className="flex items-center gap-2 text-gray-900">
+                                <User className="w-4 h-4 shrink-0 text-gray-500" />
+                                <span>{modalProName || "—"}</span>
+                              </div>
+                              {modalProEmail && (
+                                <div className="flex items-start gap-2 text-gray-600 mt-1 min-w-0">
+                                  <Mail className="w-4 h-4 shrink-0 text-gray-500 mt-0.5" aria-hidden />
+                                  <span className="break-all">{modalProEmail}</span>
+                                </div>
+                              )}
+                              {modalProPhone && (
+                                <div className="flex items-center gap-2 text-gray-600 mt-1 min-w-0">
+                                  <Phone className="w-4 h-4 shrink-0 text-gray-500" aria-hidden />
+                                  <span className="break-words">{modalProPhone}</span>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <p className="text-sm text-gray-600 leading-relaxed">
+                              No professional is assigned to this request yet. When one is assigned, their name
+                              and contact details will appear here.
                             </p>
-                            <div className="flex items-center gap-2 text-gray-900">
-                              <User className="w-4 h-4 shrink-0 text-gray-500" />
-                              <span>{modalProName || "—"}</span>
-                            </div>
-                            {modalProEmail && (
-                              <div className="flex items-start gap-2 text-gray-600 mt-1 min-w-0">
-                                <Mail className="w-4 h-4 shrink-0 text-gray-500 mt-0.5" aria-hidden />
-                                <span className="break-all">{modalProEmail}</span>
-                              </div>
-                            )}
-                            {modalProPhone && (
-                              <div className="flex items-center gap-2 text-gray-600 mt-1 min-w-0">
-                                <Phone className="w-4 h-4 shrink-0 text-gray-500" aria-hidden />
-                                <span className="break-words">{modalProPhone}</span>
-                              </div>
-                            )}
-                            {modalHasPrice && (
-                              <>
-                                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mt-3 mb-1">
-                                  Total price
-                                </p>
-                                <p className="text-xl font-semibold text-[#0A1A2F]">{modalPriceDisplay}</p>
-                              </>
-                            )}
-                          </div>
-                        )}
+                          )}
+                          {modalHasPrice && (
+                            <>
+                              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mt-3 mb-1">
+                                Total price
+                              </p>
+                              <p className="text-xl font-semibold text-[#0A1A2F]">{modalPriceDisplay}</p>
+                            </>
+                          )}
+                        </div>
                       </div>
 
                       {modalPreferredLabel && (
@@ -3722,7 +3772,10 @@ export function CustomerDashboard({
                         </div>
                       ) : null}
 
-                      {modalIsAssigned && modalHasPrice && !modalPaid && (
+                      {modalIsAssigned &&
+                        modalHasPrice &&
+                        !isQuoteRequestIsPaidFieldTrue(modalReq) &&
+                        !modalIsCompleted && (
                         <DialogFooter className="gap-2 sm:gap-0">
                           <Button
                             type="button"

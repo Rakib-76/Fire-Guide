@@ -29,7 +29,7 @@ function getIsCustomQuote() {
 
 export default function ComparisonPage() {
   const navigate = useNavigate();
-  const { setSelectedProfessional, setBookingProfessional, setSelectedProfessionalId, selectedService, questionnaireData, locationSearchData } = useApp();
+  const { setSelectedProfessional, setBookingProfessional, setSelectedProfessionalId, questionnaireData, locationSearchData } = useApp();
   const isCustomQuote = Boolean(questionnaireData?.isCustomQuote) || getIsCustomQuote();
 
   return (
@@ -264,7 +264,7 @@ export default function ComparisonPage() {
       }}
       onBack={() => {
         startTransition(() => {
-          navigate(`/services/${selectedService}/location`);
+          navigate(-1);
         });
       }}
     />

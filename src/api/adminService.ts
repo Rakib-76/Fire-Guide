@@ -181,6 +181,66 @@ export const updateProfessionalPaymentInvoiceStatus = async (
   return response.data;
 };
 
+export interface ProfessionalPayoutRequestItem {
+  id: number;
+  booking_id: number;
+  professional_id?: number;
+  status: string;
+  admin_note: string | null;
+  created_at: string;
+  updated_at: string;
+  booking_status: string;
+  selected_date: string;
+  selected_time: string;
+}
+
+export interface ProfessionalPayoutRequestListResponse {
+  status: boolean;
+  message: string;
+  data: ProfessionalPayoutRequestItem[];
+}
+
+/**
+ * POST /professional/payout-request — admin list of professional payout requests
+ * Body: { api_token }
+ */
+export const getProfessionalPayoutRequestList = async (
+  data: AdminOverviewSummaryRequest
+): Promise<ProfessionalPayoutRequestListResponse> => {
+  const response = await apiClient.post<ProfessionalPayoutRequestListResponse>(
+    '/get/professional/payout-request',
+    { api_token: data.api_token }
+  );
+  return response.data;
+};
+
+export interface UpdateAdminPayoutRequestStatusRequest {
+  api_token: string;
+  payout_request_id: number;
+  status: string;
+  admin_note?: string | null;
+}
+
+export interface UpdateAdminPayoutRequestStatusResponse {
+  status: boolean;
+  message: string;
+  data?: unknown;
+}
+
+/**
+ * POST /admin-change/payout-request/status — approve/reject payout request
+ * Body: { api_token, payout_request_id, status, admin_note? }
+ */
+export const updateAdminPayoutRequestStatus = async (
+  data: UpdateAdminPayoutRequestStatusRequest
+): Promise<UpdateAdminPayoutRequestStatusResponse> => {
+  const response = await apiClient.post<UpdateAdminPayoutRequestStatusResponse>(
+    '/admin-change/payout-request/status',
+    data
+  );
+  return response.data;
+};
+
 // FRA all prices (all professionals) – Admin FRA Base Price page
 export interface FraAllPricesPropertyType {
   id: number;
@@ -1991,6 +2051,8 @@ export interface AdminProfessionalListItem {
   status: string;
   post_code: string;
   response_time: string | null;
+  booking?: number | string | null;
+  completed_booking?: number | string | null;
   rating: number | null;
   review: number | null;
   professional_image: string | null;
@@ -2044,6 +2106,27 @@ export interface AdminProfessionalExperience {
   updated_at?: string | null;
 }
 
+export interface AdminProfessionalInsuranceItem {
+  id: number;
+  title?: string | null;
+  price?: string | null;
+  provider_name?: string | null;
+  document?: string | null;
+  status?: string | null;
+  expire_date?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface AdminProfessionalIdentityItem {
+  id: number;
+  professional_id?: number;
+  file?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface AdminProfessionalSingleData {
   id: number;
   name: string;
@@ -2057,12 +2140,20 @@ export interface AdminProfessionalSingleData {
   status: string;
   post_code: string;
   response_time: string | null;
+  booking?: number | string | null;
+  completed_booking?: number | string | null;
   rating: number | null;
   review: number | null;
   professional_image: string | null;
   services: AdminProfessionalService[];
   certificates: AdminProfessionalCertificate[];
   experiences?: AdminProfessionalExperience[];
+  insurance?: AdminProfessionalInsuranceItem[];
+  insurances?: AdminProfessionalInsuranceItem[];
+  insurance_coverages?: AdminProfessionalInsuranceItem[];
+  identity?: AdminProfessionalIdentityItem[];
+  identities?: AdminProfessionalIdentityItem[];
+  professional_identity?: AdminProfessionalIdentityItem | AdminProfessionalIdentityItem[];
   created_at: string;
   updated_at: string;
 }
@@ -2238,6 +2329,86 @@ export const adminProfessionalChangeExperienceStatus = async (
       professional_id: data.professional_id,
       experience_id: data.experience_id,
       status: data.status,
+    }
+  );
+  return response.data;
+};
+
+export interface AdminInsuranceStatusActionRequest {
+  api_token: string;
+  insurance_id: number;
+}
+
+export interface AdminInsuranceStatusActionResponse {
+  success?: boolean;
+  status?: boolean | string;
+  message?: string;
+  data?: unknown;
+}
+
+/** POST /insurance-coverage/approved — body: api_token, insurance_id */
+export const adminApproveInsuranceCoverage = async (
+  data: AdminInsuranceStatusActionRequest
+): Promise<AdminInsuranceStatusActionResponse> => {
+  const response = await apiClient.post<AdminInsuranceStatusActionResponse>(
+    '/insurance-coverage/approved',
+    {
+      api_token: data.api_token,
+      insurance_id: data.insurance_id,
+    }
+  );
+  return response.data;
+};
+
+/** POST /insurance-coverage/reject — body: api_token, insurance_id */
+export const adminRejectInsuranceCoverage = async (
+  data: AdminInsuranceStatusActionRequest
+): Promise<AdminInsuranceStatusActionResponse> => {
+  const response = await apiClient.post<AdminInsuranceStatusActionResponse>(
+    '/insurance-coverage/reject',
+    {
+      api_token: data.api_token,
+      insurance_id: data.insurance_id,
+    }
+  );
+  return response.data;
+};
+
+export interface AdminIdentityStatusActionRequest {
+  api_token: string;
+  identity_id: number;
+}
+
+export interface AdminIdentityStatusActionResponse {
+  success?: boolean;
+  status?: boolean | string;
+  message?: string;
+  data?: unknown;
+}
+
+/** POST /admin_professional/approved-identity — body: api_token, identity_id */
+export const adminApproveProfessionalIdentity = async (
+  data: AdminIdentityStatusActionRequest
+): Promise<AdminIdentityStatusActionResponse> => {
+  const response = await apiClient.post<AdminIdentityStatusActionResponse>(
+    '/admin_professional/approved-identity',
+    {
+      api_token: data.api_token,
+      identity_id: data.identity_id,
+    }
+  );
+  return response.data;
+};
+
+/** POST /admin_professional/reject-identity — body: api_token, identity_id */
+export const adminRejectProfessionalIdentity = async (
+  data: AdminIdentityStatusActionRequest
+): Promise<AdminIdentityStatusActionResponse> => {
+  const response = await apiClient.post<AdminIdentityStatusActionResponse>(
+    '/admin_professional/reject-identity',
+    {
+      api_token: data.api_token,
+      identity_id: data.identity_id,
     }
   );
   return response.data;

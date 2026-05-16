@@ -14,7 +14,7 @@ import { Input } from "./ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { getPaymentInvoices, PaymentInvoiceItem, getEarningsSummary, getMonthlyEarnings } from "../api/paymentService";
+import { filterPaymentInvoices, PaymentInvoiceItem, getEarningsSummary, getMonthlyEarnings, type PaymentInvoiceFilterPeriod } from "../api/paymentService";
 import { getApiToken } from "../lib/auth";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
@@ -34,9 +34,24 @@ interface PaymentHistoryItem {
   paidOn: string | null;
 }
 
+const PAYMENT_FILTER_LABELS: Record<PaymentInvoiceFilterPeriod, string> = {
+  all_time: "All Time",
+  this_month: "This Month",
+  this_quarter: "This Quarter",
+  this_year: "This Year",
+};
+
+const formatGbp = (amount: number): string =>
+  new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+
 export function ProfessionalPayments() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterPeriod, setFilterPeriod] = useState("all");
+  const [filterPeriod, setFilterPeriod] = useState<PaymentInvoiceFilterPeriod>("all_time");
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -363,8 +378,8 @@ export function ProfessionalPayments() {
     }
   };
 
-  // Fetch payment invoices from API
-  const fetchPaymentInvoices = async () => {
+  // Fetch payment invoices from API (optionally filtered by period)
+  const fetchPaymentInvoices = async (filter: PaymentInvoiceFilterPeriod = filterPeriod) => {
     try {
       setIsLoading(true);
       setError(null);
@@ -374,7 +389,7 @@ export function ProfessionalPayments() {
         throw new Error("API token not found. Please log in.");
       }
 
-      const invoices = await getPaymentInvoices(apiToken);
+      const invoices = await filterPaymentInvoices(apiToken, filter);
       const mappedPayments = invoices.map(mapApiResponseToPayment);
       
       // Sort by date (newest first)
@@ -394,12 +409,15 @@ export function ProfessionalPayments() {
     }
   };
 
-  // Fetch on component mount
+  // Fetch earnings on mount; payment history refetches when filter changes
   useEffect(() => {
     fetchEarningsSummary();
     fetchMonthlyEarnings();
-    fetchPaymentInvoices();
   }, []);
+
+  useEffect(() => {
+    void fetchPaymentInvoices(filterPeriod);
+  }, [filterPeriod]);
 
   const filteredPayments = paymentHistory.filter((payment) => {
     const searchLower = searchTerm.toLowerCase();
@@ -447,13 +465,7 @@ export function ProfessionalPayments() {
               <p className="text-green-100 text-sm">Available Balance</p>
               <DollarSign className="w-5 h-5 md:w-6 md:h-6 text-green-100" />
             </div>
-            <p className="text-3xl md:text-4xl font-bold mb-3">£{balance.available.toLocaleString()}</p>
-            <Button 
-              size="sm" 
-              className="bg-white text-green-600 hover:bg-green-50 w-full h-11 md:h-9"
-            >
-              Request Payout
-            </Button>
+            <p className="text-3xl md:text-4xl font-bold">{formatGbp(balance.available)}</p>
           </CardContent>
         </Card>
 
@@ -464,7 +476,7 @@ export function ProfessionalPayments() {
               <p className="text-gray-600 text-sm">Pending</p>
               <Clock className="w-5 h-5 md:w-6 md:h-6 text-yellow-600" />
             </div>
-            <p className="text-3xl md:text-4xl text-[#0A1A2F] font-bold mb-2">£{balance.pending.toLocaleString()}</p>
+            <p className="text-3xl md:text-4xl text-[#0A1A2F] font-bold mb-2">{formatGbp(balance.pending)}</p>
             <p className="text-sm text-gray-500">Will be available in 2-3 days</p>
           </CardContent>
         </Card>
@@ -476,7 +488,7 @@ export function ProfessionalPayments() {
               <p className="text-gray-600 text-sm">Total Earned</p>
               <TrendingUp className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
             </div>
-            <p className="text-3xl md:text-4xl text-[#0A1A2F] font-bold mb-2">£{balance.total.toLocaleString()}</p>
+            <p className="text-3xl md:text-4xl text-[#0A1A2F] font-bold mb-2">{formatGbp(balance.total)}</p>
             <p className="text-sm text-green-600 flex items-center gap-1">
               <TrendingUp className="w-4 h-4" />
               +18% from last month
@@ -499,12 +511,12 @@ export function ProfessionalPayments() {
                     <Calendar className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 text-sm md:text-base">{month.month || 'Unknown'} 2025</p>
+                    <p className="font-medium text-gray-900 text-sm md:text-base">{month.month || "Unknown"}</p>
                     <p className="text-xs md:text-sm text-gray-500">{month.jobs || 0} completed jobs</p>
                   </div>
                 </div>
                 <div className="text-right flex-shrink-0 ml-2">
-                  <p className="text-xl md:text-2xl font-semibold text-gray-900">£{(month.earnings ?? 0).toLocaleString()}</p>
+                  <p className="text-xl md:text-2xl font-semibold text-gray-900">{formatGbp(month.earnings ?? 0)}</p>
                   <p className="text-xs md:text-sm text-gray-500 whitespace-nowrap">after commission</p>
                 </div>
               </div>
@@ -535,15 +547,21 @@ export function ProfessionalPayments() {
         <CardHeader>
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <CardTitle className="text-[#0A1A2F]">Payment History</CardTitle>
-            <Select value={filterPeriod} onValueChange={setFilterPeriod}>
+            <Select
+              value={filterPeriod}
+              onValueChange={(value) => setFilterPeriod(value as PaymentInvoiceFilterPeriod)}
+            >
               <SelectTrigger className="w-full md:w-48">
-                <SelectValue />
+                <SelectValue
+                  placeholder="All Time"
+                  label={PAYMENT_FILTER_LABELS[filterPeriod]}
+                />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Time</SelectItem>
-                <SelectItem value="month">This Month</SelectItem>
-                <SelectItem value="quarter">This Quarter</SelectItem>
-                <SelectItem value="year">This Year</SelectItem>
+                <SelectItem value="all_time">All Time</SelectItem>
+                <SelectItem value="this_month">This Month</SelectItem>
+                <SelectItem value="this_quarter">This Quarter</SelectItem>
+                <SelectItem value="this_year">This Year</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -683,7 +701,7 @@ export function ProfessionalPayments() {
               <Button 
                 variant="outline" 
                 size="sm"
-                onClick={fetchPaymentInvoices}
+                onClick={() => void fetchPaymentInvoices(filterPeriod)}
               >
                 Retry
               </Button>

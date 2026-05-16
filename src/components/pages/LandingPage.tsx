@@ -3,6 +3,8 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { isLiveBookingHash } from "../../lib/liveBookingNav";
 import { professionalBenefitsJoinTo } from "../../lib/professionalBenefitsNavigation";
+import { getSessionUserDisplay, isAuthenticated } from "../../lib/auth";
+import { navigateToProfessionalHome } from "../../lib/professionalDashboardNavigation";
 import { LandingPage as LandingPageComponent } from "../LandingPage";
 
 export default function LandingPage() {
@@ -87,17 +89,29 @@ export default function LandingPage() {
         startTransition(() => navigate("/about#contact"));
       }}
       onNavigateToDashboard={() => {
-        if (currentUser) {
-          startTransition(() => {
-            if (currentUser.role === "admin") {
-              navigate("/admin/dashboard");
-            } else if (currentUser.role === "professional") {
-              navigate("/professional/dashboard");
+        const user = currentUser ?? getSessionUserDisplay();
+        if (!user) return;
+
+        startTransition(() => {
+          if (!isAuthenticated()) {
+            if (user.role === "admin") {
+              navigate("/admin/login");
+            } else if (user.role === "professional") {
+              navigate("/professional/auth");
             } else {
-              navigate("/customer/dashboard");
+              navigate("/customer/auth");
             }
-          });
-        }
+            return;
+          }
+
+          if (user.role === "admin") {
+            navigate("/admin/dashboard");
+          } else if (user.role === "professional") {
+            navigateToProfessionalHome(navigate);
+          } else {
+            navigate("/customer/dashboard");
+          }
+        });
       }}
       onNavigateHome={() => {
         startTransition(() => {

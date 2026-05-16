@@ -1,11 +1,11 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { 
-  Flame, 
   Calendar, 
   ChevronRight,
   CheckCircle,
@@ -17,6 +17,7 @@ import {
   AlertCircle,
   Loader2
 } from "lucide-react";
+import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 import type { BookingData } from "./BookingFlow";
 import { storeProfessionalBooking, ProfessionalBookingStoreRequest } from "../api/bookingService";
 import { storeCustomQuoteRequest } from "../api/customQuoteRequestsService";
@@ -292,12 +293,15 @@ export function CustomerDetailsForm({
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
       {/* Header */}
-      <header className="bg-[#0A1A2F] text-white py-4 px-4 md:px-6">
-        <div className="max-w-7xl mx-auto flex items-center gap-2">
-          <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity" aria-label="Go to home">
-            <Flame className="w-8 h-8 text-red-500" />
-            <span className="text-xl">Fire Guide</span>
-          </a>
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm text-[#0A1A2F] py-3 px-4 md:px-6">
+        <div className="max-w-7xl mx-auto flex items-center">
+          <Link
+            to="/"
+            className="flex items-center cursor-pointer hover:opacity-90 transition-opacity"
+            aria-label="Go to home"
+          >
+            <img src={logoImage} alt="Fire Guide" className="h-12 w-auto" />
+          </Link>
         </div>
       </header>
 

@@ -97,8 +97,16 @@ export function Footer({ onAdminLogin }: FooterProps) {
                   About Us
                 </Link>
               </li>
-              <li><a href="#how-it-works" className="hover:text-red-500 transition-colors">How It Works</a></li>
-              <li><a href="#professionals" className="hover:text-red-500 transition-colors">For Professionals</a></li>
+              <li>
+                <Link to="/#how-it-works" className="hover:text-red-500 transition-colors">
+                  How It Works
+                </Link>
+              </li>
+              <li>
+                <Link to="/#professionals" className="hover:text-red-500 transition-colors">
+                  For Professionals
+                </Link>
+              </li>
               {/* <li><a href="#" className="hover:text-red-500 transition-colors">Careers</a></li> */}
               {/* <li><a href="#" className="hover:text-red-500 transition-colors">Blog</a></li> */}
             </ul>

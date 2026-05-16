@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Search, Star, MoreVertical, Mail, Phone, MapPin, CheckCircle, Clock, XCircle, Eye, Ban, Award, FileText, Download, AlertCircle, Edit2, Image, File } from "lucide-react";
 import { getApiToken } from "../lib/auth";
 import { resolveApiBaseUrl } from "../lib/apiBaseUrl";
-import { getAdminProfessionalSummary, AdminProfessionalSummaryData, getAdminProfessionals, AdminProfessionalListItem, adminProfessionalTakeAction, AdminProfessionalStatus, getAdminProfessionalSingle, AdminProfessionalSingleData, adminProfessionalChangeCertificateStatus, adminProfessionalChangeServiceStatus, adminProfessionalChangeExperienceStatus } from "../api/adminService";
+import { getAdminProfessionalSummary, AdminProfessionalSummaryData, getAdminProfessionals, AdminProfessionalListItem, adminProfessionalTakeAction, AdminProfessionalStatus, getAdminProfessionalSingle, AdminProfessionalSingleData, adminProfessionalChangeCertificateStatus, adminProfessionalChangeServiceStatus, adminProfessionalChangeExperienceStatus, adminApproveInsuranceCoverage, adminRejectInsuranceCoverage, adminApproveProfessionalIdentity, adminRejectProfessionalIdentity } from "../api/adminService";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card, CardContent } from "./ui/card";
@@ -56,6 +56,10 @@ export function AdminProfessionals() {
   const [certificateUpdatingId, setCertificateUpdatingId] = useState<string | null>(null);
   const [experienceStatuses, setExperienceStatuses] = useState<{ [key: string]: string }>({});
   const [experienceUpdatingId, setExperienceUpdatingId] = useState<string | null>(null);
+  const [insuranceStatuses, setInsuranceStatuses] = useState<{ [key: string]: string }>({});
+  const [insuranceUpdatingId, setInsuranceUpdatingId] = useState<string | null>(null);
+  const [identityStatuses, setIdentityStatuses] = useState<{ [key: string]: string }>({});
+  const [identityUpdatingId, setIdentityUpdatingId] = useState<string | null>(null);
   const [serviceUpdatingId, setServiceUpdatingId] = useState<number | string | null>(null);
 
   useEffect(() => {
@@ -115,6 +119,21 @@ export function AdminProfessionals() {
     return `${EVIDENCE_BASE_URL}/certificates/${encodeURIComponent(e)}`;
   };
 
+  const mapVerificationUiStatus = (status: unknown): "approved" | "rejected" | "pending" => {
+    const normalized = String(status ?? "pending").toLowerCase();
+    if (normalized === "verified" || normalized === "approved") return "approved";
+    if (normalized === "rejected") return "rejected";
+    return "pending";
+  };
+
+  const isAdminActionSuccess = (res: { success?: boolean; status?: boolean | string } | null | undefined): boolean => {
+    if (!res) return false;
+    if (res.success === true) return true;
+    if (res.status === true) return true;
+    if (typeof res.status === "string" && res.status.toLowerCase() === "success") return true;
+    return false;
+  };
+
   const filePreviewDisplayName = (name: string | undefined | null): string => {
     const n = (name ?? "").trim();
     if (!n) return "Document";
@@ -139,7 +158,7 @@ export function AdminProfessionals() {
     rating: number;
     reviewCount: number;
     totalBookings: number;
-    completionRate: number;
+    completedBookings: number;
     responseTime: string;
     status: string;
     joinDate: string;
@@ -323,6 +342,20 @@ export function AdminProfessionals() {
     ]
   };
 
+  const parseProfessionalCount = (value: unknown): number => {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() !== "") {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return 0;
+  };
+
+  const formatResponseTime = (value: string | null | undefined): string => {
+    if (value == null || String(value).trim() === "") return "N/A";
+    return String(value);
+  };
+
   // API returns "rejected"; UI shows "suspended" for the same state
   const mapListToDisplay = (list: AdminProfessionalListItem[]): ProfessionalDisplay[] =>
     list.map((p) => ({
@@ -334,9 +367,9 @@ export function AdminProfessionals() {
       photo: p.professional_image ?? DEFAULT_AVATAR,
       rating: p.rating ?? 0,
       reviewCount: p.review ?? 0,
-      totalBookings: 0,
-      completionRate: 0,
-      responseTime: p.response_time ?? "N/A",
+      totalBookings: parseProfessionalCount(p.booking),
+      completedBookings: parseProfessionalCount(p.completed_booking),
+      responseTime: formatResponseTime(p.response_time),
       status: (p.status === "rejected" ? "suspended" : p.status) ?? "pending",
       joinDate: formatJoinDate(p.created_at),
       qualifications: Array.isArray(p.services) ? p.services : [],
@@ -680,6 +713,111 @@ export function AdminProfessionals() {
     }
   };
 
+  const handleUpdateInsuranceStatus = async (
+    insuranceIdRaw: string,
+    insuranceTitle: string,
+    action: "approved" | "rejected"
+  ) => {
+    const token = getApiToken();
+    const insuranceId = Number(insuranceIdRaw);
+    if (!token || !Number.isFinite(insuranceId)) {
+      toast.error("Unable to update insurance status");
+      return;
+    }
+    setInsuranceUpdatingId(insuranceIdRaw);
+    try {
+      const res =
+        action === "approved"
+          ? await adminApproveInsuranceCoverage({ api_token: token, insurance_id: insuranceId })
+          : await adminRejectInsuranceCoverage({ api_token: token, insurance_id: insuranceId });
+      if (!isAdminActionSuccess(res)) {
+        toast.error(res?.message || "Failed to update insurance status");
+        return;
+      }
+      const uiStatus = action === "approved" ? "approved" : "rejected";
+      const apiStatus = action === "approved" ? "verified" : "rejected";
+      setInsuranceStatuses((prev) => ({ ...prev, [insuranceIdRaw]: uiStatus }));
+      setProfileDetail((prev) => {
+        if (!prev) return prev;
+        const patch = (items?: typeof prev.insurances) =>
+          items?.map((item) => (item.id === insuranceId ? { ...item, status: apiStatus } : item));
+        return {
+          ...prev,
+          insurance: patch(prev.insurance),
+          insurances: patch(prev.insurances),
+          insurance_coverages: patch(prev.insurance_coverages),
+        };
+      });
+      toast.success(
+        action === "approved"
+          ? `${insuranceTitle} marked as approved`
+          : `${insuranceTitle} marked as rejected`
+      );
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || e?.message || "Failed to update insurance status");
+    } finally {
+      setInsuranceUpdatingId(null);
+    }
+  };
+
+  const handleUpdateIdentityStatus = async (
+    identityIdRaw: string,
+    identityTitle: string,
+    action: "approved" | "rejected"
+  ) => {
+    const token = getApiToken();
+    const identityId = Number(identityIdRaw);
+    if (!token || !Number.isFinite(identityId)) {
+      toast.error("Unable to update identity status");
+      return;
+    }
+    setIdentityUpdatingId(identityIdRaw);
+    try {
+      const res =
+        action === "approved"
+          ? await adminApproveProfessionalIdentity({ api_token: token, identity_id: identityId })
+          : await adminRejectProfessionalIdentity({ api_token: token, identity_id: identityId });
+      if (!isAdminActionSuccess(res)) {
+        toast.error(res?.message || "Failed to update identity status");
+        return;
+      }
+      const uiStatus = action === "approved" ? "approved" : "rejected";
+      const apiStatus = action === "approved" ? "verified" : "rejected";
+      setIdentityStatuses((prev) => ({ ...prev, [identityIdRaw]: uiStatus }));
+      setProfileDetail((prev) => {
+        if (!prev) return prev;
+        const patchOne = (item: NonNullable<typeof prev.identity>[number]) =>
+          item.id === identityId ? { ...item, status: apiStatus } : item;
+        const patchMany = (items?: typeof prev.identities) =>
+          items?.map((item) => (item.id === identityId ? { ...item, status: apiStatus } : item));
+        const nextIdentity = Array.isArray(prev.identity)
+          ? prev.identity.map(patchOne)
+          : prev.identity
+            ? patchOne(prev.identity)
+            : prev.identity;
+        return {
+          ...prev,
+          identity: nextIdentity,
+          identities: patchMany(prev.identities),
+          professional_identity: Array.isArray(prev.professional_identity)
+            ? prev.professional_identity.map(patchOne)
+            : prev.professional_identity
+              ? patchOne(prev.professional_identity)
+              : prev.professional_identity,
+        };
+      });
+      toast.success(
+        action === "approved"
+          ? `${identityTitle} marked as approved`
+          : `${identityTitle} marked as rejected`
+      );
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || e?.message || "Failed to update identity status");
+    } finally {
+      setIdentityUpdatingId(null);
+    }
+  };
+
   const handleUpdateExperienceStatus = async (
     experienceIdRaw: string,
     experienceTitle: string,
@@ -936,9 +1074,7 @@ export function AdminProfessionals() {
                       </div>
                       <div>
                         <p className="text-sm text-gray-600">Completion</p>
-                        <p className="font-semibold text-gray-900 mt-1">
-                          {professional.completionRate > 0 ? `${professional.completionRate}%` : "—"}
-                        </p>
+                        <p className="font-semibold text-gray-900 mt-1">{professional.completedBookings}</p>
                       </div>
                       <div>
                         <p className="text-sm text-gray-600">Response Time</p>
@@ -1382,22 +1518,284 @@ export function AdminProfessionals() {
                     </div>
                     <div className="p-4 bg-gray-50 rounded-lg">
                       <p className="text-sm text-gray-600">Total Bookings</p>
-                      <p className="font-semibold text-gray-900 mt-1">{profileDetail ? "—" : (selectedProfessional?.totalBookings ?? "—")}</p>
+                      <p className="font-semibold text-gray-900 mt-1">
+                        {parseProfessionalCount(profileDetail?.booking ?? selectedProfessional?.totalBookings)}
+                      </p>
                     </div>
                     <div className="p-4 bg-gray-50 rounded-lg">
-                      <p className="text-sm text-gray-600">Completion Rate</p>
+                      <p className="text-sm text-gray-600">Completed Bookings</p>
                       <p className="font-semibold text-gray-900 mt-1">
-                        {profileDetail ? "—" : (selectedProfessional?.completionRate ? `${selectedProfessional.completionRate}%` : "N/A")}
+                        {parseProfessionalCount(profileDetail?.completed_booking ?? selectedProfessional?.completedBookings)}
                       </p>
                     </div>
                     <div className="p-4 bg-gray-50 rounded-lg">
                       <p className="text-sm text-gray-600">Response Time</p>
-                      <p className="font-semibold text-gray-900 mt-1">{profileDetail?.response_time ?? selectedProfessional?.responseTime ?? "N/A"}</p>
+                      <p className="font-semibold text-gray-900 mt-1">
+                        {formatResponseTime(profileDetail?.response_time ?? selectedProfessional?.responseTime)}
+                      </p>
                     </div>
                   </div>
                 </div>
 
                 <Separator />
+
+                {/* Identity verification */}
+                {(() => {
+                  const raw = profileDetail as AdminProfessionalSingleData | null;
+                  const identitySource =
+                    raw?.identities ??
+                    (Array.isArray(raw?.identity)
+                      ? raw.identity
+                      : raw?.identity
+                        ? [raw.identity]
+                        : Array.isArray(raw?.professional_identity)
+                          ? raw.professional_identity
+                          : raw?.professional_identity
+                            ? [raw.professional_identity]
+                            : []);
+                  const identityList = identitySource.map((item, idx) => {
+                    const filePath = item.file ?? "";
+                    const isPdf = /\.pdf(\?.*)?$/i.test(filePath);
+                    const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i.test(filePath);
+                    return {
+                      id: String(item.id ?? `identity-${idx}`),
+                      title: "Identity Document",
+                      status: mapVerificationUiStatus(item.status),
+                      uploadDate: item.created_at
+                        ? new Date(item.created_at).toLocaleDateString("en-GB")
+                        : "—",
+                      evidenceUrl: resolveEvidenceUrl(filePath),
+                      fileName: filePath || "Identity document",
+                      fileType: isPdf ? "pdf" : isImage ? "image" : "document",
+                    };
+                  });
+                  if (identityList.length === 0) return null;
+                  return (
+                    <>
+                      <div>
+                        <div className="mb-3">
+                          <h4 className="text-lg font-medium text-gray-900">Identity</h4>
+                          <p className="text-sm text-gray-600 mt-1">Government ID or proof of identity submitted by the professional</p>
+                        </div>
+                        <div className="space-y-3">
+                          {identityList.map((identity) => {
+                            const currentStatus = identityStatuses[identity.id] || identity.status;
+                            const isApproved = currentStatus === "approved";
+                            const isRejected = currentStatus === "rejected";
+                            return (
+                              <div
+                                key={identity.id}
+                                className={`p-4 border rounded-lg ${isApproved
+                                  ? "bg-green-50 border-green-200"
+                                  : isRejected
+                                    ? "bg-red-50 border-red-200"
+                                    : "bg-white border-gray-200"
+                                  }`}
+                              >
+                                <div className="flex items-start justify-between gap-3 mb-2">
+                                  <div className="min-w-0">
+                                    <p className="font-medium text-gray-900 break-words">{identity.title}</p>
+                                    <p className="text-xs text-gray-500 mt-1">Uploaded: {identity.uploadDate}</p>
+                                  </div>
+                                  <Badge
+                                    className={
+                                      isApproved
+                                        ? "bg-green-100 text-green-700"
+                                        : isRejected
+                                          ? "bg-red-100 text-red-700"
+                                          : "bg-yellow-100 text-yellow-700"
+                                    }
+                                  >
+                                    {isApproved ? "Verified" : isRejected ? "Rejected" : "Pending verification"}
+                                  </Badge>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {identity.evidenceUrl && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-9"
+                                      onClick={() =>
+                                        handleViewFile({
+                                          id: identity.id,
+                                          fileName: identity.fileName,
+                                          fileType: identity.fileType,
+                                          uploadDate: identity.uploadDate,
+                                          status: currentStatus,
+                                          evidenceUrl: identity.evidenceUrl,
+                                        })
+                                      }
+                                    >
+                                      <Eye className="w-4 h-4 mr-2" />
+                                      View
+                                    </Button>
+                                  )}
+                                  {!isApproved && (
+                                    <Button
+                                      size="sm"
+                                      className="bg-green-600 hover:bg-green-700 h-9"
+                                      disabled={identityUpdatingId === identity.id}
+                                      onClick={() => {
+                                        void handleUpdateIdentityStatus(identity.id, identity.title, "approved");
+                                      }}
+                                    >
+                                      <CheckCircle className="w-4 h-4 mr-2" />
+                                      Approve
+                                    </Button>
+                                  )}
+                                  {!isRejected && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="border-red-600 text-red-600 hover:bg-red-50 h-9"
+                                      disabled={identityUpdatingId === identity.id}
+                                      onClick={() => {
+                                        void handleUpdateIdentityStatus(identity.id, identity.title, "rejected");
+                                      }}
+                                    >
+                                      <XCircle className="w-4 h-4 mr-2" />
+                                      Reject
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <Separator />
+                    </>
+                  );
+                })()}
+
+                {/* Insurance verification */}
+                {(() => {
+                  const raw = profileDetail as AdminProfessionalSingleData | null;
+                  const insuranceSource =
+                    raw?.insurances ?? raw?.insurance ?? raw?.insurance_coverages ?? [];
+                  const insuranceList = insuranceSource.map((item, idx) => {
+                    const docPath = item.document ?? "";
+                    const isPdf = /\.pdf(\?.*)?$/i.test(docPath);
+                    const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i.test(docPath);
+                    const title =
+                      (item.title && item.title.trim()) ||
+                      (item.provider_name && item.provider_name.trim()) ||
+                      "Insurance Coverage";
+                    return {
+                      id: String(item.id ?? `insurance-${idx}`),
+                      title,
+                      provider: item.provider_name ?? "—",
+                      expireDate: item.expire_date
+                        ? new Date(item.expire_date).toLocaleDateString("en-GB")
+                        : "—",
+                      status: mapVerificationUiStatus(item.status),
+                      uploadDate: item.created_at
+                        ? new Date(item.created_at).toLocaleDateString("en-GB")
+                        : "—",
+                      evidenceUrl: resolveEvidenceUrl(docPath),
+                      fileName: docPath || title,
+                      fileType: isPdf ? "pdf" : isImage ? "image" : "document",
+                    };
+                  });
+                  if (insuranceList.length === 0) return null;
+                  return (
+                    <>
+                      <div>
+                        <div className="mb-3">
+                          <h4 className="text-lg font-medium text-gray-900">Insurance</h4>
+                          <p className="text-sm text-gray-600 mt-1">Insurance documents and coverage details submitted by the professional</p>
+                        </div>
+                        <div className="space-y-3">
+                          {insuranceList.map((insurance) => {
+                            const currentStatus = insuranceStatuses[insurance.id] || insurance.status;
+                            const isApproved = currentStatus === "approved";
+                            const isRejected = currentStatus === "rejected";
+                            return (
+                              <div
+                                key={insurance.id}
+                                className={`p-4 border rounded-lg ${isApproved
+                                  ? "bg-green-50 border-green-200"
+                                  : isRejected
+                                    ? "bg-red-50 border-red-200"
+                                    : "bg-white border-gray-200"
+                                  }`}
+                              >
+                                <div className="flex items-start justify-between gap-3 mb-2">
+                                  <div className="min-w-0">
+                                    <p className="font-medium text-gray-900 break-words">{insurance.title}</p>
+                                    <p className="text-xs text-gray-500 mt-1">Provider: {insurance.provider}</p>
+                                    <p className="text-xs text-gray-500">Valid until: {insurance.expireDate}</p>
+                                  </div>
+                                  <Badge
+                                    className={
+                                      isApproved
+                                        ? "bg-green-100 text-green-700"
+                                        : isRejected
+                                          ? "bg-red-100 text-red-700"
+                                          : "bg-yellow-100 text-yellow-700"
+                                    }
+                                  >
+                                    {isApproved ? "Verified" : isRejected ? "Rejected" : "Pending verification"}
+                                  </Badge>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {insurance.evidenceUrl && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-9"
+                                      onClick={() =>
+                                        handleViewFile({
+                                          id: insurance.id,
+                                          fileName: insurance.fileName,
+                                          fileType: insurance.fileType,
+                                          uploadDate: insurance.uploadDate,
+                                          status: currentStatus,
+                                          evidenceUrl: insurance.evidenceUrl,
+                                        })
+                                      }
+                                    >
+                                      <Eye className="w-4 h-4 mr-2" />
+                                      View
+                                    </Button>
+                                  )}
+                                  {!isApproved && (
+                                    <Button
+                                      size="sm"
+                                      className="bg-green-600 hover:bg-green-700 h-9"
+                                      disabled={insuranceUpdatingId === insurance.id}
+                                      onClick={() => {
+                                        void handleUpdateInsuranceStatus(insurance.id, insurance.title, "approved");
+                                      }}
+                                    >
+                                      <CheckCircle className="w-4 h-4 mr-2" />
+                                      Approve
+                                    </Button>
+                                  )}
+                                  {!isRejected && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="border-red-600 text-red-600 hover:bg-red-50 h-9"
+                                      disabled={insuranceUpdatingId === insurance.id}
+                                      onClick={() => {
+                                        void handleUpdateInsuranceStatus(insurance.id, insurance.title, "rejected");
+                                      }}
+                                    >
+                                      <XCircle className="w-4 h-4 mr-2" />
+                                      Reject
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <Separator />
+                    </>
+                  );
+                })()}
 
                 {/* Evidence Submitted - from API certificates */}
                 {(() => {

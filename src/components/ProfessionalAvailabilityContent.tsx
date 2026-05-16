@@ -15,9 +15,12 @@ import { Badge } from "./ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Switch } from "./ui/switch";
 import {
   getWorkingDays,
-  WorkingDayResponse,
+  WorkingDayHourRecord,
+  saveWorkingHours,
+  WorkingHourItem,
   getMonthlyAvailability,
   getMonthlyAvailabilitySummary,
   MonthlyAvailabilityData,
@@ -35,6 +38,178 @@ import {
 import { getApiToken, getProfessionalId } from "../lib/auth";
 import { getUpcomingBookings, UpcomingBookingItem } from "../api/bookingService";
 import { toast } from "sonner";
+
+const WEEK_DAYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+] as const;
+
+type WeekDay = (typeof WEEK_DAYS)[number];
+
+type WorkingHourFormEntry = {
+  day: WeekDay;
+  start_time: string;
+  end_time: string;
+  is_closed: boolean;
+};
+
+function createDefaultWorkingHours(): WorkingHourFormEntry[] {
+  return WEEK_DAYS.map((day) => ({
+    day,
+    start_time: "09:00",
+    end_time: "17:00",
+    is_closed: day === "saturday" || day === "sunday",
+  }));
+}
+
+function normalizeDayKey(value?: string | number | null): WeekDay | null {
+  if (value == null) return null;
+  if (typeof value === "number" && value >= 1 && value <= 7) {
+    return WEEK_DAYS[value - 1] ?? null;
+  }
+  const key = String(value).trim().toLowerCase();
+  if (WEEK_DAYS.includes(key as WeekDay)) return key as WeekDay;
+  const shortMap: Record<string, WeekDay> = {
+    mon: "monday",
+    tue: "tuesday",
+    wed: "wednesday",
+    thu: "thursday",
+    fri: "friday",
+    sat: "saturday",
+    sun: "sunday",
+  };
+  return shortMap[key.slice(0, 3)] ?? null;
+}
+
+function parseIsClosed(value: unknown): boolean {
+  if (value === true || value === 1 || value === "1") return true;
+  if (value === false || value === 0 || value === "0" || value == null) return false;
+  if (typeof value === "string") return value.trim().toLowerCase() === "true";
+  return Boolean(value);
+}
+
+function normalizeWorkingHourRecord(raw: unknown): WorkingDayHourRecord | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const day = normalizeDayKey(
+    (record.day ?? record.week_day ?? record.weekday ?? record.day_name ?? record.day_of_week) as
+      | string
+      | number
+      | undefined
+  );
+  if (!day) return null;
+  return {
+    id: typeof record.id === "number" ? record.id : undefined,
+    day,
+    week_day: day,
+    start_time: (record.start_time ?? record.startTime ?? null) as string | null,
+    end_time: (record.end_time ?? record.endTime ?? null) as string | null,
+    is_closed: parseIsClosed(record.is_closed ?? record.isClosed ?? record.closed),
+  };
+}
+
+function extractWorkingHourRecords(data: unknown): WorkingDayHourRecord[] {
+  if (!data) return [];
+
+  if (Array.isArray(data)) {
+    return data
+      .map(normalizeWorkingHourRecord)
+      .filter((record): record is WorkingDayHourRecord => record != null);
+  }
+
+  if (typeof data !== "object") return [];
+
+  const obj = data as Record<string, unknown>;
+  const nestedKeys = ["hours", "working_hours", "workingHours", "data"];
+  for (const key of nestedKeys) {
+    if (key in obj) {
+      const nested = extractWorkingHourRecords(obj[key]);
+      if (nested.length > 0) return nested;
+    }
+  }
+
+  const keyedRecords: WorkingDayHourRecord[] = [];
+  for (const [key, value] of Object.entries(obj)) {
+    const day = normalizeDayKey(key);
+    if (!day || value == null || typeof value !== "object" || Array.isArray(value)) continue;
+    const record = normalizeWorkingHourRecord({ day, ...(value as Record<string, unknown>) });
+    if (record) keyedRecords.push(record);
+  }
+  return keyedRecords;
+}
+
+function extractWorkingHourRecordsFromResponse(response: unknown): WorkingDayHourRecord[] {
+  if (!response || typeof response !== "object") return [];
+  const root = response as Record<string, unknown>;
+  const fromData = extractWorkingHourRecords(root.data);
+  if (fromData.length > 0) return fromData;
+  return extractWorkingHourRecords(root);
+}
+
+function isWorkingHoursResponseOk(response: unknown): boolean {
+  if (!response || typeof response !== "object") return false;
+  const root = response as Record<string, unknown>;
+  const status = root.status;
+  if (
+    status === true ||
+    status === 1 ||
+    status === "1" ||
+    status === "success" ||
+    status === "true" ||
+    root.success === true ||
+    root.success === 1
+  ) {
+    return true;
+  }
+  return extractWorkingHourRecordsFromResponse(response).length > 0;
+}
+
+function toTimeInputValue(value?: string | null): string {
+  if (!value) return "";
+  const parts = value.split(":");
+  if (parts.length < 2) return "";
+  return `${parts[0].padStart(2, "0")}:${parts[1].padStart(2, "0")}`;
+}
+
+function toApiTimeValue(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  return `${match[1].padStart(2, "0")}:${match[2]}`;
+}
+
+function mapApiHoursToForm(records: WorkingDayHourRecord[]): WorkingHourFormEntry[] {
+  const defaults = createDefaultWorkingHours();
+  const byDay = new Map<WeekDay, WorkingDayHourRecord>();
+
+  for (const record of records) {
+    const day = normalizeDayKey(record.day ?? record.week_day);
+    if (day) byDay.set(day, record);
+  }
+
+  return defaults.map((entry) => {
+    const record = byDay.get(entry.day);
+    if (!record) return entry;
+
+    const isClosed = parseIsClosed(record.is_closed);
+    return {
+      day: entry.day,
+      is_closed: isClosed,
+      start_time: isClosed ? "" : toTimeInputValue(record.start_time) || entry.start_time,
+      end_time: isClosed ? "" : toTimeInputValue(record.end_time) || entry.end_time,
+    };
+  });
+}
+
+function formatDayLabel(day: WeekDay): string {
+  return day.charAt(0).toUpperCase() + day.slice(1);
+}
 
 /**
  * Blocked ranges for the Availability page: POST booking-days-list with `{ professional_id }` only
@@ -163,8 +338,9 @@ export function ProfessionalAvailabilityContent() {
   const [itemToDelete, setItemToDelete] = useState<BlockedBookingDayItem | null>(null);
   const [deletingBookingDayId, setDeletingBookingDayId] = useState<number | null>(null);
 
-  const [workingDays, setWorkingDays] = useState<WorkingDayResponse[]>([]);
+  const [workingHours, setWorkingHours] = useState<WorkingHourFormEntry[]>(createDefaultWorkingHours);
   const [loadingWorkingDays, setLoadingWorkingDays] = useState(true);
+  const [savingWorkingHours, setSavingWorkingHours] = useState(false);
 
   const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(true);
@@ -375,15 +551,74 @@ export function ProfessionalAvailabilityContent() {
     }
   };
 
-  // Format time from "HH:MM:SS" to "HH:MM AM/PM"
-  const formatTime = (timeString: string): string => {
-    if (!timeString) return "";
-    const [hours, minutes] = timeString.split(":");
-    const hour = parseInt(hours, 10);
-    const ampm = hour >= 12 ? "PM" : "AM";
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${minutes} ${ampm}`;
+  const handleSaveWorkingHours = async () => {
+    const apiToken = getApiToken();
+    if (!apiToken) {
+      toast.error("Please log in again to save working hours.");
+      return;
+    }
+
+    for (const entry of workingHours) {
+      if (entry.is_closed) continue;
+      if (!entry.start_time || !entry.end_time) {
+        toast.error(`Please set start and end times for ${formatDayLabel(entry.day)}.`);
+        return;
+      }
+      if (entry.start_time >= entry.end_time) {
+        toast.error(`End time must be after start time for ${formatDayLabel(entry.day)}.`);
+        return;
+      }
+    }
+
+    const hours: WorkingHourItem[] = workingHours.map((entry) => ({
+      day: entry.day,
+      is_closed: entry.is_closed,
+      start_time: entry.is_closed ? null : toApiTimeValue(entry.start_time),
+      end_time: entry.is_closed ? null : toApiTimeValue(entry.end_time),
+    }));
+
+    try {
+      setSavingWorkingHours(true);
+      const response = await saveWorkingHours({ api_token: apiToken, hours });
+      if (isWorkingHoursResponseOk(response)) {
+        toast.success(response.message || "Working hours saved successfully");
+        const records = extractWorkingHourRecordsFromResponse(response);
+        if (records.length > 0) {
+          setWorkingHours(mapApiHoursToForm(records));
+        }
+      } else {
+        toast.error(response.message || "Could not save working hours.");
+      }
+    } catch (error: unknown) {
+      const errorMessage =
+        error && typeof error === "object" && "message" in error
+          ? String((error as { message?: string }).message)
+          : "Could not save working hours.";
+      toast.error(errorMessage);
+    } finally {
+      setSavingWorkingHours(false);
+    }
   };
+
+  const updateWorkingHour = (
+    day: WeekDay,
+    patch: Partial<Pick<WorkingHourFormEntry, "start_time" | "end_time" | "is_closed">>
+  ) => {
+    setWorkingHours((prev) =>
+      prev.map((entry) => {
+        if (entry.day !== day) return entry;
+        const next = { ...entry, ...patch };
+        if (patch.is_closed === true) {
+          return { ...next, start_time: "", end_time: "" };
+        }
+        if (patch.is_closed === false && !next.start_time && !next.end_time) {
+          return { ...next, start_time: "09:00", end_time: "17:00" };
+        }
+        return next;
+      })
+    );
+  };
+
 
   // Fetch blocked booking days on mount (same API as Block Booking Day page)
   useEffect(() => {
@@ -446,9 +681,9 @@ export function ProfessionalAvailabilityContent() {
         }
 
         const response = await getWorkingDays({ api_token: apiToken });
-        
-        if (response.status === true && response.data) {
-          setWorkingDays(response.data);
+        const records = extractWorkingHourRecordsFromResponse(response);
+        if (records.length > 0) {
+          setWorkingHours(mapApiHoursToForm(records));
         }
       } catch (error: any) {
         console.error("Error fetching working days:", error);
@@ -700,16 +935,6 @@ export function ProfessionalAvailabilityContent() {
 
     fetchMonthlySummary();
   }, [blockedBookingDayList, currentMonth]);
-
-  // Define week days order for sorting
-  const weekDaysOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
-  // Sort working days by week day order
-  const sortedWorkingDays = [...workingDays].sort((a, b) => {
-    const indexA = weekDaysOrder.indexOf(a.week_day);
-    const indexB = weekDaysOrder.indexOf(b.week_day);
-    return indexA - indexB;
-  });
 
   // Use API summary data if available, otherwise fallback to calculated values
   const currentMonthBookings = monthlySummary?.book_count ?? upcomingBookings.filter(b => 
@@ -1300,8 +1525,11 @@ export function ProfessionalAvailabilityContent() {
           <Card className="border-0 shadow-md">
             <CardHeader>
               <CardTitle className="text-sm">Working Hours</CardTitle>
+              <CardDescription className="text-xs">
+                Set your weekly schedule. Closed days are sent with null times.
+              </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
               {loadingWorkingDays ? (
                 <div className="text-center py-4 text-gray-500">
                   <Clock className="w-5 h-5 mx-auto mb-2 text-gray-300 animate-spin" />
@@ -1309,34 +1537,80 @@ export function ProfessionalAvailabilityContent() {
                 </div>
               ) : (
                 <>
-                  <div className="space-y-3">
-                    {sortedWorkingDays.length > 0 ? (
-                      sortedWorkingDays.map((workingDay) => {
-                        const isClosed = workingDay.is_closed === 1;
-                        const hours = isClosed 
-                          ? "Closed" 
-                          : `${formatTime(workingDay.start_time)} - ${formatTime(workingDay.end_time)}`;
-
-                        // Apply lighter gray for "Closed", darker for active hours
-                        const textColorClass = isClosed ? "text-gray-400" : "text-gray-600";
-
-                        return (
-                          <div key={workingDay.id} className="flex items-center justify-between text-sm">
-                            <span className="font-medium text-gray-900">{workingDay.week_day}</span>
-                            <span className={textColorClass}>
-                              {hours}
-                            </span>
+                  <div
+                    className="space-y-2 overflow-y-auto rounded-md border border-gray-100 p-3"
+                    style={{ maxHeight: 360 }}
+                    aria-label="Weekly working hours"
+                  >
+                    {workingHours.map((entry) => (
+                      <div
+                        key={entry.day}
+                        className="rounded-lg border border-gray-100 bg-gray-50/60 p-3 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-sm text-gray-900">
+                            {formatDayLabel(entry.day)}
+                          </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Label htmlFor={`closed-${entry.day}`} className="text-xs text-gray-500">
+                              Closed
+                            </Label>
+                            <Switch
+                              id={`closed-${entry.day}`}
+                              checked={entry.is_closed}
+                              onCheckedChange={(checked) =>
+                                updateWorkingHour(entry.day, { is_closed: checked })
+                              }
+                            />
                           </div>
-                        );
-                      })
-                    ) : (
-                      <div className="text-center py-4 text-gray-500">
-                        <p className="text-sm">No working hours set</p>
+                        </div>
+
+                        {entry.is_closed ? (
+                          <p className="text-xs text-gray-400">Not available this day</p>
+                        ) : (
+                          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                            <div className="min-w-0">
+                              <Label htmlFor={`start-${entry.day}`} className="text-xs text-gray-500 mb-1 block">
+                                Start
+                              </Label>
+                              <Input
+                                id={`start-${entry.day}`}
+                                type="time"
+                                value={entry.start_time}
+                                onChange={(e) =>
+                                  updateWorkingHour(entry.day, { start_time: e.target.value })
+                                }
+                                className="h-9 text-sm bg-white"
+                              />
+                            </div>
+                            <span className="text-gray-400 text-sm pt-5">–</span>
+                            <div className="min-w-0">
+                              <Label htmlFor={`end-${entry.day}`} className="text-xs text-gray-500 mb-1 block">
+                                End
+                              </Label>
+                              <Input
+                                id={`end-${entry.day}`}
+                                type="time"
+                                value={entry.end_time}
+                                onChange={(e) =>
+                                  updateWorkingHour(entry.day, { end_time: e.target.value })
+                                }
+                                className="h-9 text-sm bg-white"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    ))}
                   </div>
-                  <Button variant="outline" className="w-full mt-4">
-                    Update Hours
+
+                  <Button
+                    type="button"
+                    className="w-full bg-red-600 hover:bg-red-700"
+                    onClick={handleSaveWorkingHours}
+                    disabled={savingWorkingHours}
+                  >
+                    {savingWorkingHours ? "Saving…" : "Save Working Hours"}
                   </Button>
                 </>
               )}

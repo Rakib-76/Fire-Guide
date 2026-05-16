@@ -5,9 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
 import { Separator } from "./ui/separator";
-import { getProfessionalWiseIdentity, updateProfessionalIdentity, ProfessionalIdentityItem, getVerificationSummary, VerificationSummaryData, getProfessionalWiseEvidence, ProfessionalEvidenceItem } from "../api/professionalsService";
+import { getProfessionalWiseIdentity, createProfessionalIdentity, updateProfessionalIdentity, ProfessionalIdentityItem, getVerificationSummary, VerificationSummaryData, getProfessionalWiseEvidence, ProfessionalEvidenceItem } from "../api/professionalsService";
 import { createCertification, updateEvidence } from "../api/qualificationsService";
-import { showInsuranceCoverage, InsuranceItem, updateInsuranceDocument } from "../api/insuranceService";
+import { showInsuranceCoverage, InsuranceItem, updateInsuranceDocument, createInsuranceDocument } from "../api/insuranceService";
 import { getApiToken, getProfessionalId } from "../lib/auth";
 import { resolveApiBaseUrl } from "../lib/apiBaseUrl";
 import { toast } from "sonner";
@@ -108,10 +108,16 @@ export function ProfessionalVerification() {
     fetchInsuranceData();
   }, []);
 
-  // Determine verification status based on verification summary API data
+  // Progress: each of insurance, certificate, identity true = one third (no other logic).
+  const verificationChecks = verificationSummary?.checks;
+  const verificationCompletedCount = [
+    verificationChecks?.insurance === true,
+    verificationChecks?.certificate === true,
+    verificationChecks?.identity === true,
+  ].filter(Boolean).length;
   const verificationStatus = {
     overall: verificationSummary?.active_status || identityData?.status || "pending",
-    completionPercentage: verificationSummary?.progress_percentage ?? (identityData?.status === "verified" ? 100 : 75)
+    completionPercentage: Math.round((verificationCompletedCount / 3) * 100),
   };
 
   // Map API checks to requirement status (verified = true, pending = false)
@@ -120,8 +126,93 @@ export function ProfessionalVerification() {
     return checkValue ? "verified" : "pending";
   };
 
+  const normalizeUiStatus = (status: string | null | undefined): string => {
+    const value = String(status ?? "").trim().toLowerCase();
+    if (!value) return "pending";
+    if (value === "rejected" || value === "declined" || value === "denied") return "rejected";
+    if (value === "verified" || value === "approved" || value === "active") return "verified";
+    return value;
+  };
+
+  const resolveIdentityRequirementStatus = (): string => {
+    const recordStatus = normalizeUiStatus(identityData?.status);
+    if (recordStatus === "rejected") return "rejected";
+    if (verificationSummary?.checks?.identity === true) return "verified";
+    if (recordStatus === "verified") return "verified";
+    return "pending";
+  };
+
+  const resolveInsuranceRequirementStatus = (): string => {
+    if (insuranceData.some((item) => normalizeUiStatus(item.status) === "rejected")) {
+      return "rejected";
+    }
+    if (verificationSummary?.checks?.insurance === true) return "verified";
+    if (insuranceData.some((item) => normalizeUiStatus(item.status) === "verified")) {
+      return "verified";
+    }
+    if (insuranceData.length > 0) return "pending";
+    return "pending";
+  };
+
+  const resolveQualificationsRequirementStatus = (): string => {
+    if (qualificationsEvidence.some((item) => normalizeUiStatus(item.status) === "rejected")) {
+      return "rejected";
+    }
+    if (verificationSummary?.checks?.certificate === true) return "verified";
+    if (qualificationsEvidence.some((item) => normalizeUiStatus(item.status) === "verified")) {
+      return "verified";
+    }
+    if (qualificationsEvidence.length > 0) return "pending";
+    return "pending";
+  };
+
+  const extractRejectionNote = (record: Record<string, unknown> | null | undefined): string | null => {
+    if (!record) return null;
+    const keys = [
+      "reject_reason",
+      "rejection_reason",
+      "reject_note",
+      "admin_note",
+      "note",
+      "comments",
+      "remark",
+    ];
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+    return null;
+  };
+
+  const rejectionGuidanceByRequirement: Record<string, string> = {
+    identity:
+      "Your identity document was rejected by admin. Please upload a clear, valid government-issued ID.",
+    qualifications:
+      "Your qualification certificate was rejected. Please upload an updated or clearer certificate document.",
+    insurance:
+      "Your insurance document was rejected. Please upload valid insurance coverage documents.",
+  };
+
+  const getRequirementRejectionNote = (requirementId: string): string | null => {
+    if (requirementId === "identity") {
+      return extractRejectionNote(identityData as unknown as Record<string, unknown>);
+    }
+    if (requirementId === "qualifications") {
+      const rejected = qualificationsEvidence.find(
+        (item) => normalizeUiStatus(item.status) === "rejected"
+      );
+      return extractRejectionNote(rejected as unknown as Record<string, unknown>);
+    }
+    if (requirementId === "insurance") {
+      const rejected = insuranceData.find((item) => normalizeUiStatus(item.status) === "rejected");
+      return extractRejectionNote(rejected as unknown as Record<string, unknown>);
+    }
+    return null;
+  };
+
   // Helper function to format price
-  const formatPrice = (price: string): string => {
+  const formatPrice = (price: string | null | undefined): string => {
+    if (price == null || price === "") return "N/A";
     try {
       const priceNum = parseFloat(price);
       if (isNaN(priceNum)) return price;
@@ -165,14 +256,16 @@ export function ProfessionalVerification() {
       };
     }
 
-    // Try to find insurance items by title
-    const publicLiabilityItem = insuranceData.find(item => 
-      item.title.toLowerCase().includes('public liability') || 
-      item.title.toLowerCase().includes('liability')
+    const titleLower = (title: string | null | undefined) => (title ?? "").toLowerCase();
+
+    // Try to find insurance items by title (API may return null title after document-only create)
+    const publicLiabilityItem = insuranceData.find(item =>
+      titleLower(item.title).includes("public liability") ||
+      titleLower(item.title).includes("liability")
     );
-    const professionalIndemnityItem = insuranceData.find(item => 
-      item.title.toLowerCase().includes('professional indemnity') ||
-      item.title.toLowerCase().includes('indemnity')
+    const professionalIndemnityItem = insuranceData.find(item =>
+      titleLower(item.title).includes("professional indemnity") ||
+      titleLower(item.title).includes("indemnity")
     );
 
     // Use found items or fallback to first/second items from API
@@ -217,9 +310,7 @@ export function ProfessionalVerification() {
       id: "identity",
       title: "Identity Verification",
       description: "Government-issued ID verified",
-      status: verificationSummary?.checks?.identity !== undefined 
-        ? getRequirementStatus(verificationSummary.checks.identity)
-        : (identityData?.status || "pending"),
+      status: resolveIdentityRequirementStatus(),
       verifiedDate: identityData?.updated_at ? formatDate(identityData.updated_at) : null,
       file: identityData?.file || null,
       icon: Shield
@@ -228,9 +319,7 @@ export function ProfessionalVerification() {
       id: "qualifications",
       title: "Professional Qualifications",
       description: "Fire Safety Diploma, NEBOSH Certificate",
-      status: verificationSummary?.checks?.certificate !== undefined
-        ? getRequirementStatus(verificationSummary.checks.certificate)
-        : (qualificationsEvidence.length > 0 && qualificationsEvidence.some(item => item.status === "verified") ? "verified" : (qualificationsEvidence.length > 0 ? "pending" : "pending")),
+      status: resolveQualificationsRequirementStatus(),
       verifiedDate: qualificationsEvidence.length > 0 
         ? (() => {
             // Find the most recent evidence item (by created_at date)
@@ -281,9 +370,7 @@ export function ProfessionalVerification() {
       id: "insurance",
       title: "Insurance Coverage",
       description: "Public Liability & Professional Indemnity",
-      status: verificationSummary?.checks?.insurance !== undefined
-        ? getRequirementStatus(verificationSummary.checks.insurance)
-        : (insuranceData.length > 0 && insuranceData.some(item => item.status === "verified") ? "verified" : (insuranceData.length > 0 ? "pending" : "pending")),
+      status: resolveInsuranceRequirementStatus(),
       verifiedDate: getInsuranceVerifiedDate(),
       icon: Shield,
       details: getInsuranceDetails(),
@@ -361,6 +448,37 @@ export function ProfessionalVerification() {
       reader.onerror = (error) => reject(error);
       reader.readAsDataURL(file);
     });
+  };
+
+  /** Downscale raster images before insurance create — avoids client timeout and PHP post size limits on huge PNG payloads. */
+  const imageFileToCompressedDataUrl = async (
+    file: File,
+    maxEdge = 2048,
+    quality = 0.88
+  ): Promise<string> => {
+    if (typeof createImageBitmap !== "function") {
+      return fileToBase64(file);
+    }
+    let bitmap: ImageBitmap | null = null;
+    try {
+      bitmap = await createImageBitmap(file);
+      let w = bitmap.width;
+      let h = bitmap.height;
+      const scale = Math.min(1, maxEdge / Math.max(w, h));
+      w = Math.round(w * scale);
+      h = Math.round(h * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return fileToBase64(file);
+      ctx.drawImage(bitmap, 0, 0, w, h);
+      return canvas.toDataURL("image/jpeg", quality);
+    } catch {
+      return fileToBase64(file);
+    } finally {
+      bitmap?.close();
+    }
   };
 
   // Fetch identity data (extracted to a function so we can call it after upload)
@@ -448,27 +566,22 @@ export function ProfessionalVerification() {
     const apiToken = getApiToken();
     const professionalId = getProfessionalId();
 
+    const isInsuranceCreate = requirementId === "insurance" && currentEvidenceId == null;
+    const isIdentityCreate = requirementId === "identity" && !identityData?.id;
+
     if (!apiToken) {
       toast.error("Please log in to upload document.");
       setCurrentUploadRequirement(null);
       return;
     }
 
-    if (!professionalId) {
+    if (!professionalId && !isInsuranceCreate && !isIdentityCreate) {
       toast.error("Professional ID not found. Please try again.");
       setCurrentUploadRequirement(null);
       return;
     }
 
-    // Check if we have existing data to update based on requirement type
-    if (requirementId === "identity") {
-      if (!identityData || !identityData.id) {
-        toast.error("Identity record not found. Please contact support.");
-        setCurrentUploadRequirement(null);
-        return;
-      }
-    }
-    // Note: qualifications doesn't require existing record check - we can create new evidence
+    // Note: identity create does not require an existing record; qualifications can create new evidence too
 
     setUploadingDoc(requirementId);
 
@@ -488,19 +601,30 @@ export function ProfessionalVerification() {
 
       // Call the appropriate update API based on requirement type
       if (requirementId === "identity") {
-        const response = await updateProfessionalIdentity({
-          api_token: apiToken,
-          id: identityData!.id,
-          professional_id: professionalId,
-          file: fileToSend,
-        });
+        const response =
+          identityData?.id && professionalId
+            ? await updateProfessionalIdentity({
+                api_token: apiToken,
+                id: identityData.id,
+                professional_id: professionalId,
+                file: fileToSend,
+              })
+            : await createProfessionalIdentity({
+                api_token: apiToken,
+                file: fileToSend,
+              });
 
         if (response.status === true || response.data) {
-          toast.success(response.message || "Identity document updated successfully!");
-          // Immediately refresh the identity data
+          toast.success(
+            response.message ||
+              (identityData?.id
+                ? "Identity document updated successfully!"
+                : "Identity document uploaded successfully!")
+          );
           await fetchIdentityData();
+          await fetchVerificationSummary();
         } else {
-          toast.error(response.message || "Failed to update identity document.");
+          toast.error(response.message || "Failed to upload identity document.");
         }
       } else if (requirementId === "qualifications") {
         // fileToSend is already determined above:
@@ -512,7 +636,7 @@ export function ProfessionalVerification() {
           const response = await updateEvidence({
             api_token: apiToken,
             id: currentEvidenceId,
-            professional_id: professionalId,
+            professional_id: professionalId!,
             evidence: fileToSend, // base64 string (images) or File object (documents)
           });
 
@@ -532,7 +656,7 @@ export function ProfessionalVerification() {
             description: `Qualification document: ${fileName}`,
             evidence: fileToSend, // base64 string (images) or File object (documents)
             status: "pending",
-            professional_id: professionalId,
+            professional_id: professionalId!,
           });
 
           if (response.status === "success" || response.success === true || response.data) {
@@ -544,46 +668,62 @@ export function ProfessionalVerification() {
           }
         }
       } else if (requirementId === "insurance") {
-        // fileToSend is already determined above:
-        // - For images: base64 string (will be sent as JSON body)
-        // - For documents (PDF, Word, Excel, etc.): File object (will be sent as FormData)
-        
-        // Capture the ID at this point to ensure we use the correct one
         const insuranceIdToUpdate = currentEvidenceId;
-        
-        if (!insuranceIdToUpdate) {
-          toast.error("Insurance ID not found. Please try again.");
-          setCurrentUploadRequirement(null);
-          setCurrentEvidenceId(null);
-          if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-          }
-          return;
-        }
-        
-        // Update existing insurance document
-        console.log('Updating insurance document - ID:', insuranceIdToUpdate, 'File:', file.name);
-        const response = await updateInsuranceDocument({
-          api_token: apiToken,
-          id: insuranceIdToUpdate,
-          professional_id: professionalId,
-          document: fileToSend, // base64 string (images) or File object (documents)
-        });
-        
-        console.log('Update insurance document response:', response);
-        console.log('Response insurance_id:', response.data?.insurance_id);
 
-        if (response.status === true || response.success === true || response.data) {
-          toast.success(response.message || "Insurance document updated successfully!");
-          // Immediately refresh the insurance data to get the updated document URL
-          await fetchInsuranceData();
+        if (insuranceIdToUpdate) {
+          // Update existing insurance row (needs insurance id + professional id)
+          const response = await updateInsuranceDocument({
+            api_token: apiToken,
+            id: insuranceIdToUpdate,
+            professional_id: professionalId!,
+            document: fileToSend,
+          });
+
+          if (response.status === true || response.success === true || response.data) {
+            toast.success(response.message || "Insurance document updated successfully!");
+            await fetchInsuranceData();
+            await fetchVerificationSummary();
+          } else {
+            toast.error(response.message || "Failed to update insurance document.");
+          }
         } else {
-          toast.error(response.message || "Failed to update insurance document.");
+          // First document: POST /insurance-coverage/create_document — { api_token, document }
+          let documentPayload: string;
+          if (isImage) {
+            documentPayload = await imageFileToCompressedDataUrl(file);
+          } else {
+            documentPayload = await fileToBase64(file);
+          }
+
+          const response = await createInsuranceDocument({
+            api_token: apiToken,
+            document: documentPayload,
+          });
+
+          const ok =
+            response.status === true ||
+            response.status === "success" ||
+            response.success === true ||
+            response.data != null;
+
+          if (ok) {
+            toast.success(response.message || "Insurance document uploaded successfully!");
+            await fetchInsuranceData();
+            await fetchVerificationSummary();
+          } else {
+            toast.error(response.message || response.error || "Failed to upload insurance document.");
+          }
         }
       }
     } catch (error: any) {
       console.error(`Error uploading ${requirementId} document:`, error);
-      toast.error(error.message || `Failed to upload ${requirementId} document. Please try again.`);
+      const detail =
+        (typeof error?.message === "string" && error.message) ||
+        (typeof error?.error === "string" && error.error) ||
+        "";
+      toast.error(
+        detail || `Failed to upload ${requirementId} document. Please try again.`
+      );
     } finally {
       setUploadingDoc(null);
       setCurrentUploadRequirement(null);
@@ -681,11 +821,28 @@ export function ProfessionalVerification() {
                     {getStatusIcon(requirement.status)}
                   </div>
 
-                  {(requirement.status === "verified" || requirement.verifiedDate) && requirement.verifiedDate && (
+                  {requirement.status === "verified" && requirement.verifiedDate && (
                     <div className="mt-3">
                       <p className="text-sm text-green-600 flex items-center gap-1">
                         <CheckCircle className="w-4 h-4" />
                         Verified on {requirement.verifiedDate}
+                      </p>
+                    </div>
+                  )}
+
+                  {requirement.status === "rejected" && (
+                    <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3">
+                      <p className="text-sm font-medium text-red-900 flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                        Rejected by admin
+                      </p>
+                      <p className="text-sm text-red-800 mt-1">
+                        {getRequirementRejectionNote(requirement.id) ||
+                          rejectionGuidanceByRequirement[requirement.id] ||
+                          "This verification was rejected. Please update your documents and submit again."}
+                      </p>
+                      <p className="text-xs text-red-700 mt-2">
+                        Use <span className="font-medium">Update Document</span> below to upload a corrected file for admin review.
                       </p>
                     </div>
                   )}
@@ -702,33 +859,50 @@ export function ProfessionalVerification() {
                   {requirement.id === "identity" && requirement.file && (
                     <div className="mt-4">
                       <Separator className="mb-3" />
-                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between p-2 bg-gray-50 rounded">
-                        <div className="flex items-start gap-2 min-w-0 flex-1">
-                          <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
-                          <div className="min-w-0">
-                            <p className="text-sm text-gray-900">
-                              Identity Document
-                            </p>
-                            {requirement.verifiedDate && (
-                              <p className="text-xs text-gray-500">Verified {requirement.verifiedDate}</p>
-                            )}
+                      <p className="text-sm font-medium text-gray-700 mb-2">Uploaded Documents:</p>
+                      <div className="p-2 bg-gray-50 rounded">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div className="flex items-start gap-2 min-w-0 w-full md:flex-1">
+                            <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm text-gray-900">Identity Document</p>
+                              <p className="text-xs text-gray-500">
+                                {requirement.verifiedDate
+                                  ? `Verified ${requirement.verifiedDate}`
+                                  : "Uploaded document"}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0 w-full justify-end md:w-auto">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => window.open(requirement.file || "", "_blank")}
+                            >
+                              View
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleFileButtonClick(requirement.id)}
+                              disabled={uploadingDoc === requirement.id || isLoadingIdentity}
+                            >
+                              {uploadingDoc === requirement.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <Upload className="w-4 h-4 mr-1" />
+                                  Update Document
+                                </>
+                              )}
+                            </Button>
                           </div>
                         </div>
-                        {requirement.file && (
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            className="flex-shrink-0 self-end md:self-auto"
-                            onClick={() => window.open(requirement.file || '', '_blank')}
-                          >
-                            View
-                          </Button>
-                        )}
                       </div>
                     </div>
                   )}
 
-                  {requirement.documents && (
+                  {requirement.documents && requirement.documents.length > 0 && (
                     <div className="mt-4">
                       <Separator className="mb-3" />
                       <p className="text-sm font-medium text-gray-700 mb-2">Uploaded Documents:</p>
@@ -870,7 +1044,7 @@ export function ProfessionalVerification() {
                     </div>
                   )}
 
-                  {requirement.id === "identity" && (
+                  {requirement.id === "identity" && !requirement.file && (
                     <div className="mt-4">
                       <Button
                         variant="outline"
@@ -887,6 +1061,32 @@ export function ProfessionalVerification() {
                           <>
                             <Upload className="w-4 h-4 mr-2" />
                             {identityData ? "Update Document" : "Upload Document"}
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+
+                  {requirement.id === "insurance" && insuranceData.length === 0 && (
+                    <div className="mt-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setCurrentEvidenceId(null);
+                          handleFileButtonClick("insurance");
+                        }}
+                        disabled={uploadingDoc === "insurance"}
+                      >
+                        {uploadingDoc === "insurance" ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Uploading...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 mr-2" />
+                            Upload Document
                           </>
                         )}
                       </Button>

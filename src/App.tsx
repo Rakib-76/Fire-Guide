@@ -17,6 +17,10 @@ export interface Booking {
   displayStatus?: string; // Original status from API for display (e.g., "Confirmed", "Pending")
   /** From API `is_paid`; when true, hide Pay / show as paid in dashboard. */
   isPaid?: boolean;
+  /** Raw booking status from API (e.g. pending, me, confirmed). */
+  apiStatus?: string;
+  /** From API `updated_by.id` — used to distinguish new `me` bookings vs submitted reschedules. */
+  updatedById?: number | null;
   location: string;
   price: string;
   professionalEmail: string;
@@ -25,6 +29,8 @@ export interface Booking {
   hasReport?: boolean;
   professionalImage?: string;
   professionalType?: "individual" | "company";
+  /** From API — used for reschedule calendar (available-date / booking-days-list). */
+  professionalId?: number;
 }
 
 export interface Payment {

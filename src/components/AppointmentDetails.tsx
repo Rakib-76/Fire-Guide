@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -8,7 +9,6 @@ import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
 import { Calendar } from "./ui/calendar";
 import { 
-  Flame, 
   Calendar as CalendarIcon, 
   Clock, 
   MapPin, 
@@ -26,6 +26,7 @@ import {
   Send,
   X
 } from "lucide-react";
+import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 
 interface AppointmentDetailsProps {
   onBack: () => void;
@@ -116,13 +117,16 @@ export function AppointmentDetails({ onBack, onBackToHome }: AppointmentDetailsP
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-[#0A1A2F] text-white py-4 px-4 md:px-6">
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm text-[#0A1A2F] py-3 px-4 md:px-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity" aria-label="Go to home">
-            <Flame className="w-8 h-8 text-red-500" />
-            <span className="text-xl">Fire Guide</span>
-          </a>
-          <Button variant="ghost" className="text-white hover:text-red-500" onClick={onBackToHome}>
+          <Link
+            to="/"
+            className="flex items-center cursor-pointer hover:opacity-90 transition-opacity"
+            aria-label="Go to home"
+          >
+            <img src={logoImage} alt="Fire Guide" className="h-12 w-auto" />
+          </Link>
+          <Button variant="ghost" className="text-[#0A1A2F] hover:text-red-600 hover:bg-gray-100" onClick={onBackToHome}>
             Back to Home
           </Button>
         </div>

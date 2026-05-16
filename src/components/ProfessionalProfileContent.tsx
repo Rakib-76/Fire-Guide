@@ -57,13 +57,11 @@ function readAuthContactDefaults() {
   };
 }
 
-/** Modal/banner only for new pros who have not saved the profile yet (no professional_id). */
+/** Modal/banner when onboarding flag is set, or no professional profile has been saved yet. */
 function computeShowProfileOnboardingReminder(): boolean {
+  if (readCompleteProfileReminderFlag()) return true;
   const pid = getProfessionalId();
-  if (pid != null && !Number.isNaN(Number(pid))) {
-    return false;
-  }
-  return readCompleteProfileReminderFlag();
+  return pid == null || Number.isNaN(Number(pid));
 }
 
 export function ProfessionalProfileContent() {
@@ -160,11 +158,10 @@ export function ProfessionalProfileContent() {
   /** Shown first after signup redirect; hidden after successful save or if professional already exists. */
   const [completeProfileIntroModalOpen, setCompleteProfileIntroModalOpen] = useState(computeShowProfileOnboardingReminder);
 
-  // Clear stale session flag once profile exists (e.g. after refresh or returning user)
+  // Clear onboarding once a saved professional profile exists and reminder was dismissed or completed
   useEffect(() => {
     const pid = getProfessionalId();
-    if (pid != null && !Number.isNaN(Number(pid))) {
-      clearCompleteProfileReminderFlag();
+    if (pid != null && !Number.isNaN(Number(pid)) && !readCompleteProfileReminderFlag()) {
       setShowCompleteProfileReminder(false);
       setCompleteProfileIntroModalOpen(false);
     }

@@ -70,6 +70,12 @@ export default defineConfig({
         changeOrigin: true,
         secure: true,
       },
+      // Report files live under /storage on the API host; proxy so blob download avoids browser CORS.
+      '/storage': {
+        target: 'https://firesafety-backend.fireguide.co.uk',
+        changeOrigin: true,
+        secure: true,
+      },
     },
   },
   optimizeDeps: {

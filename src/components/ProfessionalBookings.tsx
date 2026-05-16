@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { Search, Calendar, MapPin, Clock, User, ChevronRight, Filter, X, CheckCircle, AlertCircle, Phone, Mail, Home, FileText, Navigation, Loader2, Upload } from "lucide-react";
+import { Search, Calendar, MapPin, Clock, User, ChevronRight, Filter, X, CheckCircle, AlertCircle, Phone, Mail, Home, FileText, Navigation, Loader2, Upload, XCircle, Wallet } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -10,8 +9,16 @@ import { Separator } from "./ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
-import { getProfessionalBookings, ProfessionalBookingItem, acceptProfessionalBooking, updateProfessionalBooking, searchProfessionalBookings, getBookingSummary, changeProfessionalBookingStatus } from "../api/bookingService";
+import { getProfessionalBookings, ProfessionalBookingItem, acceptProfessionalBooking, updateProfessionalBooking, searchProfessionalBookings, getBookingSummary, changeProfessionalBookingStatus, requestProfessionalPayout } from "../api/bookingService";
+import { cancelCustomerBooking } from "../api/authService";
+import { UploadCompletionReportModal, UploadReportBookingData } from "./UploadCompletionReportModal";
+import { RescheduleCalendarPicker } from "./RescheduleCalendarPicker";
 import { getApiToken, getProfessionalId } from "../lib/auth";
+import {
+  getPayoutRequestedBookingIds,
+  markPayoutRequestedBookingId,
+  bookingHasPayoutRequestFromApi,
+} from "../lib/professionalPayoutRequestLocal";
 import { toast } from "sonner";
 
 interface ProfessionalBookingsProps {
@@ -67,6 +74,37 @@ const formatTimeToAMPM = (time24Hour: string): string => {
   return `${hours}:${minutes} ${period}`;
 };
 
+const normalizeBookingStatus = (status: string | undefined | null): string =>
+  (status ?? "").toLowerCase().trim();
+
+const isMeBookingStatus = (status: string): boolean =>
+  normalizeBookingStatus(status) === "me";
+
+const professionalRescheduleSubmittedMessage =
+  "Your reschedule request has been sent. Please wait while your Customer reviews and approves the new date and time.";
+
+const getStatusLabel = (status: string): string => {
+  const normalized = normalizeBookingStatus(status);
+  if (normalized === "pending" || normalized === "me") return "Pending";
+  if (normalized === "confirmed") return "Confirmed";
+  if (normalized === "completed") return "Completed";
+  if (normalized === "cancelled" || normalized === "canceled") return "Cancelled";
+  if (!status) return "Unknown";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+};
+
+const getStatusBannerClass = (status: string): string => {
+  const normalized = normalizeBookingStatus(status);
+  if (normalized === "confirmed") return "bg-green-50 border border-green-200";
+  if (normalized === "pending" || normalized === "me") {
+    return "bg-yellow-50 border border-yellow-200";
+  }
+  if (normalized === "cancelled" || normalized === "canceled") {
+    return "bg-red-50 border border-red-200";
+  }
+  return "bg-blue-50 border border-blue-200";
+};
+
 // Helper function to format price
 const formatPrice = (price: string): string => {
   return `£${price}`;
@@ -95,7 +133,7 @@ const mapApiResponseToBooking = (apiBooking: ProfessionalBookingItem): Booking =
     location: location,
     propertySize: "Medium (6-25 people)", // Default as API doesn't provide this
     price: formatPrice(apiBooking.price),
-    status: apiBooking.status,
+    status: normalizeBookingStatus(apiBooking.status) || "pending",
     notes: apiBooking.additional_notes || "",
     propertyType: undefined, // Not available in API
     floors: undefined, // Not available in API
@@ -104,7 +142,6 @@ const mapApiResponseToBooking = (apiBooking: ProfessionalBookingItem): Booking =
 };
 
 export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProps) {
-  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -119,6 +156,13 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
   const [isAccepting, setIsAccepting] = useState(false);
   const [isRescheduling, setIsRescheduling] = useState(false);
   const [completingBookingId, setCompletingBookingId] = useState<number | null>(null);
+  const [rejectingBookingId, setRejectingBookingId] = useState<number | null>(null);
+  const [payoutRequestBookingId, setPayoutRequestBookingId] = useState<number | null>(null);
+  const [payoutRequestedIds, setPayoutRequestedIds] = useState<Set<number>>(
+    () => new Set(getPayoutRequestedBookingIds())
+  );
+  const [showUploadReportModal, setShowUploadReportModal] = useState(false);
+  const [uploadReportBooking, setUploadReportBooking] = useState<UploadReportBookingData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [bookingsData, setBookingsData] = useState<Booking[]>([]);
@@ -130,6 +174,21 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
     completed: 0,
   });
   const [isLoadingStats, setIsLoadingStats] = useState(false);
+
+  const syncPayoutRequestedFromBookings = (bookings: ProfessionalBookingItem[]) => {
+    setPayoutRequestedIds((prev) => {
+      const next = new Set(prev);
+      for (const booking of bookings) {
+        if (bookingHasPayoutRequestFromApi(booking as unknown as Record<string, unknown>)) {
+          next.add(booking.id);
+          markPayoutRequestedBookingId(booking.id);
+        }
+      }
+      return next;
+    });
+  };
+
+  const hasPayoutRequestBeenSent = (bookingId: number) => payoutRequestedIds.has(bookingId);
 
   // Fetch booking summary (stats) from API
   const fetchBookingSummary = async () => {
@@ -215,6 +274,7 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
 
       const mappedBookings = bookings.map(mapApiResponseToBooking);
       setBookingsData(mappedBookings);
+      syncPayoutRequestedFromBookings(bookings);
       // Store raw API data for reschedule
       const map = new Map<number, ProfessionalBookingItem>();
       bookings.forEach(booking => {
@@ -256,14 +316,16 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
   const filteredBookings = bookingsData;
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    switch (normalizeBookingStatus(status)) {
       case "confirmed":
         return "bg-green-100 text-green-700";
       case "pending":
-        return "bg-yellow-100 text-yellow-700";
+      case "me":
+        return "bg-yellow-50 text-yellow-800 border border-yellow-200";
       case "completed":
         return "bg-blue-100 text-blue-700";
       case "cancelled":
+      case "canceled":
         return "bg-red-100 text-red-700";
       default:
         return "bg-gray-100 text-gray-700";
@@ -317,6 +379,56 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
     }
   };
 
+  const handleRejectBooking = async (booking: Booking) => {
+    const apiToken = getApiToken();
+    if (!apiToken) {
+      toast.error("Authentication required. Please log in again.");
+      return;
+    }
+
+    setRejectingBookingId(booking.id);
+    try {
+      const response = await cancelCustomerBooking(apiToken, booking.id);
+      const ok =
+        response.status === "success" ||
+        (response as { success?: boolean }).success === true;
+      if (!ok) {
+        toast.error(response.message || "Failed to reject booking. Please try again.");
+        return;
+      }
+      toast.success(response.message || "Booking rejected successfully.");
+      await fetchBookings();
+      await fetchBookingSummary();
+      if (selectedBooking?.id === booking.id) {
+        setShowDetailsModal(false);
+        setSelectedBooking(null);
+      }
+    } catch (err: any) {
+      console.error("Error rejecting booking:", err);
+      toast.error(err?.message || "Failed to reject booking. Please try again.");
+    } finally {
+      setRejectingBookingId(null);
+    }
+  };
+
+  const handleOpenUploadReport = (booking: Booking) => {
+    const apiBooking = apiBookingsMap.get(booking.id);
+    setUploadReportBooking({
+      id: booking.id,
+      user_id: apiBooking?.user_id ?? null,
+      reference: booking.reference,
+      service: booking.service,
+      customer: booking.customer,
+      customerEmail: booking.customerEmail,
+      customerPhone: booking.customerPhone,
+      date: booking.date,
+      time: booking.time,
+      location: booking.location,
+      status: booking.status,
+    });
+    setShowUploadReportModal(true);
+  };
+
   const handleGetDirections = (location: string) => {
     const encodedLocation = encodeURIComponent(location);
     window.open(`https://www.google.com/maps/search/?api=1&query=${encodedLocation}`, '_blank');
@@ -329,6 +441,17 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
     setRescheduleReason("");
     setShowRescheduleModal(true);
   };
+
+  const handleCloseReschedule = (open: boolean) => {
+    setShowRescheduleModal(open);
+    if (!open) {
+      setRescheduleDate("");
+      setRescheduleTime("");
+      setRescheduleReason("");
+    }
+  };
+
+  const professionalIdForCalendar = getProfessionalId();
 
   const handleMarkAsCompleted = async (booking: Booking) => {
     const apiToken = getApiToken();
@@ -364,6 +487,55 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
       toast.error(err?.message || "Failed to mark as completed. Please try again.");
     } finally {
       setCompletingBookingId(null);
+    }
+  };
+
+  const handlePayoutRequest = async (booking: Booking) => {
+    const apiToken = getApiToken();
+    if (!apiToken) {
+      toast.error("Authentication required. Please login again.");
+      return;
+    }
+
+    if (booking.status !== "completed") {
+      toast.error("Payout can only be requested for completed bookings.");
+      return;
+    }
+
+    try {
+      setPayoutRequestBookingId(booking.id);
+      const response = await requestProfessionalPayout({
+        api_token: apiToken,
+        booking_id: booking.id,
+      });
+
+      const ok =
+        response.status === true ||
+        response.status === "success" ||
+        String(response.status).toLowerCase() === "success";
+
+      if (ok) {
+        markPayoutRequestedBookingId(booking.id);
+        setPayoutRequestedIds((prev) => new Set(prev).add(booking.id));
+        toast.success(response.message || "Payout request submitted to admin.");
+      } else {
+        toast.error(response.message || "Failed to submit payout request.");
+      }
+    } catch (err: unknown) {
+      console.error("Error submitting payout request:", err);
+      const message =
+        err && typeof err === "object" && "message" in err && typeof (err as { message: unknown }).message === "string"
+          ? (err as { message: string }).message
+          : "Failed to submit payout request. Please try again.";
+      if (/already/i.test(message)) {
+        markPayoutRequestedBookingId(booking.id);
+        setPayoutRequestedIds((prev) => new Set(prev).add(booking.id));
+        toast.info(message);
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setPayoutRequestBookingId(null);
     }
   };
 
@@ -418,7 +590,8 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
       const time24Hour = convertTimeTo24Hour(rescheduleTime);
 
       // Extract numeric price (remove currency symbols)
-      const priceValue = parseFloat(apiBooking.price.replace(/[£$,\s]/g, '')) || 0;
+      const priceValue =
+        parseFloat(String(apiBooking.price ?? "0").replace(/[^0-9.-]/g, "")) || 0;
 
       const updateData = {
         api_token: apiToken,
@@ -593,7 +766,7 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-xl text-[#0A1A2F]">{booking.service}</h3>
                       <Badge className={getStatusColor(booking.status)}>
-                        {booking.status}
+                        {getStatusLabel(booking.status)}
                       </Badge>
                     </div>
                     <p className="text-sm text-gray-500">Ref: {booking.reference}</p>
@@ -639,6 +812,13 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
                   </div>
                 )}
 
+                {isMeBookingStatus(booking.status) && (
+                  <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 mb-4">
+                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                    <p className="text-sm text-amber-900">{professionalRescheduleSubmittedMessage}</p>
+                  </div>
+                )}
+
                 <Separator className="my-4" />
 
                 <div className="flex flex-wrap gap-3">
@@ -676,51 +856,90 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
                           </>
                         )}
                       </Button>
+                    </>
+                  )}
+
+                  {!isMeBookingStatus(booking.status) &&
+                    (booking.status === "pending" || booking.status === "confirmed") && (
+                    <Button
+                      variant="outline"
+                      onClick={() => handleReschedule(booking)}
+                    >
+                      <Calendar className="w-4 h-4 mr-2" />
+                      Reschedule time
+                    </Button>
+                  )}
+
+                  {(booking.status === "confirmed" || booking.status === "completed") && (
                       <Button
                         variant="outline"
-                        onClick={() => handleReschedule(booking)}
-                      >
-                        <Calendar className="w-4 h-4 mr-2" />
-                        Reschedule
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          // Get raw API booking data to access user_id
-                          const apiBooking = apiBookingsMap.get(booking.id);
-                          navigate("/professional/reports", {
-                            state: {
-                              booking: {
-                                id: booking.id,
-                                user_id: apiBooking?.user_id || null,
-                                reference: booking.reference,
-                                service: booking.service,
-                                customer: booking.customer,
-                                customerEmail: booking.customerEmail,
-                                customerPhone: booking.customerPhone,
-                                date: booking.date,
-                                time: booking.time,
-                                location: booking.location,
-                                status: booking.status
-                              }
-                            }
-                          });
-                        }}
+                        onClick={() => handleOpenUploadReport(booking)}
                       >
                         <Upload className="w-4 h-4 mr-2" />
                         Upload Report
                       </Button>
-                    </>
                   )}
 
-                  {booking.status === "pending" && (
-                    <Button
-                      className="bg-green-600 hover:bg-green-700"
-                      onClick={() => handleAcceptBooking(booking)}
-                    >
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Accept Booking
-                    </Button>
+                  {booking.status === "completed" && (
+                    hasPayoutRequestBeenSent(booking.id) ? (
+                      <div
+                        className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900"
+                        title="You have already submitted a payout request for this booking"
+                      >
+                        <CheckCircle className="h-4 w-4 shrink-0 text-blue-600" />
+                        <span>Payout request sent — awaiting admin</span>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        className="border-green-600 text-green-700 hover:bg-green-50"
+                        onClick={() => void handlePayoutRequest(booking)}
+                        disabled={payoutRequestBookingId === booking.id}
+                      >
+                        {payoutRequestBookingId === booking.id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Submitting...
+                          </>
+                        ) : (
+                          <>
+                            <Wallet className="w-4 h-4 mr-2" />
+                            Send PayOut Request
+                          </>
+                        )}
+                      </Button>
+                    )
+                  )}
+
+                  {booking.status === "pending" && !isMeBookingStatus(booking.status) && (
+                    <>
+                      <Button
+                        className="bg-green-600 hover:bg-green-700"
+                        onClick={() => handleAcceptBooking(booking)}
+                        disabled={rejectingBookingId === booking.id}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Accept Booking
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="border-red-600 text-red-600 hover:bg-red-50"
+                        onClick={() => void handleRejectBooking(booking)}
+                        disabled={rejectingBookingId === booking.id}
+                      >
+                        {rejectingBookingId === booking.id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Rejecting...
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="w-4 h-4 mr-2" />
+                            Reject Booking
+                          </>
+                        )}
+                      </Button>
+                    </>
                   )}
                 </div>
               </CardContent>
@@ -753,15 +972,14 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
           {selectedBooking && (
             <div className="space-y-6 mt-4 px-6">
               {/* Status Banner */}
-              <div className={`p-4 rounded-lg ${selectedBooking.status === 'confirmed' ? 'bg-green-50 border border-green-200' :
-                  selectedBooking.status === 'pending' ? 'bg-yellow-50 border border-yellow-200' :
-                    'bg-blue-50 border border-blue-200'
-                }`}>
+              <div className={`p-4 rounded-lg ${getStatusBannerClass(selectedBooking.status)}`}>
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-semibold text-gray-900 flex items-center gap-2">
                       <span>Status:</span>
-                      <Badge className={getStatusColor(selectedBooking.status)}>{selectedBooking.status}</Badge>
+                      <Badge className={getStatusColor(selectedBooking.status)}>
+                        {getStatusLabel(selectedBooking.status)}
+                      </Badge>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">Reference: {selectedBooking.reference}</p>
                   </div>
@@ -869,21 +1087,50 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
                 </div>
               )}
 
+              {isMeBookingStatus(selectedBooking.status) && (
+                <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                  <p className="text-sm text-amber-900">{professionalRescheduleSubmittedMessage}</p>
+                </div>
+              )}
+
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t py-6">
-                {selectedBooking.status === "pending" && (
-                  <Button
-                    className="flex-1 bg-green-600 hover:bg-green-700"
-                    onClick={() => {
-                      setShowDetailsModal(false);
-                      handleAcceptBooking(selectedBooking);
-                    }}
-                  >
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    Accept Booking
-                  </Button>
+                {selectedBooking.status === "pending" && !isMeBookingStatus(selectedBooking.status) && (
+                  <>
+                    <Button
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                      onClick={() => {
+                        setShowDetailsModal(false);
+                        handleAcceptBooking(selectedBooking);
+                      }}
+                      disabled={rejectingBookingId === selectedBooking.id}
+                    >
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Accept Booking
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="flex-1 border-red-600 text-red-600 hover:bg-red-50"
+                      onClick={() => void handleRejectBooking(selectedBooking)}
+                      disabled={rejectingBookingId === selectedBooking.id}
+                    >
+                      {rejectingBookingId === selectedBooking.id ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Rejecting...
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-4 h-4 mr-2" />
+                          Reject Booking
+                        </>
+                      )}
+                    </Button>
+                  </>
                 )}
-                {selectedBooking.status === "confirmed" && (
+                {!isMeBookingStatus(selectedBooking.status) &&
+                  (selectedBooking.status === "pending" || selectedBooking.status === "confirmed") && (
                   <Button
                     variant="outline"
                     className="flex-1"
@@ -893,7 +1140,7 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
                     }}
                   >
                     <Calendar className="w-4 h-4 mr-2" />
-                    Reschedule
+                    Reschedule time
                   </Button>
                 )}
                 <Button variant="outline" onClick={() => setShowDetailsModal(false)} className="flex-1">
@@ -1067,78 +1314,64 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
       </Dialog>
 
       {/* Reschedule Modal */}
-      <Dialog open={showRescheduleModal} onOpenChange={setShowRescheduleModal}>
-        <DialogContent>
+      <Dialog open={showRescheduleModal} onOpenChange={handleCloseReschedule}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-xl text-[#0A1A2F]">Reschedule Appointment</DialogTitle>
+            <DialogTitle className="text-xl font-semibold">Reschedule Appointment</DialogTitle>
             <DialogDescription>
               Request a new date and time for this booking
             </DialogDescription>
           </DialogHeader>
 
           {selectedBooking && (
-            <div className="space-y-4 mt-4 px-6">
-              {/* Current Booking */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">Current Appointment</p>
-                <p className="font-semibold text-gray-900">{selectedBooking.date} at {selectedBooking.time}</p>
+            <div className="space-y-5">
+              <div className="bg-gray-100 rounded-lg p-4">
+                <p className="text-sm text-gray-500 mb-1">Current Appointment</p>
+                <p className="font-semibold text-gray-900">
+                  {selectedBooking.date} at {selectedBooking.time}
+                </p>
                 <p className="text-sm text-gray-600">{selectedBooking.customer}</p>
               </div>
 
-              {/* New Date */}
-              <div className="space-y-2">
-                <Label htmlFor="rescheduleDate">New Date *</Label>
-                <Input
-                  id="rescheduleDate"
-                  type="date"
-                  value={rescheduleDate}
-                  onChange={(e) => setRescheduleDate(e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
+              {professionalIdForCalendar != null && !Number.isNaN(Number(professionalIdForCalendar)) ? (
+                <RescheduleCalendarPicker
+                  professionalId={Number(professionalIdForCalendar)}
+                  selectedDate={rescheduleDate}
+                  selectedTime={rescheduleTime}
+                  onSelectDate={(d) => {
+                    setRescheduleDate(d);
+                    setRescheduleTime("");
+                  }}
+                  onSelectTime={setRescheduleTime}
                 />
-              </div>
+              ) : (
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  Calendar could not be loaded (missing professional profile). Please complete your profile or try again later.
+                </p>
+              )}
 
-              {/* New Time */}
               <div className="space-y-2">
-                <Label htmlFor="rescheduleTime">New Time *</Label>
-                <Select value={rescheduleTime} onValueChange={setRescheduleTime}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a time" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="9:00 AM">9:00 AM</SelectItem>
-                    <SelectItem value="10:00 AM">10:00 AM</SelectItem>
-                    <SelectItem value="11:00 AM">11:00 AM</SelectItem>
-                    <SelectItem value="12:00 PM">12:00 PM</SelectItem>
-                    <SelectItem value="1:00 PM">1:00 PM</SelectItem>
-                    <SelectItem value="2:00 PM">2:00 PM</SelectItem>
-                    <SelectItem value="3:00 PM">3:00 PM</SelectItem>
-                    <SelectItem value="4:00 PM">4:00 PM</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Reason */}
-              <div className="space-y-2">
-                <Label htmlFor="rescheduleReason">Reason (Optional)</Label>
+                <Label htmlFor="rescheduleReason" className="text-sm font-medium">
+                  Reason (Optional)
+                </Label>
                 <Textarea
                   id="rescheduleReason"
-                  placeholder="Let the customer know why you need to reschedule..."
+                  placeholder="Optional: explain why you need a different date or time..."
                   value={rescheduleReason}
                   onChange={(e) => setRescheduleReason(e.target.value)}
                   rows={3}
+                  className="w-full resize-none"
                 />
               </div>
 
-              <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-yellow-800">
-                    This will send a reschedule request to the customer. They must approve the new date and time.
-                  </p>
-                </div>
+              <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-800">
+                  This will send a reschedule request to the customer. They must approve the new date and time.
+                </p>
               </div>
 
-              <div className="flex gap-3 pt-4 py-4">
+              <div className="flex gap-3 pt-2">
                 <Button
                   className="flex-1 bg-red-600 hover:bg-red-700"
                   onClick={confirmReschedule}
@@ -1147,7 +1380,7 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
                   {isRescheduling ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Rescheduling...
+                      Sending...
                     </>
                   ) : (
                     <>
@@ -1158,7 +1391,7 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => setShowRescheduleModal(false)}
+                  onClick={() => handleCloseReschedule(false)}
                   className="flex-1"
                   disabled={isRescheduling}
                 >
@@ -1169,6 +1402,12 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
           )}
         </DialogContent>
       </Dialog>
+
+      <UploadCompletionReportModal
+        open={showUploadReportModal}
+        onOpenChange={setShowUploadReportModal}
+        booking={uploadReportBooking}
+      />
     </div>
   );
 }

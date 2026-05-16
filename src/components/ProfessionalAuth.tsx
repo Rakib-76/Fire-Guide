@@ -5,9 +5,76 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { toast } from "sonner";
-import { sendOtp, verifyOtp } from "../api/authService";
+import { sendOtp, verifyOtp, registerProfessional, loginUser } from "../api/authService";
+import { fetchServices, ServiceResponse } from "../api/servicesService";
 import { setAuthToken, setUserEmail, setUserInfo, setUserPhone, setUserRole, setProfessionalId } from "../lib/auth";
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
+
+function extractAuthToken(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const root = payload as Record<string, unknown>;
+  const data = root.data;
+  const dataObj =
+    data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+  const nestedData =
+    dataObj?.data && typeof dataObj.data === "object"
+      ? (dataObj.data as Record<string, unknown>)
+      : null;
+  const user =
+    dataObj?.user && typeof dataObj.user === "object"
+      ? (dataObj.user as Record<string, unknown>)
+      : null;
+  const professional =
+    dataObj?.professional && typeof dataObj.professional === "object"
+      ? (dataObj.professional as Record<string, unknown>)
+      : null;
+
+  const candidates = [
+    root.api_token,
+    root.token,
+    dataObj?.api_token,
+    dataObj?.token,
+    nestedData?.api_token,
+    nestedData?.token,
+    user?.api_token,
+    user?.token,
+    professional?.api_token,
+    professional?.token,
+  ];
+
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function persistProfessionalSession(
+  token: string,
+  email: string,
+  contactName: string,
+  phone: string,
+  responseData?: Record<string, unknown> | null
+) {
+  setAuthToken(token);
+  setUserEmail(email.trim().toLowerCase());
+  setUserRole("PROFESSIONAL");
+  setUserInfo(contactName.trim(), "professional");
+  setUserPhone(phone.trim());
+
+  const professionalId =
+    responseData?.professional_id ??
+    (responseData?.professional &&
+    typeof responseData.professional === "object" &&
+    (responseData.professional as Record<string, unknown>).id != null
+      ? (responseData.professional as Record<string, unknown>).id
+      : null);
+
+  if (professionalId != null && String(professionalId).trim() !== "") {
+    setProfessionalId(professionalId);
+  }
+}
 
 interface ProfessionalAuthProps {
   /** `isNewProfessionalSignup` is true after first-time registration + OTP (not returning login). */
@@ -32,8 +99,11 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
   const [businessName, setBusinessName] = useState("");
   const [contactName, setContactName] = useState("");
   const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [companyNumber, setCompanyNumber] = useState("");
   const [serviceType, setServiceType] = useState("");
+  const [services, setServices] = useState<ServiceResponse[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(false);
   
   const otpInputs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -45,6 +115,25 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
       return () => clearInterval(interval);
     }
   }, [timer]);
+
+  useEffect(() => {
+    if (!isSignUp) return;
+    let cancelled = false;
+    setServicesLoading(true);
+    fetchServices()
+      .then((list) => {
+        if (!cancelled) setServices(list);
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("Could not load service types.");
+      })
+      .finally(() => {
+        if (!cancelled) setServicesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignUp]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,8 +167,8 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!businessName || !contactName || !email || !phone || !serviceType) {
+
+    if (!businessName || !contactName || !email || !password || !phone || !serviceType) {
       toast.error("Please fill in all required fields");
       return;
     }
@@ -88,16 +177,88 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
       toast.error("Please enter a valid email address");
       return;
     }
-    
+
+    if (password.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+
+    const serviceId = Number(serviceType);
+    if (!Number.isFinite(serviceId) || serviceId <= 0) {
+      toast.error("Please select a valid service type");
+      return;
+    }
+
     setIsLoading(true);
-    setTimeout(() => {
-      toast.success("Registration successful! Verify your email to continue.");
-      setIsSignUp(true);
-      setStep("otp");
-      setTimer(60);
+    try {
+      const response = await registerProfessional({
+        business_name: businessName.trim(),
+        contact_name: contactName.trim(),
+        email: email.trim().toLowerCase(),
+        password,
+        phone: phone.trim(),
+        company_reg_number: companyNumber.trim() || undefined,
+        service_id: serviceId,
+      });
+
+      const isSuccess =
+        response.status === true ||
+        response.success === true ||
+        response.status === "success" ||
+        Boolean(response.data);
+
+      if (!isSuccess) {
+        toast.error(response.message || "Registration failed. Please try again.");
+        return;
+      }
+
+      const data =
+        response.data && typeof response.data === "object"
+          ? (response.data as Record<string, unknown>)
+          : null;
+
+      let token = extractAuthToken(response);
+      if (!token) {
+        try {
+          const loginResponse = await loginUser({
+            email: email.trim().toLowerCase(),
+            password,
+          });
+          token = extractAuthToken(loginResponse);
+        } catch (loginError) {
+          console.warn("Auto-login after professional registration failed:", loginError);
+        }
+      }
+
+      if (!token) {
+        toast.error("Account created. Please sign in to continue.");
+        setIsSignUp(false);
+        return;
+      }
+
+      const fullName =
+        (typeof data?.full_name === "string" && data.full_name) ||
+        (typeof data?.name === "string" && data.name) ||
+        (typeof data?.contact_name === "string" && data.contact_name) ||
+        contactName.trim() ||
+        businessName.trim();
+
+      persistProfessionalSession(
+        token,
+        email,
+        fullName,
+        phone,
+        data
+      );
+
+      toast.success(response.message || "Account created successfully!");
+      onAuthSuccess(fullName, { isNewProfessionalSignup: true });
+    } catch (error: unknown) {
+      const err = error as { message?: string; error?: string };
+      toast.error(err?.message || err?.error || "Registration failed. Please try again.");
+    } finally {
       setIsLoading(false);
-      setTimeout(() => otpInputs.current[0]?.focus(), 100);
-    }, 1000);
+    }
   };
 
   const handleOtpChange = (index: number, value: string) => {
@@ -176,7 +337,13 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
             (isSignUp ? (contactName || businessName) : contactName) ||
             "Professional User";
           
-          // Store user info
+          const role = response.data?.role || response.data?.data?.role;
+          if (role) {
+            setUserRole(role.toUpperCase());
+          } else {
+            setUserRole("PROFESSIONAL");
+          }
+
           setUserInfo(fullName, "professional");
           
           // Store phone number if available
@@ -184,13 +351,6 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
             setUserPhone(response.data.phone);
           } else if (isSignUp && phone) {
             setUserPhone(phone);
-          }
-          
-          // Store role from backend response - check multiple possible locations
-          // API response structure: { status: "success", data: { role: "USER"|"PROFESSIONAL"|"ADMIN", ... } }
-          const role = response.data?.role || response.data?.data?.role;
-          if (role) {
-            setUserRole(role.toUpperCase()); // Ensure role is uppercase (USER, PROFESSIONAL, ADMIN)
           }
           
           // Store professional_id if available in response
@@ -218,14 +378,15 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
             "Professional User";
           
           setUserEmail(email.trim().toLowerCase());
-          setUserInfo(fullName, "professional");
-          
-          // Store role from backend response - check multiple possible locations
-          // API response structure: { status: "success", data: { role: "USER"|"PROFESSIONAL"|"ADMIN", ... } }
+
           const role = response.data?.role || response.data?.data?.role;
           if (role) {
-            setUserRole(role.toUpperCase()); // Ensure role is uppercase (USER, PROFESSIONAL, ADMIN)
+            setUserRole(role.toUpperCase());
+          } else {
+            setUserRole("PROFESSIONAL");
           }
+
+          setUserInfo(fullName, "professional");
           
           // Store professional_id if available in response
           const professionalId = response.data?.professional?.id || response.data?.professional_id;
@@ -292,6 +453,7 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
     setBusinessName("");
     setContactName("");
     setPhone("");
+    setPassword("");
     setCompanyNumber("");
     setServiceType("");
   };
@@ -621,6 +783,23 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
                         </div>
 
                         <div className="space-y-0">
+                          <Label htmlFor="signup-password" className="text-[14px] text-gray-700 block mb-2">
+                            Password *
+                          </Label>
+                          <Input
+                            id="signup-password"
+                            type="password"
+                            placeholder="Create a password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="h-12 px-4 text-[15px] border-gray-200 focus:border-red-500 focus:ring-red-500/20 rounded-xl"
+                            required
+                            minLength={6}
+                            autoComplete="new-password"
+                          />
+                        </div>
+
+                        <div className="space-y-0">
                           <Label htmlFor="phone" className="text-[14px] text-gray-700 block mb-2">
                             Phone Number *
                           </Label>
@@ -643,16 +822,18 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
                             id="serviceType"
                             value={serviceType}
                             onChange={(e) => setServiceType(e.target.value)}
-                            className="w-full h-12 px-4 text-[15px] border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
+                            className="w-full h-12 px-4 text-[15px] border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white disabled:opacity-60"
                             required
+                            disabled={servicesLoading}
                           >
-                            <option value="">Select a service type</option>
-                            <option value="risk-assessment">Fire Risk Assessment</option>
-                            <option value="equipment-service">Fire Equipment Service</option>
-                            <option value="emergency-lighting">Emergency Lighting</option>
-                            <option value="fire-alarm">Fire Alarm Installation</option>
-                            <option value="training">Fire Safety Training</option>
-                            <option value="multiple">Multiple Services</option>
+                            <option value="">
+                              {servicesLoading ? "Loading services..." : "Select a service type"}
+                            </option>
+                            {services.map((service) => (
+                              <option key={service.id} value={String(service.id)}>
+                                {service.service_name}
+                              </option>
+                            ))}
                           </select>
                         </div>
 

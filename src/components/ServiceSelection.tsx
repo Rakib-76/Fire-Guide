@@ -33,7 +33,15 @@ export function ServiceSelection({
   onLogout,
   onNavigateToDashboard
 }: ServiceSelectionProps) {
+  /* Previously: select a card, then press Next. Replaced by goToQuestionnaire on card click.
   const [selectedService, setSelectedService] = useState<string | null>(null);
+  const handleNext = () => {
+    if (selectedService) {
+      const serviceName = services.find((s) => s.id.toString() === selectedService)?.service_name;
+      onSelectService(selectedService, serviceName);
+    }
+  };
+  */
   const [services, setServices] = useState<ServiceResponse[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,11 +92,8 @@ export function ServiceSelection({
     loadServices();
   }, []);
 
-  const handleNext = () => {
-    if (selectedService) {
-      const serviceName = services.find((s) => s.id.toString() === selectedService)?.service_name;
-      onSelectService(selectedService, serviceName);
-    }
+  const goToQuestionnaire = (serviceId: string, serviceName: string | undefined) => {
+    onSelectService(serviceId, serviceName);
   };
 
   return (
@@ -107,13 +112,13 @@ export function ServiceSelection({
         onNavigateToDashboard={onNavigateToDashboard}
       />
 
-      <main className="py-12 px-4 md:px-6 pt-28">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12">
-            <h1 className="mb-4">
+      <main className="py-12 px-4 md:px-6 ">
+        <div className="max-w-5xl mx-auto mt-12">
+          <div className="text-center mb-12 mt-12">
+            <h1 className="text-[#0A1A2F] md:text-md lg:text-md py-3 ">
               Select Your Service
             </h1>
-            <p className="text-gray-600 text-lg">
+            <p className="md:text-lg lg:text-lg text-gray-600 md:text-base py-2">
               Choose the fire safety service you need
             </p>
           </div>
@@ -149,39 +154,28 @@ export function ServiceSelection({
                 const ServiceIcon = getLucideIconForService(service.service_name, service.type);
                 const serviceId = service.id.toString();
                 return (
+                  /* Old card UX: setSelectedService(serviceId) on click; border/icon reflected selectedService. */
                   <Card
                     key={service.id}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setSelectedService(serviceId);
+                      goToQuestionnaire(serviceId, service.service_name);
                     }}
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        setSelectedService(serviceId);
+                        goToQuestionnaire(serviceId, service.service_name);
                       }
                     }}
-                    className={`cursor-pointer transition-all hover:shadow-lg ${
-                      selectedService === serviceId
-                        ? "border-2 border-red-600 shadow-lg"
-                        : "border-2 border-transparent hover:border-gray-200"
-                    }`}
+                    className="group cursor-pointer transition-all hover:shadow-lg border-2 border-transparent hover:border-red-300"
                   >
                     <CardHeader className="pb-4">
                       <div className="flex items-start gap-4">
-                        <div className={`w-16 h-16 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                          selectedService === serviceId
-                            ? "bg-red-600"
-                            : "bg-red-100"
-                        }`}>
-                          <ServiceIcon className={`w-8 h-8 ${
-                            selectedService === serviceId
-                              ? "text-white"
-                              : "text-red-600"
-                          }`} />
+                        <div className="w-16 h-16 rounded-lg flex items-center justify-center flex-shrink-0 bg-red-100 transition-colors group-hover:bg-red-600">
+                          <ServiceIcon className="w-8 h-8 text-red-600 transition-colors group-hover:text-white" />
                         </div>
                         <div className="flex-1">
                           <CardTitle className="mb-2">{service.service_name}</CardTitle>
@@ -197,8 +191,7 @@ export function ServiceSelection({
             </div>
           )}
 
-          {/* Navigation Buttons */}
-          <div className="flex justify-between items-center">
+          <div className="flex justify-start items-center">
             <Button
               variant="outline"
               onClick={onBack}
@@ -207,6 +200,7 @@ export function ServiceSelection({
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back
             </Button>
+            {/*
             <Button
               disabled={!selectedService}
               onClick={handleNext}
@@ -214,6 +208,8 @@ export function ServiceSelection({
             >
               Next
             </Button>
+            Previously paired with: <div className="flex justify-between items-center">
+            */}
           </div>
         </div>
       </main>

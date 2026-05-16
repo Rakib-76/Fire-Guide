@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, startTransition } from "react";
 import { isAuthenticated, getSessionUserDisplay, setUserInfo, removeAuthToken } from "../lib/auth";
+import type { FilterProfessionalForFraItem } from "../api/servicesService";
 
 export interface Booking {
   id: string;
@@ -10,6 +11,9 @@ export interface Booking {
   status: "upcoming" | "completed" | "cancelled";
   displayStatus?: string;
   isPaid?: boolean;
+  /** Raw booking status from API (e.g. pending, me, confirmed). */
+  apiStatus?: string;
+  updatedById?: number | null;
   location: string;
   price: string;
   professionalEmail: string;
@@ -18,6 +22,7 @@ export interface Booking {
   hasReport?: boolean;
   professionalImage?: string;
   professionalType?: "individual" | "company";
+  professionalId?: number;
 }
 
 export interface Payment {
@@ -43,7 +48,10 @@ const FILTERED_PROFESSIONALS_KEY = "fireguide_filtered_professionals";
 
 interface LocationSearchData {
   post_code: string;
+  /** Kept for Book / selected-service APIs that still expect a radius string. */
   search_radius: string;
+  /** Numeric miles (same value sent on filter-professional); optional for older sessionStorage payloads. */
+  miles?: number;
   service_id: number;
 }
 
@@ -70,35 +78,9 @@ interface AppContextType {
   setSelectedProfessionalId: (id: number | null) => void;
   bookingProfessional: any;
   setBookingProfessional: (professional: any) => void;
-  /** Professionals from filter-professional/for-fra (set when user clicks Find Professionals). Persisted to sessionStorage so same cards show after reload. */
-  filteredProfessionalsFromFra: Array<{
-    id: number;
-    name: string;
-    initials: string;
-    profile_image: string;
-    verified: boolean;
-    rating: number;
-    total_reviews: number;
-    location?: string;
-    response_time?: string;
-    service_price?: number;
-    price?: number;
-    price_label: string;
-  }> | null;
-  setFilteredProfessionalsFromFra: (list: Array<{
-    id: number;
-    name: string;
-    initials: string;
-    profile_image: string;
-    verified: boolean;
-    rating: number;
-    total_reviews: number;
-    location?: string;
-    response_time?: string;
-    service_price?: number;
-    price?: number;
-    price_label: string;
-  }> | null) => void;
+  /** Professionals from filter-professional/for-* (set when user clicks Find Professionals). Persisted to sessionStorage so same cards show after reload. */
+  filteredProfessionalsFromFra: FilterProfessionalForFraItem[] | null;
+  setFilteredProfessionalsFromFra: (list: FilterProfessionalForFraItem[] | null) => void;
   isCustomerLoggedIn: boolean;
   setIsCustomerLoggedIn: (value: boolean) => void;
   customerBookings: Booking[];
@@ -169,23 +151,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
   const [bookingProfessional, setBookingProfessional] = useState<any>(null);
-  const [filteredProfessionalsFromFra, setFilteredProfessionalsFromFraInternal] = useState<Array<{
-    id: number;
-    name: string;
-    initials: string;
-    profile_image: string;
-    verified: boolean;
-    rating: number;
-    total_reviews: number;
-    location?: string;
-    response_time?: string;
-    service_price?: number;
-    price?: number;
-    price_label: string;
-    platform_fee_percent?: string;
-    platform_fee_amount?: number;
-    total_price?: number;
-  }> | null>(() => {
+  const [filteredProfessionalsFromFra, setFilteredProfessionalsFromFraInternal] = useState<FilterProfessionalForFraItem[] | null>(() => {
     try {
       const s = sessionStorage.getItem(FILTERED_PROFESSIONALS_KEY);
       return s ? JSON.parse(s) : null;
@@ -193,23 +159,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return null;
     }
   });
-  const setFilteredProfessionalsFromFra = (list: Array<{
-    id: number;
-    name: string;
-    initials: string;
-    profile_image: string;
-    verified: boolean;
-    rating: number;
-    total_reviews: number;
-    location?: string;
-    response_time?: string;
-    service_price?: number;
-    price?: number;
-    price_label: string;
-    platform_fee_percent?: string;
-    platform_fee_amount?: number;
-    total_price?: number;
-  }> | null) => {
+  const setFilteredProfessionalsFromFra = (list: FilterProfessionalForFraItem[] | null) => {
     setFilteredProfessionalsFromFraInternal(list);
     try {
       if (list != null && list.length > 0) {
@@ -252,6 +202,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
       if (typeof window === "undefined") return null;
+      if (!isAuthenticated()) return null;
       const u = getSessionUserDisplay();
       return u ? { name: u.name, role: u.role } : null;
     } catch {

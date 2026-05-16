@@ -4,8 +4,8 @@ import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 // Types for insurance coverage API
 export interface InsuranceItem {
   id: number;
-  title: string;
-  price: string;
+  title: string | null;
+  price: string | null;
   provider_name?: string;
   document?: string;
   status?: string;
@@ -75,6 +75,21 @@ export interface DeleteInsuranceResponse {
   status: string;
   message: string;
   success?: boolean;
+  error?: string;
+}
+
+/** POST /insurance-coverage/create_document — first-time insurance document. */
+export interface CreateInsuranceDocumentRequest {
+  api_token: string;
+  /** Data URL / base64 string, or a `File` (sent as multipart). */
+  document: string | File;
+}
+
+export interface CreateInsuranceDocumentResponse {
+  status?: boolean | string;
+  success?: boolean;
+  message?: string;
+  data?: unknown;
   error?: string;
 }
 
@@ -309,6 +324,92 @@ export const updateInsuranceCoverage = async (data: UpdateInsuranceRequest): Pro
       success: false,
       message: 'An unexpected error occurred',
       error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
+
+/**
+ * Create insurance document (no existing insurance row required).
+ * POST /insurance-coverage/create_document
+ * - JSON: { api_token, document: data URL string }
+ * - Multipart: api_token, document (File) when `document` is a File
+ * Uses a long timeout — large base64 payloads often exceed the default 10s client limit.
+ */
+export const createInsuranceDocument = async (
+  data: CreateInsuranceDocumentRequest
+): Promise<CreateInsuranceDocumentResponse> => {
+  const uploadTimeoutMs = 120000;
+
+  try {
+    const isFile = typeof File !== "undefined" && data.document instanceof File;
+
+    if (isFile) {
+      const formData = new FormData();
+      formData.append("api_token", data.api_token);
+      formData.append("document", data.document as File);
+
+      const response = await apiClient.post<CreateInsuranceDocumentResponse>(
+        "/insurance-coverage/create_document",
+        formData,
+        {
+          timeout: uploadTimeoutMs,
+          // Let the browser set multipart boundary (default instance Content-Type is JSON)
+          headers: { "Content-Type": false } as never,
+        }
+      );
+      return response.data;
+    }
+
+    const response = await apiClient.post<CreateInsuranceDocumentResponse>(
+      "/insurance-coverage/create_document",
+      {
+        api_token: data.api_token,
+        document: data.document as string,
+      },
+      {
+        timeout: uploadTimeoutMs,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error creating insurance document:", error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const d = error.response.data as Record<string, unknown> | undefined;
+        const msg =
+          (typeof d?.message === "string" && d.message) ||
+          (typeof d?.error === "string" && d.error) ||
+          (d?.errors && typeof d.errors === "object"
+            ? JSON.stringify(d.errors)
+            : null) ||
+          `Request failed (${error.response.status})`;
+        throw {
+          success: false,
+          message: msg,
+          error: (typeof d?.error === "string" && d.error) || error.message,
+          status: error.response.status,
+        };
+      }
+      if (error.code === "ECONNABORTED") {
+        throw {
+          success: false,
+          message: "Upload timed out. Try a smaller image or check your connection.",
+          error: "timeout",
+        };
+      }
+      if (error.request) {
+        throw {
+          success: false,
+          message: "No response from server. Please check your connection.",
+          error: "Network error",
+        };
+      }
+    }
+    throw {
+      success: false,
+      message: "An unexpected error occurred",
+      error: error instanceof Error ? error.message : "Unknown error",
     };
   }
 };

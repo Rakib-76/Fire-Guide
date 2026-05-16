@@ -1,7 +1,9 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Menu, User } from "lucide-react";
 import { Button } from "./ui/button";
+import { getSessionUserDisplay, isAuthenticated } from "../lib/auth";
+import { navigateToProfessionalHome } from "../lib/professionalDashboardNavigation";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 
 export interface UserInfo {
@@ -38,6 +40,7 @@ export function Header({
   onNavigateContact,
   onNavigateToDashboard
 }: HeaderProps) {
+  const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Explicit handler for Login/Register button
@@ -49,10 +52,29 @@ export function Header({
     }
   };
 
-  // Handler for user icon/name click - navigate to dashboard
+  // Handler for user icon/name click - navigate to dashboard (or sign-in if session expired)
   const handleUserClick = () => {
-    if (onNavigateToDashboard) {
-      onNavigateToDashboard();
+    setMobileMenuOpen(false);
+    const user = currentUser ?? getSessionUserDisplay();
+    if (!user) return;
+
+    if (!isAuthenticated()) {
+      if (user.role === "admin") {
+        navigate("/admin/login");
+      } else if (user.role === "professional") {
+        navigate("/professional/auth");
+      } else {
+        navigate("/customer/auth");
+      }
+      return;
+    }
+
+    if (user.role === "admin") {
+      navigate("/admin/dashboard");
+    } else if (user.role === "professional") {
+      navigateToProfessionalHome(navigate);
+    } else {
+      navigate("/customer/dashboard");
     }
   };
 

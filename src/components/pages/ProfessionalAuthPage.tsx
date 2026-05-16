@@ -3,9 +3,9 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { ProfessionalAuth } from "../ProfessionalAuth";
-import { setUserInfo, getUserRole } from "../../lib/auth";
-import { setCompleteProfileReminderFlag } from "../../lib/professionalProfileReminder";
+import { setUserInfo, getUserRole, setUserRole } from "../../lib/auth";
 import { professionalBenefitsJoinTo } from "../../lib/professionalBenefitsNavigation";
+import { navigateToProfessionalHome } from "../../lib/professionalDashboardNavigation";
 
 export default function ProfessionalAuthPage() {
   const navigate = useNavigate();
@@ -20,14 +20,13 @@ export default function ProfessionalAuthPage() {
         // First-time registration on this page is always a professional — send to profile even if
         // `user_role` is not written yet or the API shape omits it (otherwise users land on /dashboard).
         if (options?.isNewProfessionalSignup) {
+          setUserRole("PROFESSIONAL");
           setCurrentUser({ name, role: "professional" });
           setUserInfo(name, "professional");
-          setCompleteProfileReminderFlag();
-          toast.info("Please complete your profile.");
           startTransition(() => {
-            navigate("/professional/dashboard/profile", {
+            navigateToProfessionalHome(navigate, {
               replace: true,
-              state: { showCompleteProfileReminder: true },
+              forceProfileOnboarding: true,
             });
           });
           return;
@@ -44,6 +43,7 @@ export default function ProfessionalAuthPage() {
           setCurrentUser({ name, role: "admin" });
           setUserInfo(name, "admin");
         } else {
+          setUserRole("PROFESSIONAL");
           setCurrentUser({ name, role: "professional" });
           setUserInfo(name, "professional");
         }
@@ -52,11 +52,11 @@ export default function ProfessionalAuthPage() {
           if (userRole === "USER") {
             navigate("/customer/dashboard", { replace: true });
           } else if (userRole === "PROFESSIONAL") {
-            navigate("/professional/dashboard", { replace: true });
+            navigateToProfessionalHome(navigate, { replace: true });
           } else if (userRole === "ADMIN") {
             navigate("/admin/dashboard", { replace: true });
           } else {
-            navigate("/professional/dashboard", { replace: true });
+            navigateToProfessionalHome(navigate, { replace: true });
           }
         });
       }}

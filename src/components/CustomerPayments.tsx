@@ -24,9 +24,51 @@ import { getCustomerPayments, CustomerPaymentItem, getPaymentsSummary } from "..
 import { getApiToken } from "../lib/auth";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import fireGuideReportMark from "../assets/FireguideLogo.png";
 
 interface CustomerPaymentsProps {
   payments: Payment[];
+}
+
+function loadImageForPdf(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Logo image failed to load"));
+    img.src = src;
+  });
+}
+
+/** Brand mark for jsPDF headers (replaces red FG placeholder). */
+async function drawFireGuidePdfHeader(
+  doc: jsPDF,
+  opts?: { margin?: number; y?: number; logoMaxH?: number; logoMaxW?: number }
+): Promise<void> {
+  const margin = opts?.margin ?? 14;
+  const y = opts?.y ?? 7;
+  const logoMaxH = opts?.logoMaxH ?? 18;
+  const logoMaxW = opts?.logoMaxW ?? 68;
+  try {
+    const logoImg = await loadImageForPdf(fireGuideReportMark);
+    const nw = logoImg.naturalWidth || logoImg.width;
+    const nh = logoImg.naturalHeight || logoImg.height;
+    const ratio = nw > 0 && nh > 0 ? nw / nh : 1;
+    let logoW = logoMaxW;
+    let logoH = logoW / ratio;
+    if (logoH > logoMaxH) {
+      logoH = logoMaxH;
+      logoW = logoH * ratio;
+    }
+    doc.addImage(logoImg, "PNG", margin, y, logoW, logoH);
+  } catch {
+    doc.setFillColor(220, 38, 38);
+    doc.rect(margin, 9, 18, 12, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text("FG", margin + 5, 17.5);
+  }
 }
 
 function paymentStatusLabel(status: Payment["status"]): string {
@@ -211,7 +253,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
     }
   };
 
-  const handleDownloadInvoice = (invoiceNumber: string) => {
+  const handleDownloadInvoice = async (invoiceNumber: string) => {
     // Find the payment by invoice number
     const payment = payments.find(p => p.invoiceNumber === invoiceNumber);
     
@@ -232,17 +274,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       const grayColor: [number, number, number] = [107, 114, 128];
       const headerBg: [number, number, number] = [0, 51, 102]; // #003366
       
-      // Header - Fire Guide Logo
-      doc.setFillColor(220, 38, 38);
-      doc.rect(14, 15, 20, 12, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.text('FG', 20, 23);
-      
-      doc.setTextColor(...primaryColor);
-      doc.setFontSize(16);
-      doc.text('Fire Guide', 38, 24);
+      await drawFireGuidePdfHeader(doc, { margin: 14, y: 7 });
       
       // INVOICE title
       doc.setTextColor(...primaryColor);
@@ -315,26 +347,19 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       doc.setFontSize(12);
       doc.text('Payment History', 14, historyY);
       
-      // Calculate commission and earnings
-      const amountValue = parseFloat(payment.amount.replace('£', '').replace(',', ''));
-      const commission = amountValue * 0.15;
-      const earnings = amountValue - commission;
-      
-      // Payment History table with all columns matching the screenshot
+      // Payment History table (customer invoice — no commission / earnings)
       const tableData = [[
-        payment.invoiceNumber, // REFERENCE
-        formattedDate, // DATE
-        payment.professional, // PROFESSIONAL
-        payment.service, // SERVICE
-        payment.amount, // AMOUNT
-        `-£${commission.toFixed(2)}`, // COMMISSION (negative, will be styled in red)
-        `£${earnings.toFixed(2)}`, // EARNINGS (will be styled in green)
-        paymentStatusLabel(payment.status) // STATUS
+        payment.invoiceNumber,
+        formattedDate,
+        payment.professional,
+        payment.service,
+        payment.amount,
+        paymentStatusLabel(payment.status),
       ]];
       
       autoTable(doc, {
         startY: historyY + 5,
-        head: [['REFERENCE', 'DATE', 'PROFESSIONAL', 'SERVICE', 'AMOUNT', 'COMMISSION', 'EARNINGS', 'STATUS']],
+        head: [['REFERENCE', 'DATE', 'PROFESSIONAL', 'SERVICE', 'AMOUNT', 'STATUS']],
         body: tableData,
         theme: 'plain',
         headStyles: {
@@ -350,14 +375,12 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
           cellPadding: 4,
         },
         columnStyles: {
-          0: { cellWidth: 24 }, // REFERENCE
-          1: { cellWidth: 24 }, // DATE
-          2: { cellWidth: 28 }, // PROFESSIONAL
-          3: { cellWidth: 28 }, // SERVICE
-          4: { cellWidth: 20, halign: 'right' }, // AMOUNT
-          5: { cellWidth: 24, halign: 'right', textColor: [220, 38, 38] }, // COMMISSION
-          6: { cellWidth: 20, halign: 'right', textColor: [22, 163, 74] }, // EARNINGS
-          7: { cellWidth: 18, halign: 'center' }, // STATUS
+          0: { cellWidth: 32 },
+          1: { cellWidth: 28 },
+          2: { cellWidth: 34 },
+          3: { cellWidth: 38 },
+          4: { cellWidth: 24, halign: 'right' },
+          5: { cellWidth: 22, halign: 'center' },
         },
         margin: { left: 14, right: 14 },
       });
@@ -379,22 +402,8 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       doc.text('Date: ' + invoiceDate, 14, paymentInfoY + 15);
       doc.text("Status: " + paymentStatusLabel(payment.status), 14, paymentInfoY + 22);
       
-      // Total Amount box
-      const totalY = paymentInfoY + 35;
-      doc.setFillColor(248, 250, 252);
-      doc.rect(pageWidth / 2 - 35, totalY, 70, 18, 'F');
-      doc.setDrawColor(220, 38, 38);
-      doc.setLineWidth(0.5);
-      doc.rect(pageWidth / 2 - 35, totalY, 70, 18, 'S');
-      
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...redColor);
-      doc.setFontSize(10);
-      doc.text('Total Amount:', pageWidth / 2 - 30, totalY + 11);
-      doc.text(payment.amount, pageWidth / 2 + 30, totalY + 11, { align: 'right' });
-      
       // Footer
-      const footerY = totalY + 35;
+      const footerY = paymentInfoY + 32;
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(...grayColor);
       doc.setFontSize(8);
@@ -404,7 +413,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       doc.setFont('helvetica', 'bolditalic');
       doc.setTextColor(...redColor);
       doc.setFontSize(11);
-      doc.text('Thank You For Your Business!', pageWidth / 2, footerY + 20, { align: 'center' });
+      doc.text('Thank You', pageWidth / 2, footerY + 20, { align: 'center' });
       
       // Save PDF
       const fileName = `Invoice_${payment.invoiceNumber}_${new Date().toISOString().split('T')[0]}.pdf`;
@@ -418,7 +427,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
   };
 
   // Generate statement PDF using the payment data shown in cards
-  const handleDownloadAll = () => {
+  const handleDownloadAll = async () => {
     if (payments.length === 0) {
       toast.error("No payments found to download.");
       return;
@@ -434,19 +443,8 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       const primaryColor: [number, number, number] = [10, 26, 47]; // #0A1A2F
       const redColor: [number, number, number] = [220, 38, 38]; // red-600
       const grayColor: [number, number, number] = [107, 114, 128];
-      const greenColor: [number, number, number] = [22, 163, 74];
       
-      // Header - Fire Guide Logo
-      doc.setFillColor(220, 38, 38);
-      doc.rect(14, 15, 20, 12, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.text('FG', 20, 23);
-      
-      doc.setTextColor(...primaryColor);
-      doc.setFontSize(16);
-      doc.text('Fire Guide', 38, 24);
+      await drawFireGuidePdfHeader(doc, { margin: 14, y: 7 });
       
       // STATEMENT title
       doc.setTextColor(...primaryColor);
@@ -486,14 +484,11 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       doc.text('Payment History Report', 14, 57);
       doc.text('United Kingdom', 14, 64);
       
-      // Calculate totals from the payments data
       const totalAmount = payments.reduce((sum, p) => sum + parseFloat(p.amount.replace('£', '').replace(',', '')), 0);
-      const commission = totalAmount * 0.15;
-      const earnings = totalAmount - commission;
       
-      // Account Summary box
+      // Account Summary — customer-facing total only
       doc.setFillColor(248, 250, 252);
-      doc.rect(pageWidth - 85, 70, 71, 42, 'F');
+      doc.rect(pageWidth - 85, 70, 71, 26, 'F');
       
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(...primaryColor);
@@ -503,47 +498,34 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.setTextColor(...grayColor);
-      doc.text('Total Amount', pageWidth - 80, 90);
-      doc.text('Commission (15%)', pageWidth - 80, 98);
-      doc.text('Your Earnings', pageWidth - 80, 106);
+      doc.text('Total amount', pageWidth - 80, 92);
       
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(...primaryColor);
-      doc.text(`£${totalAmount.toFixed(2)}`, pageWidth - 14, 90, { align: 'right' });
-      doc.setTextColor(...redColor);
-      doc.text(`-£${commission.toFixed(2)}`, pageWidth - 14, 98, { align: 'right' });
-      doc.setTextColor(...greenColor);
-      doc.text(`£${earnings.toFixed(2)}`, pageWidth - 14, 106, { align: 'right' });
+      doc.text(`£${totalAmount.toFixed(2)}`, pageWidth - 14, 92, { align: 'right' });
       
       // Payment History title
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(...primaryColor);
       doc.setFontSize(12);
-      doc.text('Payment History', 14, 130);
+      doc.text('Payment History', 14, 108);
       
-      // Payment History table - using the same data shown in cards
       const tableData = payments.map(payment => {
         const date = new Date(payment.date);
         const formattedDate = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-        const amount = parseFloat(payment.amount.replace('£', '').replace(',', ''));
-        const paymentCommission = amount * 0.15;
-        const paymentEarnings = amount - paymentCommission;
-        
         return [
           payment.invoiceNumber,
           formattedDate,
           payment.professional,
           payment.service,
           payment.amount,
-          `-£${paymentCommission.toFixed(2)}`,
-          `£${paymentEarnings.toFixed(2)}`,
           paymentStatusLabel(payment.status),
         ];
       });
       
       autoTable(doc, {
-        startY: 135,
-        head: [['REFERENCE', 'DATE', 'PROFESSIONAL', 'SERVICE', 'AMOUNT', 'COMMISSION', 'EARNINGS', 'STATUS']],
+        startY: 113,
+        head: [['REFERENCE', 'DATE', 'PROFESSIONAL', 'SERVICE', 'AMOUNT', 'STATUS']],
         body: tableData,
         theme: 'plain',
         headStyles: {
@@ -559,47 +541,29 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
           cellPadding: 2,
         },
         columnStyles: {
-          0: { cellWidth: 22 },
-          1: { cellWidth: 20 },
-          2: { cellWidth: 28 },
-          3: { cellWidth: 28 },
-          4: { cellWidth: 18, halign: 'right' },
-          5: { cellWidth: 20, halign: 'right', textColor: [220, 38, 38] },
-          6: { cellWidth: 18, halign: 'right', textColor: [22, 163, 74] },
-          7: { cellWidth: 16, halign: 'center' },
+          0: { cellWidth: 28 },
+          1: { cellWidth: 24 },
+          2: { cellWidth: 32 },
+          3: { cellWidth: 34 },
+          4: { cellWidth: 22, halign: 'right' },
+          5: { cellWidth: 20, halign: 'center' },
         },
         margin: { left: 14, right: 14 },
         tableWidth: 'auto',
       });
       
-      // Get final Y position after table
-      const finalY = (doc as any).lastAutoTable.finalY + 20;
+      const finalY = (doc as any).lastAutoTable.finalY + 16;
       
-      // Total Earnings box
-      doc.setFillColor(248, 250, 252);
-      doc.rect(pageWidth / 2 - 35, finalY, 70, 18, 'F');
-      doc.setDrawColor(220, 38, 38);
-      doc.setLineWidth(0.5);
-      doc.rect(pageWidth / 2 - 35, finalY, 70, 18, 'S');
-      
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...redColor);
-      doc.setFontSize(10);
-      doc.text('Total Earnings:', pageWidth / 2 - 30, finalY + 11);
-      doc.text(`£${earnings.toFixed(2)}`, pageWidth / 2 + 30, finalY + 11, { align: 'right' });
-      
-      // Footer
-      const footerY = finalY + 45;
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(...grayColor);
       doc.setFontSize(8);
-      doc.text('If you have any questions about this statement, please contact', pageWidth / 2, footerY, { align: 'center' });
-      doc.text('Fire Guide Support | support@fireguide.co.uk', pageWidth / 2, footerY + 6, { align: 'center' });
+      doc.text('If you have any questions about this statement, please contact', pageWidth / 2, finalY, { align: 'center' });
+      doc.text('Fire Guide Support | support@fireguide.co.uk', pageWidth / 2, finalY + 6, { align: 'center' });
       
       doc.setFont('helvetica', 'bolditalic');
       doc.setTextColor(...redColor);
       doc.setFontSize(11);
-      doc.text('Thank You For Your Business!', pageWidth / 2, footerY + 20, { align: 'center' });
+      doc.text('Thank You', pageWidth / 2, finalY + 20, { align: 'center' });
       
       // Save PDF
       doc.save(`Payment_Statement_${today.toISOString().split('T')[0]}.pdf`);

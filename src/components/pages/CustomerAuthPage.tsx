@@ -3,7 +3,7 @@ import { startTransition } from "react";
 import { useApp } from "../../contexts/AppContext";
 import { CustomerAuth } from "../CustomerAuth";
 import { setUserInfo, getUserRole } from "../../lib/auth";
-import { setCompleteProfileReminderFlag } from "../../lib/professionalProfileReminder";
+import { navigateToProfessionalHome } from "../../lib/professionalDashboardNavigation";
 
 export default function CustomerAuthPage() {
   const navigate = useNavigate();
@@ -25,11 +25,10 @@ export default function CustomerAuthPage() {
         if (options?.isNewProfessionalSignup) {
           setCurrentUser({ name, role: "professional" });
           setUserInfo(name, "professional");
-          setCompleteProfileReminderFlag();
           startTransition(() => {
-            navigate("/professional/dashboard/profile", {
+            navigateToProfessionalHome(navigate, {
               replace: true,
-              state: { showCompleteProfileReminder: true },
+              forceProfileOnboarding: true,
             });
           });
           return;

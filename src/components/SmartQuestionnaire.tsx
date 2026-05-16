@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
-import { Flame, ChevronRight, Building2, Users, Layers, Calendar, FileText, ChevronLeft, Loader2, HelpCircle, Clock } from "lucide-react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { ChevronRight, Building2, Users, Layers, Calendar, FileText, ChevronLeft, Loader2, HelpCircle, Clock } from "lucide-react";
 import { Button } from "./ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Input } from "./ui/input";
@@ -11,6 +11,7 @@ import { fetchPropertyTypes, PropertyTypeResponse, fetchApproximatePeople, Appro
 import { storeCustomQuoteRequest, type CustomQuoteRequestData } from "../api/customQuoteRequestsService";
 import { getApiToken, getUserFullName, getUserEmail, getUserPhone } from "../lib/auth";
 import { toast } from "sonner";
+import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 
 /** Label shown in SelectTrigger when options are `{ id, value }` and stored value is usually `String(id)` (also supports static items where value is the label text). */
 function marshalSelectTriggerLabel(
@@ -87,6 +88,8 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
   const totalSteps = isFireAlarmService ? 8 : isFireExtinguisherService ? 6 : isEmergencyLightingService ? 6 : isFireSafetyConsultationService ? 4 : isFireMarshalTrainingService ? 6 : isFireRiskAssessmentService ? 6 : 6;
 
   const [currentStep, setCurrentStep] = useState(1);
+  /** After Back, skip one auto-advance on `currentStep` so we do not immediately jump forward again. */
+  const wentBackRef = useRef(false);
   const [formData, setFormData] = useState({
     propertyTypeId: "",
     customPropertyType: "",
@@ -444,15 +447,17 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
   }, [isFireSafetyConsultationService]);
 
   const updateFormData = (field: string, value: string) => {
-    setFormData({ ...formData, [field]: value });
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const EXTINGUISHER_TYPES = ["Water", "Foam", "CO₂", "Powder", "Wet Chemical"];
   const toggleExtinguisherType = (type: string) => {
-    const current = (formData.extinguisherTypesList || "").split(",").map((s) => s.trim()).filter(Boolean);
-    const has = current.includes(type);
-    const next = has ? current.filter((t) => t !== type) : [...current, type];
-    setFormData({ ...formData, extinguisherTypesList: next.join(", ") });
+    setFormData((prev) => {
+      const current = (prev.extinguisherTypesList || "").split(",").map((s) => s.trim()).filter(Boolean);
+      const has = current.includes(type);
+      const next = has ? current.filter((t) => t !== type) : [...current, type];
+      return { ...prev, extinguisherTypesList: next.join(", ") };
+    });
   };
 
   const isFireAlarmCustomQuote = isFireAlarmService && (showCustomDetectorInput || showCustomManualCallPointsInput || showCustomFireAlarmFloorsInput || showCustomFireAlarmPanelsInput);
@@ -617,6 +622,7 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
 
   const handleBack = () => {
     if (currentStep > 1) {
+      wentBackRef.current = true;
       setCurrentStep(currentStep - 1);
     } else {
       onBack();
@@ -633,9 +639,11 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
         case 3: return formData.fireAlarmFloors === CUSTOM_FA_FLOORS ? formData.customFireAlarmFloors.trim() !== "" : formData.fireAlarmFloors !== "";
         case 4: return formData.fireAlarmPanels === CUSTOM_FA_PANELS ? formData.customFireAlarmPanels.trim() !== "" : formData.fireAlarmPanels !== "";
         case 5: return formData.alarmSystemType !== "";
-        case 6: return true; // Last serviced optional
+        /** Must pick an option or explicit Skip; `return true` here caused auto-advance to skip this step entirely. */
+        case 6: return formData.lastServiced !== "";
         case 7: return formData.assessmentDate !== "";
-        case 8: return true; // Access notes optional
+        /** Final step: notes optional; no auto-advance past totalSteps. */
+        case 8: return true;
         default: return false;
       }
     }
@@ -643,10 +651,11 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
       switch (currentStep) {
         case 1: return formData.extinguisherCount === CUSTOM_EXT_COUNT ? formData.customExtinguisherCount.trim() !== "" : formData.extinguisherCount !== "";
         case 2: return formData.extinguisherFloors === CUSTOM_EXT_FLOORS ? formData.customExtinguisherFloors.trim() !== "" : formData.extinguisherFloors !== "";
-        case 3: return true; // Type optional (can be __skip__)
-        case 4: return true; // Last serviced optional
+        /** Optional answers must still be chosen explicitly (`__skip__` counts), otherwise auto-advance skips these steps entirely. */
+        case 3: return formData.extinguisherTypeId !== "";
+        case 4: return formData.extinguisherLastServiced !== "";
         case 5: return formData.assessmentDate !== "";
-        case 6: return true; // Access notes optional
+        case 6: return true;
         default: return false;
       }
     }
@@ -654,10 +663,11 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
       switch (currentStep) {
         case 1: return formData.emergencyLightsCount === CUSTOM_EL_LIGHTS ? formData.customEmergencyLightsCount.trim() !== "" : formData.emergencyLightsCount !== "";
         case 2: return formData.emergencyLightsFloors === CUSTOM_EL_FLOORS ? formData.customEmergencyLightsFloors.trim() !== "" : formData.emergencyLightsFloors !== "";
-        case 3: return true; // Lighting type optional
-        case 4: return true; // Test frequency optional
+        /** Same as extinguisher: optional UI until user picks an option or `__skip__`; avoids auto-advance skipping steps 3–4. */
+        case 3: return formData.emergencyLightingType !== "";
+        case 4: return formData.emergencyLightingTestFrequency !== "";
         case 5: return formData.assessmentDate !== "";
-        case 6: return true; // Access notes optional
+        case 6: return true;
         default: return false;
       }
     }
@@ -666,7 +676,7 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
         case 1: return formData.consultationType !== "";
         case 2: return formData.consultationHours === "4+" ? formData.customConsultationHours.trim() !== "" : formData.consultationHours !== "";
         case 3: return formData.assessmentDate !== ""; // Calendar - same as Fire Alarm
-        case 4: return true; // Access notes optional
+        case 4: return true;
         default: return false;
       }
     }
@@ -675,9 +685,10 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
         case 1: return (formData.trainingPeopleCount === CUSTOM_MARSHAL_PEOPLE || formData.trainingPeopleCount === "40+") ? formData.customTrainingPeopleCount.trim() !== "" : formData.trainingPeopleCount !== "";
         case 2: return formData.trainingLocation !== "";
         case 3: return formData.buildingTypeForTraining !== "";
-        case 4: return true; // Staff training before optional
+        /** Require explicit choice (including Skip); avoid auto-advance skipping this optional step. */
+        case 4: return formData.staffTrainingBefore !== "";
         case 5: return formData.assessmentDate !== "";
-        case 6: return true; // Access notes optional
+        case 6: return true;
         default: return false;
       }
     }
@@ -688,7 +699,7 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
         case 3: return isCustomFloorsOption ? formData.customFloorsCount.trim() !== "" : formData.numberOfFloors !== "";
         case 4: return formData.durationId !== "";
         case 5: return formData.assessmentDate !== "";
-        case 6: return true; // Access notes optional
+        case 6: return true;
         default: return false;
       }
     }
@@ -706,11 +717,52 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
       case 5:
         return formData.assessmentDate !== "";
       case 6:
-        return true; // Access notes optional
+        return true;
       default:
         return false;
     }
   };
+
+  /**
+   * When the current step becomes valid, advance the same way as the old "Next" button.
+   * - `[formData]`: answers changed via select, date, or text fields.
+   * - `[currentStep]`: landing on a step that is already valid (e.g. optional questions) moves forward.
+   * - After Back, `wentBackRef` prevents immediately jumping forward while old answers still validate.
+   */
+  useEffect(() => {
+    if (submittingCustomQuote) return;
+    if (wentBackRef.current) return;
+    if (currentStep >= totalSteps) return;
+    if (!isStepValid()) return;
+    let cancelled = false;
+    const id = requestAnimationFrame(() => {
+      if (cancelled) return;
+      void handleNext();
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id);
+    };
+  }, [formData]);
+
+  useEffect(() => {
+    if (submittingCustomQuote) return;
+    if (wentBackRef.current) {
+      wentBackRef.current = false;
+      return;
+    }
+    if (currentStep >= totalSteps) return;
+    if (!isStepValid()) return;
+    let cancelled = false;
+    const id = requestAnimationFrame(() => {
+      if (cancelled) return;
+      void handleNext();
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id);
+    };
+  }, [currentStep]);
 
   const handleComplete = async () => {
     let propertyTypeId: number;
@@ -951,12 +1003,15 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="bg-[#0A1A2F] text-white py-4 px-4 md:px-6">
-        <div className="max-w-7xl mx-auto flex items-center gap-2">
-          <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity" aria-label="Go to home">
-            <Flame className="w-8 h-8 text-red-500" />
-            <span className="text-xl">Fire Guide</span>
-          </a>
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm text-[#0A1A2F] py-3 px-4 md:px-6">
+        <div className="max-w-7xl mx-auto flex items-center">
+          <Link
+            to="/"
+            className="flex items-center cursor-pointer hover:opacity-90 transition-opacity"
+            aria-label="Go to home"
+          >
+            <img src={logoImage} alt="Fire Guide" className="h-12 w-auto" />
+          </Link>
         </div>
       </header>
 
@@ -2112,7 +2167,7 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
             )}
           </div>
 
-          {/* Navigation Buttons */}
+          {/* Navigation: Back always; intermediate steps advance when answers validate (same as former Next). */}
           <div className="flex justify-end gap-4">
             <Button
               onClick={handleBack}
@@ -2122,6 +2177,24 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
               <ChevronLeft className="w-5 h-5 mr-2" />
               Back
             </Button>
+            {currentStep === totalSteps && (
+              <Button
+                onClick={handleNext}
+                disabled={!isStepValid() || submittingCustomQuote}
+                className="bg-red-600 hover:bg-red-700 px-8 py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submittingCustomQuote ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>View Results</>
+                )}
+              </Button>
+            )}
+            {/*
+            Former intermediate "Next" (same handler as auto-advance useEffects above):
             <Button
               onClick={handleNext}
               disabled={!isStepValid() || submittingCustomQuote}
@@ -2139,6 +2212,8 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
                 </>
               )}
             </Button>
+            (Shown for every step; now only final-step View Results is rendered live.)
+            */}
           </div>
 
           {bottomContent && (

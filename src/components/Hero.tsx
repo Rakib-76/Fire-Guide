@@ -94,14 +94,14 @@ export const Hero = React.memo(function Hero({ onGetStarted }: HeroProps) {
                 onClick={onGetStarted}
                 className="bg-[rgb(230,51,6)] hover:bg-[#0A1A2F]/90 text-white px-[22px] md:px-[24px] py-[11px] md:py-[10px] rounded-lg transition-all text-[14px] font-bold shadow-lg md:shadow-none"
               >
-                Get Started
+                Book Now
               </button>
               
               <button 
-                onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
+                onClick={() => document.getElementById('pricing-preview')?.scrollIntoView({ behavior: 'smooth' })}
                 className="bg-white hover:bg-gray-50 text-[#0A1A2F] px-[22px] md:px-[24px] py-[10px] md:py-[9px] rounded-lg border-2 border-white md:border-gray-300 transition-all text-[14px] font-bold shadow-lg md:shadow-none"
               >
-                Learn More
+                Get prices
               </button>
             </div>
           </div>

@@ -349,7 +349,7 @@ export function AboutContact({
         )}
       </header>
 
-      <section className="bg-gradient-to-br from-[#0A1A2F] via-[#0A1A2F] to-[#1a2f4f] text-white py-16 px-6 pt-[6.25rem] md:pt-[7.5rem] lg:pt-32 pb-14 md:pb-16 lg:pb-20">
+      <section id="about-us" className="bg-gradient-to-br from-[#0A1A2F] via-[#0A1A2F] to-[#1a2f4f] text-white py-16 px-6 pt-[6.25rem] md:pt-[7.5rem] lg:pt-32 pb-14 md:pb-16 lg:pb-20">
         <div className="max-w-7xl mx-auto text-center py-24">
           <div className="inline-flex items-center gap-2 bg-red-600/20 border border-red-500/30 rounded-full px-4 py-2 mb-6">
             <Flame className="w-4 h-4 text-red-500" />

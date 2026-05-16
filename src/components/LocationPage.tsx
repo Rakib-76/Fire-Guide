@@ -1,10 +1,14 @@
 import React, { useState } from "react";
-import { Flame, ChevronRight, MapPin, ArrowLeft, Search } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ChevronRight, MapPin, Search } from "lucide-react";
+import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { useApp } from "../contexts/AppContext";
 import { filterProfessionalForFra, filterProfessionalForAlarm, filterProfessionalForExtinguisher, filterProfessionalForEmergencyLight, filterProfessionalForMarshal, filterProfessionalForConsultation } from "../api/servicesService";
+import { useNominatimGeocode } from "../hooks/useNominatimGeocode";
+import { PostcodePreviewMap, radiusValueToMeters } from "./PostcodePreviewMap";
 // selected_services/store is called only when "Book Now" is clicked on Compare Professionals page (with professional_id)
 
 interface LocationPageProps {
@@ -21,7 +25,10 @@ interface LocationPageProps {
   onContinue: () => void;
   onBack: () => void;
   /** Called when store succeeds, with the created selected_service id and location data (for store call on Book Now with professional_id) */
-  onStoreSuccess?: (selectedServiceId: number, locationData: { post_code: string; search_radius: string; service_id: number }) => void;
+  onStoreSuccess?: (
+    selectedServiceId: number,
+    locationData: { post_code: string; search_radius: string; miles: number; service_id: number }
+  ) => void;
 }
 
 export function LocationPage({ serviceId, questionnaireData, onContinue, onBack, onStoreSuccess }: LocationPageProps) {
@@ -29,6 +36,7 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
   const [postcode, setPostcode] = useState("");
   const [selectedRadius, setSelectedRadius] = useState("10mi");
   const [error, setError] = useState<string | null>(null);
+  const { status: geocodeStatus, result: geocodeResult } = useNominatimGeocode(postcode);
 
   const radiusOptions = [
     { value: "5mi", label: "5 miles" },
@@ -40,7 +48,7 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
 
   const isValid = postcode.trim().length > 0;
 
-  // Convert radius from "5mi" format to "5km" format
+  // Convert radius to "8km" / "entire" string for session + Book / selected-service APIs (not sent on filter-professional).
   const convertRadiusToKm = (radius: string): string => {
     if (radius === "entire") {
       return "entire";
@@ -56,15 +64,33 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
     return "10km"; // Default
   };
 
+  /** Numeric miles for API fields such as Laravel `miles` validation on filter-professional. */
+  const milesFromRadiusSelection = (radius: string): number => {
+    if (radius === "entire") {
+      // Wide cap when user picks "Entire region" (adjust if backend documents a different sentinel)
+      return 500;
+    }
+    const match = radius.match(/(\d+)/);
+    if (match) return parseInt(match[1], 10);
+    return 10;
+  };
+
   const handleFindProfessionals = async () => {
     if (!isValid || !questionnaireData) {
       return;
     }
     setError(null);
     const searchRadius = convertRadiusToKm(selectedRadius);
+    const miles = milesFromRadiusSelection(selectedRadius);
+    /** Filter-professional APIs expect `miles` only (not `search_radius`). */
+    const filterLocationFields = {
+      post_code: postcode.trim(),
+      miles,
+    };
     const locationData = {
       post_code: postcode.trim(),
       search_radius: searchRadius,
+      miles,
       service_id: serviceId,
     };
     const q = questionnaireData as {
@@ -107,6 +133,7 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
           panel_id: q.fire_alarm_panel_id ?? 0,
           system_type_id: q.fire_alarm_system_type_id ?? 0,
           last_service_id: q.fire_alarm_last_service_id ?? 0,
+          ...filterLocationFields,
         };
         const res = await filterProfessionalForAlarm(alarmPayload);
         setFilteredProfessionalsFromFra(res.data ?? null);
@@ -117,6 +144,7 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
           floor_id: q.floor_id ?? 0,
           type_id: q.type_id ?? 0,
           last_service_id: q.last_service_id ?? 0,
+          ...filterLocationFields,
         };
         const res = await filterProfessionalForExtinguisher(extinguisherPayload);
         setFilteredProfessionalsFromFra(res.data ?? null);
@@ -133,6 +161,7 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
           floor_id: q.emergency_floor_id ?? 1,
           light_type_id: q.emergency_light_type_id ?? 0,
           light_test_id: q.emergency_light_test_id ?? 0,
+          ...filterLocationFields,
         };
         const res = await filterProfessionalForEmergencyLight(emergencyLightPayload);
         setFilteredProfessionalsFromFra(res.data ?? null);
@@ -150,6 +179,7 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
           place_id: q.place_id ?? marshalReq?.place_id ?? 1,
           building_type_id: q.building_type_id ?? marshalReq?.building_type_id ?? 1,
           experience_id: q.experience_id ?? marshalReq?.experience_id ?? 1,
+          ...filterLocationFields,
         };
         const res = await filterProfessionalForMarshal(marshalPayload);
         setFilteredProfessionalsFromFra(res.data ?? null);
@@ -164,6 +194,7 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
           service_id: serviceId,
           mode_id: q.mode_id ?? consultReq?.mode_id ?? 1,
           hour_id: q.hour_id ?? consultReq?.hour_id ?? 1,
+          ...filterLocationFields,
         };
         const res = await filterProfessionalForConsultation(consultationPayload);
         setFilteredProfessionalsFromFra(res.data ?? null);
@@ -176,6 +207,7 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
           number_of_floors:
             questionnaireData.number_of_floors_id ??
             (parseInt(questionnaireData.number_of_floors, 10) || 0),
+          ...filterLocationFields,
         };
         const res = await filterProfessionalForFra(filterPayload);
         setFilteredProfessionalsFromFra(res.data ?? null);
@@ -194,13 +226,16 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="bg-[#0A1A2F] text-white py-4 px-4 md:px-6">
-        <div className="max-w-7xl mx-auto flex items-center gap-2">
-          <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity" aria-label="Go to home">
-            <Flame className="w-8 h-8 text-red-500" />
-            <span className="text-xl">Fire Guide</span>
-          </a>
+      {/* Header — same logo bar as main nav / other booking steps */}
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm text-[#0A1A2F] py-3 px-4 md:px-6">
+        <div className="max-w-7xl mx-auto flex items-center">
+          <Link
+            to="/"
+            className="flex items-center cursor-pointer hover:opacity-90 transition-opacity"
+            aria-label="Go to home"
+          >
+            <img src={logoImage} alt="Fire Guide" className="h-12 w-auto" />
+          </Link>
         </div>
       </header>
 
@@ -300,40 +335,19 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
               </Button>
             </div>
 
-            {/* Right Column - Map Preview */}
-            <div className="bg-gray-100 rounded-lg overflow-hidden border-2 border-gray-200 h-[450px] flex items-center justify-center relative">
-              {/* Map Placeholder */}
-              <div className="absolute inset-0 bg-gradient-to-br from-gray-100 to-gray-200">
-                {/* Grid pattern */}
-                <div className="absolute inset-0 opacity-20">
-                  <div className="grid grid-cols-8 grid-rows-8 h-full">
-                    {Array.from({ length: 64 }).map((_, i) => (
-                      <div key={i} className="border border-gray-300"></div>
-                    ))}
-                  </div>
-                </div>
-                
-                {/* Center marker */}
-                {postcode && (
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                    <div className="relative">
-                      {/* Radius circle */}
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-red-600 opacity-10 rounded-full animate-pulse"></div>
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 bg-red-600 opacity-20 rounded-full"></div>
-                      
-                      {/* Pin */}
-                      <div className="relative bg-red-600 text-white p-3 rounded-full shadow-lg">
-                        <MapPin className="w-6 h-6" fill="currentColor" />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              {!postcode && (
-                <div className="relative z-10 text-center p-6">
-                  <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-gray-500">Enter a postcode to preview location</p>
+            {/* Right column — React Leaflet map (geocoded from postcode / town via Nominatim) */}
+            <div className="rounded-lg overflow-hidden border-2 border-gray-200 h-[450px] relative bg-gray-100">
+              <PostcodePreviewMap
+                geocodeStatus={geocodeStatus}
+                geocode={geocodeResult}
+                radiusMeters={radiusValueToMeters(selectedRadius)}
+              />
+              {postcode.trim().length < 2 && (
+                <div className="pointer-events-none absolute inset-0 z-[500] flex flex-col items-center justify-center bg-gray-100/85 text-center p-6">
+                  <MapPin className="w-12 h-12 text-gray-400 mb-3" />
+                  <p className="text-gray-600 text-sm max-w-[220px]">
+                    Enter a postcode or place name to preview it on the map
+                  </p>
                 </div>
               )}
             </div>

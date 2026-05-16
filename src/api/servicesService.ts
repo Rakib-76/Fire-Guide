@@ -2091,13 +2091,83 @@ export interface SelectedServiceStoreResponse {
   data?: any;
 }
 
-/** Request body for POST /filter-professional/for-fra (same shape as selected-service for FRA, without location/auth). */
+/** Request body for POST /filter-professional/for-fra (questionnaire + geo; backend uses miles, not search_radius). */
 export interface FilterProfessionalForFraRequest {
   service_id: number;
   property_type_id: number;
   approximate_people_id: number;
   duration_id: number;
   number_of_floors: number;
+  post_code: string;
+  miles: number;
+}
+
+/** Request body for POST /filter-professional/for-alarm — questionnaire + geo. */
+export interface FilterProfessionalForAlarmRequest {
+  service_id: number;
+  smoke_detector_id: number;
+  call_point_id: number;
+  floor_id: number;
+  panel_id: number;
+  system_type_id: number;
+  last_service_id: number;
+  post_code: string;
+  miles: number;
+}
+
+/** Request body for POST /filter-professional/for-extinguisher — questionnaire + geo. */
+export interface FilterProfessionalForExtinguisherRequest {
+  service_id: number;
+  extinguisher_id: number;
+  floor_id: number;
+  type_id: number;
+  last_service_id: number;
+  post_code: string;
+  miles: number;
+}
+
+/** Request body for POST /filter-professional/for-emergency-light — questionnaire + geo. */
+export interface FilterProfessionalForEmergencyLightRequest {
+  service_id: number;
+  light_id: number;
+  floor_id: number;
+  light_type_id: number;
+  light_test_id: number;
+  post_code: string;
+  miles: number;
+}
+
+/** Request body for POST /filter-professional/for-marshal — questionnaire + geo. */
+export interface FilterProfessionalForMarshalRequest {
+  service_id: number;
+  people_id: number;
+  place_id: number;
+  building_type_id: number;
+  experience_id: number;
+  post_code: string;
+  miles: number;
+}
+
+/** Request body for POST /filter-professional/for-consultation — questionnaire + geo. */
+export interface FilterProfessionalForConsultationRequest {
+  service_id: number;
+  mode_id: number;
+  hour_id: number;
+  post_code: string;
+  miles: number;
+}
+
+/** Certificate row from filter-professional responses (ids may need client labels when name is null). */
+export interface FilterProfessionalCertificateItem {
+  id: number;
+  certificate_name?: string | null;
+  certificate_file?: string | null;
+}
+
+/** Experience row from filter-professional responses */
+export interface FilterProfessionalExperienceItem {
+  id: number;
+  experience_name?: string | null;
 }
 
 /** Single professional from POST /filter-professional/for-fra response */
@@ -2118,6 +2188,8 @@ export interface FilterProfessionalForFraItem {
   platform_fee_percent?: string;
   platform_fee_amount?: number;
   total_price?: number;
+  professional_certificates?: FilterProfessionalCertificateItem[];
+  professional_experience?: FilterProfessionalExperienceItem[];
 }
 
 export interface FilterProfessionalForFraResponse {
@@ -2127,7 +2199,7 @@ export interface FilterProfessionalForFraResponse {
 }
 
 /**
- * POST /filter-professional/for-fra — filter professionals for FRA by service/questionnaire criteria.
+ * POST /filter-professional/for-fra — filter professionals for FRA by service/questionnaire + location.
  * Called only when user clicks "Find Professional"; not used on Book flow.
  */
 export const filterProfessionalForFra = async (
@@ -2137,18 +2209,7 @@ export const filterProfessionalForFra = async (
   return response.data;
 };
 
-/** Request body for POST /filter-professional/for-alarm (same questionnaire fields as fire-alarm selected-service/create, without professional_id/location). */
-export interface FilterProfessionalForAlarmRequest {
-  service_id: number;
-  smoke_detector_id: number;
-  call_point_id: number;
-  floor_id: number;
-  panel_id: number;
-  system_type_id: number;
-  last_service_id: number;
-}
-
-/** POST /filter-professional/for-alarm — filter professionals for Fire Alarm. Called only when user clicks "Find Professional"; not used on Book flow. */
+/** POST /filter-professional/for-alarm — filter professionals for Fire Alarm. */
 export const filterProfessionalForAlarm = async (
   data: FilterProfessionalForAlarmRequest
 ): Promise<FilterProfessionalForFraResponse> => {
@@ -2156,16 +2217,7 @@ export const filterProfessionalForAlarm = async (
   return response.data;
 };
 
-/** Request body for POST /filter-professional/for-extinguisher (same questionnaire fields as fire-extinguisher selected-service/create, without professional_id/location). */
-export interface FilterProfessionalForExtinguisherRequest {
-  service_id: number;
-  extinguisher_id: number;
-  floor_id: number;
-  type_id: number;
-  last_service_id: number;
-}
-
-/** POST /filter-professional/for-extinguisher — filter professionals for Fire Extinguisher. Called only when user clicks "Find Professional"; not used on Book flow. */
+/** POST /filter-professional/for-extinguisher — filter professionals for Fire Extinguisher. */
 export const filterProfessionalForExtinguisher = async (
   data: FilterProfessionalForExtinguisherRequest
 ): Promise<FilterProfessionalForFraResponse> => {
@@ -2173,16 +2225,7 @@ export const filterProfessionalForExtinguisher = async (
   return response.data;
 };
 
-/** Request body for POST /filter-professional/for-emergency-light (same questionnaire fields as fire-emergency-light selected-service/create, without professional_id/location). */
-export interface FilterProfessionalForEmergencyLightRequest {
-  service_id: number;
-  light_id: number;
-  floor_id: number;
-  light_type_id: number;
-  light_test_id: number;
-}
-
-/** POST /filter-professional/for-emergency-light — filter professionals for Emergency Lighting. Called only when user clicks "Find Professional"; not used on Book flow. */
+/** POST /filter-professional/for-emergency-light — filter professionals for Emergency Lighting. */
 export const filterProfessionalForEmergencyLight = async (
   data: FilterProfessionalForEmergencyLightRequest
 ): Promise<FilterProfessionalForFraResponse> => {
@@ -2190,16 +2233,7 @@ export const filterProfessionalForEmergencyLight = async (
   return response.data;
 };
 
-/** Request body for POST /filter-professional/for-marshal (same questionnaire fields as fire-marshal selected-service/create, without professional_id/location). */
-export interface FilterProfessionalForMarshalRequest {
-  service_id: number;
-  people_id: number;
-  place_id: number;
-  building_type_id: number;
-  experience_id: number;
-}
-
-/** POST /filter-professional/for-marshal — filter professionals for Fire Marshal / Warden Training. Called only when user clicks "Find Professional"; not used on Book flow. */
+/** POST /filter-professional/for-marshal — filter professionals for Fire Marshal / Warden Training. */
 export const filterProfessionalForMarshal = async (
   data: FilterProfessionalForMarshalRequest
 ): Promise<FilterProfessionalForFraResponse> => {
@@ -2207,14 +2241,7 @@ export const filterProfessionalForMarshal = async (
   return response.data;
 };
 
-/** Request body for POST /filter-professional/for-consultation (same questionnaire fields as fire-consultation selected-service/create, without professional_id/location). */
-export interface FilterProfessionalForConsultationRequest {
-  service_id: number;
-  mode_id: number;
-  hour_id: number;
-}
-
-/** POST /filter-professional/for-consultation — filter professionals for Fire Safety Consultation. Called only when user clicks "Find Professional"; not used on Book flow. */
+/** POST /filter-professional/for-consultation — filter professionals for Fire Safety Consultation. */
 export const filterProfessionalForConsultation = async (
   data: FilterProfessionalForConsultationRequest
 ): Promise<FilterProfessionalForFraResponse> => {

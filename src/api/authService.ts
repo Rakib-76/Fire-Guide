@@ -46,6 +46,7 @@ apiClient.interceptors.response.use(
     const requestUrl = error?.config?.url || '';
     const isAuthEndpoint = requestUrl.includes('/login') || 
                           requestUrl.includes('/register') || 
+                          requestUrl.includes('/professional/register') ||
                           requestUrl.includes('/send_otp') ||
                           requestUrl.includes('/verify_otp') ||
                           requestUrl.includes('/reset_password');
@@ -109,6 +110,88 @@ export const registerUser = async (
       }
     }
     // Handle other errors
+    throw {
+      success: false,
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
+
+export interface RegisterProfessionalRequest {
+  business_name: string;
+  contact_name: string;
+  email: string;
+  password: string;
+  phone: string;
+  company_reg_number?: string;
+  service_id: number;
+}
+
+export interface RegisterProfessionalResponse {
+  success?: boolean;
+  status?: boolean | string;
+  message?: string;
+  data?: {
+    api_token?: string;
+    token?: string;
+    full_name?: string;
+    name?: string;
+    user_name?: string;
+    phone?: string;
+    role?: string;
+    professional?: { id?: number };
+    professional_id?: number;
+    [key: string]: unknown;
+  };
+  error?: string;
+  token?: string;
+  api_token?: string;
+}
+
+/**
+ * Register a new professional account
+ * POST /professional/register
+ */
+export const registerProfessional = async (
+  data: RegisterProfessionalRequest
+): Promise<RegisterProfessionalResponse> => {
+  try {
+    const body: RegisterProfessionalRequest = {
+      business_name: data.business_name.trim(),
+      contact_name: data.contact_name.trim(),
+      email: data.email.trim().toLowerCase(),
+      password: data.password,
+      phone: data.phone.trim(),
+      service_id: data.service_id,
+    };
+    if (data.company_reg_number?.trim()) {
+      body.company_reg_number = data.company_reg_number.trim();
+    }
+
+    const response = await apiClient.post<RegisterProfessionalResponse>(
+      '/professional/register',
+      body
+    );
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          success: false,
+          message: error.response.data?.message || 'Professional registration failed',
+          error: error.response.data?.error || error.message,
+          status: error.response.status,
+        };
+      }
+      if (error.request) {
+        throw {
+          success: false,
+          message: 'No response from server. Please check your connection.',
+          error: 'Network error',
+        };
+      }
+    }
     throw {
       success: false,
       message: 'An unexpected error occurred',
@@ -1377,7 +1460,16 @@ export interface CustomerAllBookingItem {
     id: number;
     full_name?: string;
     name?: string;
+    /** When API nests professional contact on the professional object */
+    email?: string | null;
+    phone?: string | null;
+    mobile?: string | null;
+    /** Some payloads use `number` for the professional phone (e.g. all_booking). */
+    number?: string | number | null;
   };
+  /** Some payloads expose professional contact at booking root (not the customer's email/phone). */
+  professional_email?: string | null;
+  professional_phone?: string | null;
   service?: {
     id: number;
     service_name: string;
