@@ -16,6 +16,7 @@ import {
   Loader2,
   AlertCircle,
   CreditCard,
+  Star,
 } from "lucide-react";
 import {
   Dialog,
@@ -52,8 +53,10 @@ import {
   PAYMENT_RETURN_STORAGE_KEY,
   type PaymentReturnContext,
 } from "../lib/paymentAppUrls";
-import { getApiToken } from "../lib/auth";
+import { getApiToken, getUserInfo, getUserFullName, getUserEmail } from "../lib/auth";
+import { createReview, updateReview, showReview, fetchReviews } from "../api/reviewsService";
 import { RescheduleCalendarPicker } from "./RescheduleCalendarPicker";
+import { buildBookingServiceDetailsFromApiSelectedService } from "../lib/bookingServiceDetails";
 
 // Available time slots for rescheduling (fallback when professional_id is missing)
 const TIME_SLOTS = [
@@ -88,6 +91,73 @@ function parseApiBookingPaid(apiBooking: CustomerAllBookingItem): boolean {
   if (ps === "paid" || ps === "completed" || ps === "succeeded" || ps === "success") return true;
 
   return false;
+}
+
+function parseApiBookingHasReview(apiBooking: CustomerAllBookingItem): boolean {
+  if (parseApiBookingReviewId(apiBooking) != null) return true;
+  const candidates = [apiBooking.has_review, apiBooking.is_reviewed];
+  for (const raw of candidates) {
+    if (raw === true || raw === 1 || raw === "1") return true;
+    if (typeof raw === "string" && ["true", "yes", "reviewed", "submitted"].includes(raw.toLowerCase())) {
+      return true;
+    }
+  }
+  return loadBookingReviewIds()[apiBooking.id.toString()] != null;
+}
+
+const CUSTOMER_REVIEWED_BOOKING_IDS_KEY = "fireguide_customer_reviewed_booking_ids";
+
+function loadCustomerReviewedBookingIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(CUSTOMER_REVIEWED_BOOKING_IDS_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((id): id is string => typeof id === "string" && id.length > 0));
+  } catch {
+    return new Set();
+  }
+}
+
+function persistCustomerReviewedBookingIds(ids: Set<string>): void {
+  localStorage.setItem(CUSTOMER_REVIEWED_BOOKING_IDS_KEY, JSON.stringify([...ids]));
+}
+
+const CUSTOMER_BOOKING_REVIEW_IDS_KEY = "fireguide_customer_booking_review_ids";
+
+function loadBookingReviewIds(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(CUSTOMER_BOOKING_REVIEW_IDS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: Record<string, number> = {};
+    for (const [key, val] of Object.entries(parsed)) {
+      const n = typeof val === "number" ? val : parseInt(String(val), 10);
+      if (typeof key === "string" && key.length > 0 && Number.isFinite(n) && n > 0) out[key] = n;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function persistBookingReviewId(bookingId: string, reviewId: number): void {
+  const map = loadBookingReviewIds();
+  map[bookingId] = reviewId;
+  localStorage.setItem(CUSTOMER_BOOKING_REVIEW_IDS_KEY, JSON.stringify(map));
+}
+
+function parseApiBookingReviewId(apiBooking: CustomerAllBookingItem): number | undefined {
+  const tryNum = (raw: unknown): number | undefined => {
+    if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+    if (typeof raw === "string") {
+      const n = parseInt(raw, 10);
+      if (!Number.isNaN(n) && n > 0) return n;
+    }
+    return undefined;
+  };
+  return tryNum(apiBooking.review_id) ?? tryNum(apiBooking.review?.id);
 }
 
 const normalizeApiBookingStatus = (status: string | undefined | null): string =>
@@ -181,8 +251,37 @@ const transformApiBooking = (apiBooking: CustomerAllBookingItem): Booking => {
     isPaid: parseApiBookingPaid(apiBooking),
     professionalId: apiBooking.professional?.id,
     updatedById: apiBooking.updated_by?.id ?? null,
+    reviewId:
+      parseApiBookingReviewId(apiBooking) ?? loadBookingReviewIds()[apiBooking.id.toString()],
+    hasReview: parseApiBookingHasReview(apiBooking),
+    customerEmail: typeof apiBooking.email === "string" ? apiBooking.email.trim() : "",
+    serviceDetails: buildBookingServiceDetailsFromApiSelectedService(
+      apiBooking.selected_service ?? null
+    ),
   };
 };
+
+const bookingHasSubmittedReview = (booking: Booking, reviewedLocally: Set<string>): boolean => {
+  if (booking.hasReview === true) return true;
+  if (reviewedLocally.has(booking.id)) return true;
+  if (booking.reviewId != null && booking.reviewId > 0) return true;
+  const storedReviewId = loadBookingReviewIds()[booking.id];
+  return storedReviewId != null && storedReviewId > 0;
+};
+
+/** Completed + paid bookings eligible for a new review. */
+const bookingCanGiveReview = (booking: Booking, reviewedLocally: Set<string>): boolean =>
+  normalizeApiBookingStatus(booking.apiStatus) === "completed" &&
+  booking.isPaid === true &&
+  booking.professionalId != null &&
+  !bookingHasSubmittedReview(booking, reviewedLocally);
+
+/** Completed + paid bookings with an existing review — allow update. */
+const bookingCanUpdateReview = (booking: Booking, reviewedLocally: Set<string>): boolean =>
+  normalizeApiBookingStatus(booking.apiStatus) === "completed" &&
+  booking.isPaid === true &&
+  booking.professionalId != null &&
+  bookingHasSubmittedReview(booking, reviewedLocally);
 
 /** Show Pay when the booking can still be paid (not cancelled, not recorded as paid). */
 const bookingNeedsPayment = (booking: Booking): boolean =>
@@ -415,6 +514,16 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
   const [payingBookingId, setPayingBookingId] = useState<string | null>(null);
   const [acceptingBookingId, setAcceptingBookingId] = useState<string | null>(null);
   const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null);
+  const [reviewedBookingIds, setReviewedBookingIds] = useState<Set<string>>(loadCustomerReviewedBookingIds);
+  const [reviewBooking, setReviewBooking] = useState<Booking | null>(null);
+  const [reviewRating, setReviewRating] = useState("");
+  const [reviewHoverRating, setReviewHoverRating] = useState(0);
+  const [reviewFeedback, setReviewFeedback] = useState("");
+  const [reviewName, setReviewName] = useState("");
+  const [reviewEmail, setReviewEmail] = useState("");
+  const [editingReviewId, setEditingReviewId] = useState<number | null>(null);
+  const [loadingReviewDetails, setLoadingReviewDetails] = useState(false);
+  const [submittingReviewId, setSubmittingReviewId] = useState<string | null>(null);
 
   // Reschedule modal state
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
@@ -441,6 +550,24 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
       if (response.status === "success" && response.data?.bookings) {
         const transformedBookings = response.data.bookings.map(transformApiBooking);
         setApiBookings(transformedBookings);
+        setReviewedBookingIds((prev) => {
+          const next = new Set(prev);
+          let changed = false;
+          for (const b of transformedBookings) {
+            if (
+              b.hasReview ||
+              (b.reviewId != null && b.reviewId > 0) ||
+              loadBookingReviewIds()[b.id] != null
+            ) {
+              if (!next.has(b.id)) {
+                next.add(b.id);
+                changed = true;
+              }
+            }
+          }
+          if (changed) persistCustomerReviewedBookingIds(next);
+          return changed ? next : prev;
+        });
       } else {
         console.error("Failed to fetch bookings:", response.message || response.error);
         setApiBookings([]);
@@ -456,6 +583,25 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
   useEffect(() => {
     void fetchBookingsFromApi();
   }, [fetchBookingsFromApi]);
+
+  /** Keep “reviewed” bookings in sync with stored review ids (survives refresh). */
+  useEffect(() => {
+    const reviewIdByBooking = loadBookingReviewIds();
+    const bookingIds = Object.keys(reviewIdByBooking);
+    if (bookingIds.length === 0) return;
+    setReviewedBookingIds((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const id of bookingIds) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      if (changed) persistCustomerReviewedBookingIds(next);
+      return changed ? next : prev;
+    });
+  }, []);
 
   // After Stripe / webhook, `is_paid` updates on the server ????????? refresh when user returns to the tab.
   useEffect(() => {
@@ -489,19 +635,23 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
     switch (lowerStatus) {
       case "upcoming":
       case "confirmed":
-        return "bg-blue-100 text-blue-800";
+        return "bg-blue-50 text-blue-800 border border-blue-200";
       case "pending":
       case "me":
         return "bg-yellow-50 text-yellow-800 border border-yellow-200";
       case "completed":
-        return "bg-green-100 text-green-800";
+        return "bg-green-50 text-green-800 border border-green-200";
       case "cancelled":
       case "canceled":
-        return "bg-red-100 text-red-800";
+        return "bg-red-50 text-red-800 border border-red-200";
       default:
-        if (booking.status === "completed") return "bg-green-100 text-green-800";
-        if (booking.status === "cancelled") return "bg-red-100 text-red-800";
-        return "bg-gray-100 text-gray-800";
+        if (booking.status === "completed") {
+          return "bg-green-50 text-green-800 border border-green-200";
+        }
+        if (booking.status === "cancelled") {
+          return "bg-red-50 text-red-800 border border-red-200";
+        }
+        return "bg-gray-50 text-gray-800 border border-gray-200";
     }
   };
 
@@ -569,6 +719,261 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
       toast.error(error.message || "Failed to cancel booking. Please try again.");
     } finally {
       setIsCancelling(null);
+    }
+  };
+
+  const openGiveReviewModal = (booking: Booking) => {
+    setEditingReviewId(null);
+    setReviewBooking(booking);
+    setReviewRating("");
+    setReviewHoverRating(0);
+    setReviewFeedback("");
+    const defaultName =
+      getUserFullName()?.trim() ||
+      getUserInfo()?.name?.trim() ||
+      "";
+    setReviewName(defaultName);
+    const defaultEmail =
+      booking.customerEmail?.trim() ||
+      getUserEmail()?.trim() ||
+      "";
+    setReviewEmail(defaultEmail);
+  };
+
+  const resolveReviewIdForBooking = async (booking: Booking): Promise<number | null> => {
+    if (booking.reviewId != null && booking.reviewId > 0) return booking.reviewId;
+    const stored = loadBookingReviewIds()[booking.id];
+    if (stored) return stored;
+    if (!booking.professionalId) return null;
+    try {
+      const reviews = await fetchReviews();
+      const matches = reviews.filter((r) => r.professional?.id === booking.professionalId);
+      if (matches.length === 0) return null;
+      const latest = [...matches].sort((a, b) => b.id - a.id)[0];
+      persistBookingReviewId(booking.id, latest.id);
+      return latest.id;
+    } catch {
+      return null;
+    }
+  };
+
+  const openUpdateReviewModal = async (booking: Booking) => {
+    setReviewBooking(booking);
+    setReviewHoverRating(0);
+    setLoadingReviewDetails(true);
+    setEditingReviewId(null);
+
+    const defaultEmail =
+      booking.customerEmail?.trim() ||
+      getUserEmail()?.trim() ||
+      "";
+    setReviewEmail(defaultEmail);
+
+    try {
+      const reviewId = await resolveReviewIdForBooking(booking);
+      if (!reviewId) {
+        toast.error("Could not find your review to update. Please try again later.");
+        setReviewBooking(null);
+        return;
+      }
+
+      setEditingReviewId(reviewId);
+
+      let name = getUserFullName()?.trim() || getUserInfo()?.name?.trim() || "";
+      let rating = "";
+      let feedback = "";
+
+      try {
+        const res = await showReview(reviewId);
+        const ok =
+          res.status === "success" ||
+          res.success === true ||
+          (res.data != null && typeof res.data === "object");
+        if (ok && res.data && typeof res.data === "object") {
+          const d = res.data as Record<string, unknown>;
+          name = String(d.name ?? name);
+          rating = String(d.rating ?? "");
+          feedback = String(d.feedback ?? "");
+        }
+      } catch {
+        const reviews = await fetchReviews();
+        const found = reviews.find((r) => r.id === reviewId);
+        if (found) {
+          name = found.name || name;
+          rating = found.rating || "";
+          feedback = found.feedback || "";
+        }
+      }
+
+      setReviewName(name);
+      setReviewRating(rating ? String(Math.round(Number(rating))) : "");
+      setReviewFeedback(feedback);
+      setApiBookings((prev) =>
+        prev.map((b) => (b.id === booking.id ? { ...b, reviewId, hasReview: true } : b))
+      );
+    } catch {
+      toast.error("Could not load your review. Please try again.");
+      setReviewBooking(null);
+    } finally {
+      setLoadingReviewDetails(false);
+    }
+  };
+
+  const closeGiveReviewModal = () => {
+    setReviewBooking(null);
+    setReviewRating("");
+    setReviewHoverRating(0);
+    setReviewFeedback("");
+    setReviewName("");
+    setReviewEmail("");
+    setEditingReviewId(null);
+    setLoadingReviewDetails(false);
+  };
+
+  const handleSubmitReview = async () => {
+    if (!reviewBooking?.professionalId) {
+      toast.error("Professional information is missing for this booking.");
+      return;
+    }
+    if (!reviewName.trim()) {
+      toast.error("Please enter your name.");
+      return;
+    }
+    const isUpdate = editingReviewId != null && editingReviewId > 0;
+    const emailTrimmed = reviewEmail.trim();
+    if (!isUpdate) {
+      if (!emailTrimmed) {
+        toast.error("Please enter your email.");
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
+        toast.error("Please enter a valid email address.");
+        return;
+      }
+    }
+    if (!reviewRating) {
+      toast.error("Please select a rating.");
+      return;
+    }
+    if (!reviewFeedback.trim()) {
+      toast.error("Please enter your feedback.");
+      return;
+    }
+
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Please log in to submit a review.");
+      return;
+    }
+
+    setSubmittingReviewId(reviewBooking.id);
+    try {
+      if (isUpdate) {
+        const response = await updateReview({
+          api_token: token,
+          id: editingReviewId,
+          name: reviewName.trim(),
+          rating: String(reviewRating),
+          feedback: reviewFeedback.trim(),
+          professional_id: Number(reviewBooking.professionalId),
+        });
+
+        const failed =
+          response.status === "failed" ||
+          response.status === "error" ||
+          response.success === false;
+
+        if (failed) {
+          toast.error(response.message || response.error || "Failed to update feedback.");
+          return;
+        }
+
+        const ok =
+          response.status === "success" ||
+          response.success === true ||
+          Boolean(response.message && !response.error);
+
+        if (!ok) {
+          toast.error(response.message || response.error || "Failed to update feedback.");
+          return;
+        }
+
+        persistBookingReviewId(reviewBooking.id, editingReviewId);
+        setApiBookings((prev) =>
+          prev.map((b) =>
+            b.id === reviewBooking.id ? { ...b, hasReview: true, reviewId: editingReviewId } : b
+          )
+        );
+        toast.success(response.message || "Your feedback has been updated.");
+        closeGiveReviewModal();
+        return;
+      }
+
+      const response = await createReview({
+        api_token: token,
+        name: reviewName.trim(),
+        email: emailTrimmed,
+        rating: String(reviewRating),
+        feedback: reviewFeedback.trim(),
+        professional_id: Number(reviewBooking.professionalId),
+      });
+
+      const failed =
+        response.status === "failed" ||
+        response.status === "error" ||
+        response.success === false;
+
+      if (failed) {
+        const validation = (response as { data?: Record<string, string[]> }).data;
+        const emailErr = validation?.email?.[0];
+        toast.error(emailErr || response.message || response.error || "Failed to send feedback.");
+        return;
+      }
+
+      const ok =
+        response.status === "success" ||
+        response.success === true ||
+        Boolean(response.message && !response.error);
+
+      if (!ok) {
+        toast.error(response.message || response.error || "Failed to send feedback.");
+        return;
+      }
+
+      const createdReviewId =
+        response.data && typeof response.data === "object" && "id" in response.data
+          ? Number((response.data as { id: number }).id)
+          : NaN;
+
+      setReviewedBookingIds((prev) => {
+        const next = new Set(prev).add(reviewBooking.id);
+        persistCustomerReviewedBookingIds(next);
+        return next;
+      });
+      if (Number.isFinite(createdReviewId) && createdReviewId > 0) {
+        persistBookingReviewId(reviewBooking.id, createdReviewId);
+      }
+      setApiBookings((prev) =>
+        prev.map((b) =>
+          b.id === reviewBooking.id
+            ? {
+                ...b,
+                hasReview: true,
+                reviewId: Number.isFinite(createdReviewId) && createdReviewId > 0 ? createdReviewId : b.reviewId,
+              }
+            : b
+        )
+      );
+      toast.success(response.message || "Thank you! Your feedback has been sent.");
+      closeGiveReviewModal();
+    } catch (err: unknown) {
+      const message =
+        err && typeof err === "object" && "message" in err && typeof (err as { message: string }).message === "string"
+          ? (err as { message: string }).message
+          : "Failed to send feedback. Please try again.";
+      toast.error(message);
+    } finally {
+      setSubmittingReviewId(null);
     }
   };
 
@@ -801,7 +1206,7 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
   return (
     <div className="space-y-6">
       {/* Filter Tabs */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 -mx-1 px-1">
         <Button
           variant={filter === "all" ? "default" : "outline"}
           onClick={() => setFilter("all")}
@@ -850,36 +1255,41 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
       ) : (
         <div className="grid gap-4">
           {filteredBookings.map((booking) => (
-            <Card key={booking.id} className="hover:shadow-lg transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex flex-col md:flex-row justify-between gap-4">
-                  <div className="flex-1 space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="text-[#0A1A2F] mb-1">{booking.service}</h3>
-                        <p className="text-sm text-gray-600">Ref: {booking.bookingRef}</p>
+            <Card key={booking.id} className="hover:shadow-lg transition-shadow overflow-hidden">
+              <CardContent className="p-4 sm:p-6 min-w-0">
+                <div className="flex flex-col md:flex-row md:justify-between gap-4 min-w-0">
+                  <div className="flex-1 min-w-0 space-y-3">
+                    <div className="flex items-start justify-between gap-2 min-w-0">
+                      <div className="min-w-0 flex-1 pr-1">
+                        <h3 className="text-[#0A1A2F] mb-1 text-base sm:text-lg break-words">
+                          {booking.service}
+                        </h3>
+                        <p className="text-sm text-gray-600 break-all">Ref: {booking.bookingRef}</p>
                       </div>
-                      <Badge className={getStatusColor(booking)}>
+                      <Badge
+                        variant="custom"
+                        className={`w-fit shrink-0 whitespace-nowrap ${getStatusColor(booking)}`}
+                      >
                         {getCustomerStatusLabel(booking)}
                       </Badge>
                     </div>
 
-                    <div className="grid md:grid-cols-2 gap-3 text-sm">
-                      <div className="flex items-center gap-2 text-gray-600">
-                        <User className="w-4 h-4" />
-                        <span>{booking.professional}</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                      <div className="flex items-start gap-2 text-gray-600 min-w-0">
+                        <User className="w-4 h-4 shrink-0 mt-0.5" />
+                        <span className="break-words">{booking.professional}</span>
                       </div>
                       <div className="flex items-center gap-2 text-gray-600">
-                        <Calendar className="w-4 h-4" />
+                        <Calendar className="w-4 h-4 shrink-0" />
                         <span>{new Date(booking.date).toLocaleDateString('en-GB')}</span>
                       </div>
                       <div className="flex items-center gap-2 text-gray-600">
-                        <Clock className="w-4 h-4" />
+                        <Clock className="w-4 h-4 shrink-0" />
                         <span>{booking.time}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-gray-600">
-                        <MapPin className="w-4 h-4" />
-                        <span className="truncate">{booking.location}</span>
+                      <div className="flex items-start gap-2 text-gray-600 min-w-0 sm:col-span-2">
+                        <MapPin className="w-4 h-4 shrink-0 mt-0.5" />
+                        <span className="break-words">{booking.location}</span>
                       </div>
                     </div>
 
@@ -897,19 +1307,19 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                     )}
                   </div>
 
-                  <div className="flex md:flex-col gap-2">
+                  <div className="flex flex-col gap-2 w-full min-w-0 md:w-auto md:min-w-[9.5rem] md:shrink-0 border-t border-gray-100 pt-4 md:border-t-0 md:pt-0">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setSelectedBooking(booking)}
-                      className="flex-1 md:flex-none"
+                      className="w-full md:w-auto justify-center"
                     >
                       View Details
                     </Button>
                     {needsCustomerAcceptReschedule(booking) && (
                       <Button
                         size="sm"
-                        className="flex-1 md:flex-none bg-green-600 hover:bg-green-700"
+                        className="w-full md:w-auto justify-center bg-green-600 hover:bg-green-700"
                         onClick={() => void handleAcceptReschedule(booking)}
                         disabled={
                           acceptingBookingId === booking.id ||
@@ -934,7 +1344,7 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                       <Button
                         variant="default"
                         size="sm"
-                        className="flex-1 md:flex-none bg-red-600 hover:bg-red-700"
+                        className="w-full md:w-auto justify-center bg-red-600 hover:bg-red-700"
                         onClick={() => handlePayBooking(booking)}
                         disabled={payingBookingId === booking.id || isCancelling === booking.id}
                       >
@@ -955,7 +1365,7 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                       <Button
                         variant="outline"
                         size="sm"
-                        className="flex-1 md:flex-none text-red-600 hover:text-red-700"
+                        className="w-full md:w-auto justify-center text-red-600 hover:text-red-700"
                         onClick={() => handleCancelBooking(booking.id)}
                         disabled={isCancelling === booking.id || payingBookingId === booking.id}
                       >
@@ -974,7 +1384,7 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="flex-1 md:flex-none"
+                        className="w-full md:w-auto justify-center"
                         onClick={() => handleDownloadReport(booking)}
                         disabled={downloadingReportId === booking.id}
                       >
@@ -991,6 +1401,27 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                         )}
                       </Button>
                     )}
+                    {bookingCanGiveReview(booking, reviewedBookingIds) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="w-full md:w-auto justify-center bg-red-600 hover:bg-red-700 text-white"
+                        onClick={() => openGiveReviewModal(booking)}
+                      >
+                        Give Feedback
+                      </Button>
+                    )}
+                    {bookingCanUpdateReview(booking, reviewedBookingIds) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="default"
+                        className="w-full md:w-auto justify-center !bg-amber-600 hover:!bg-amber-700 text-white border-amber-600"
+                        onClick={() => void openUpdateReviewModal(booking)}
+                      >
+                        Update Feedback
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -998,6 +1429,147 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
           ))}
         </div>
       )}
+
+      {/* Give Feedback Dialog */}
+      <Dialog open={reviewBooking !== null} onOpenChange={(open) => !open && closeGiveReviewModal()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-xl text-[#0A1A2F]">
+              {editingReviewId ? "Update Feedback" : "Give Feedback"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingReviewId
+                ? `Edit your review for ${reviewBooking?.professional} — ${reviewBooking?.service}.`
+                : `Share your experience with ${reviewBooking?.professional} for ${reviewBooking?.service}.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          {reviewBooking && (
+            <form
+              className="space-y-4 py-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleSubmitReview();
+              }}
+            >
+              {loadingReviewDetails && (
+                <div className="flex items-center justify-center gap-2 py-6 text-gray-500">
+                  <Loader2 className="h-6 w-6 animate-spin text-red-600" />
+                  <span>Loading your review…</span>
+                </div>
+              )}
+              <div className={`space-y-4 ${loadingReviewDetails ? "hidden" : ""}`}>
+              <div className="space-y-2">
+                <Label htmlFor="review-name">
+                  Name <span className="text-red-600">*</span>
+                </Label>
+                <Input
+                  id="review-name"
+                  type="text"
+                  value={reviewName}
+                  onChange={(e) => setReviewName(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  required
+                />
+              </div>
+              {!editingReviewId && (
+              <div className="space-y-2">
+                <Label htmlFor="review-email">
+                  Reviewer email <span className="text-red-600">*</span>
+                </Label>
+                <Input
+                  id="review-email"
+                  type="email"
+                  value={reviewEmail}
+                  onChange={(e) => setReviewEmail(e.target.value)}
+                  placeholder="e.g. john.doe@example.com"
+                  autoComplete="email"
+                  required
+                />
+              </div>
+              )}
+              <div className="space-y-2">
+                <Label>
+                  Rating <span className="text-red-600">*</span>
+                </Label>
+                <div
+                  className="flex gap-1"
+                  onMouseLeave={() => setReviewHoverRating(0)}
+                  role="group"
+                  aria-label="Rating out of 5 stars"
+                >
+                  {[1, 2, 3, 4, 5].map((star) => {
+                    const activeStars = reviewHoverRating || Number(reviewRating) || 0;
+                    return (
+                      <button
+                        key={star}
+                        type="button"
+                        className="rounded p-0.5 transition-transform hover:scale-110"
+                        onClick={() => setReviewRating(String(star))}
+                        onMouseEnter={() => setReviewHoverRating(star)}
+                        aria-label={`${star} star${star > 1 ? "s" : ""}`}
+                        aria-pressed={Number(reviewRating) === star}
+                      >
+                        <Star
+                          className={`h-9 w-9 ${
+                            activeStars >= star
+                              ? "fill-yellow-400 text-yellow-500"
+                              : "text-gray-300"
+                          }`}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="review-feedback">
+                  Feedback <span className="text-red-600">*</span>
+                </Label>
+                <Textarea
+                  id="review-feedback"
+                  value={reviewFeedback}
+                  onChange={(e) => setReviewFeedback(e.target.value)}
+                  rows={4}
+                  placeholder="e.g. Excellent service and very professional."
+                  required
+                />
+              </div>
+              </div>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={closeGiveReviewModal}
+                  disabled={submittingReviewId !== null || loadingReviewDetails}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className={
+                    editingReviewId
+                      ? "bg-amber-600 hover:bg-amber-700 text-white"
+                      : "bg-red-600 hover:bg-red-700 text-white"
+                  }
+                  disabled={submittingReviewId === reviewBooking.id || loadingReviewDetails}
+                >
+                  {submittingReviewId === reviewBooking.id ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      {editingReviewId ? "Updating..." : "Sending..."}
+                    </>
+                  ) : editingReviewId ? (
+                    "Update"
+                  ) : (
+                    "Send"
+                  )}
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Booking Details Dialog */}
       <Dialog open={selectedBooking !== null} onOpenChange={() => setSelectedBooking(null)}>
@@ -1012,15 +1584,32 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
           </DialogHeader>
 
           {selectedBooking && (
-            <div className="overflow-y-auto flex-1 px-5 sm:px-6 py-5 space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h3 className="text-base sm:text-lg font-medium text-[#0A1A2F] leading-snug break-words">
+            <>
+            <div className="overflow-y-auto flex-1 min-h-0 px-5 sm:px-6 pt-5 pb-5 space-y-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <h3 className="text-base sm:text-lg font-medium text-[#0A1A2F] leading-snug break-words pr-2">
                   {selectedBooking.service}
                 </h3>
-                <Badge className={`shrink-0 ${getStatusColor(selectedBooking)}`}>
+                <Badge
+                  variant="custom"
+                  className={`shrink-0 mt-1 sm:mt-1.5 ${getStatusColor(selectedBooking)}`}
+                >
                   {getCustomerStatusLabel(selectedBooking)}
                 </Badge>
               </div>
+
+              {selectedBooking.serviceDetails && selectedBooking.serviceDetails.length > 0 && (
+                <div className="rounded-lg border border-gray-100 bg-gray-50/80 p-4 sm:p-5">
+                  <p className="text-sm text-gray-500 mb-3">Service details</p>
+                  <div className="space-y-1.5 text-sm text-gray-600">
+                    {selectedBooking.serviceDetails.map((row) => (
+                      <p key={row.label}>
+                        {row.label}: <span className="text-gray-900">{row.value}</span>
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-10">
                 <div className="space-y-5">
@@ -1102,12 +1691,12 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                       {!selectedBooking.isPaid ? (
                         selectedBooking.status === "cancelled" ? (
                           <p className="text-sm text-gray-600">
-                            Booking cancelled ????????????? payment is not available.
+                            Booking cancelled — payment is not available.
                           </p>
                         ) : (
                           <p className="text-sm text-amber-700 inline-flex items-center gap-1.5">
                             <AlertCircle className="h-4 w-4 shrink-0" />
-                            Payment required ????????????? use Pay to complete checkout
+                            Payment required — use Pay to complete checkout
                           </p>
                         )
                       ) : (
@@ -1157,65 +1746,91 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                 </div>
               )}
 
-              {selectedBooking.status === "upcoming" && (
-                <div className="space-y-3 pt-1 border-t border-gray-100">
-                  {showCustomerRescheduleSubmittedMessage(selectedBooking) && (
-                    <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-                      <p className="text-sm text-amber-900">{customerRescheduleSubmittedMessage}</p>
-                    </div>
-                  )}
-                  {needsCustomerAcceptReschedule(selectedBooking) && (
-                    <Button
-                      className="w-full bg-green-600 hover:bg-green-700"
-                      onClick={() => void handleAcceptReschedule(selectedBooking)}
-                      disabled={
-                        acceptingBookingId === selectedBooking.id ||
-                        isCancelling === selectedBooking.id ||
-                        payingBookingId === selectedBooking.id
-                      }
-                    >
-                      {acceptingBookingId === selectedBooking.id ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Accepting...
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle className="w-4 h-4 mr-2" />
-                          Accept reschedule
-                        </>
-                      )}
-                    </Button>
-                  )}
-                  {bookingNeedsPayment(selectedBooking) && (
-                    <Button
-                      className="w-full bg-red-600 hover:bg-red-700"
-                      onClick={() => handlePayBooking(selectedBooking)}
-                      disabled={
-                        payingBookingId === selectedBooking.id ||
-                        isCancelling === selectedBooking.id
-                      }
-                    >
-                      {payingBookingId === selectedBooking.id ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Redirecting???
-                        </>
-                      ) : (
-                        <>
-                          <CreditCard className="w-4 h-4 mr-2" />
-                          Pay now
-                        </>
-                      )}
-                    </Button>
-                  )}
-                  <div className="flex flex-col gap-2 sm:flex-row">
+              {bookingCanGiveReview(selectedBooking, reviewedBookingIds) && (
+                <Button
+                  type="button"
+                  className="w-full bg-red-600 hover:bg-red-700 text-white"
+                  onClick={() => openGiveReviewModal(selectedBooking)}
+                >
+                  Give Feedback
+                </Button>
+              )}
+              {bookingCanUpdateReview(selectedBooking, reviewedBookingIds) && (
+                <Button
+                  type="button"
+                  variant="default"
+                  className="w-full !bg-amber-600 hover:!bg-amber-700 text-white border-amber-600"
+                  onClick={() => void openUpdateReviewModal(selectedBooking)}
+                >
+                  Update Feedback
+                </Button>
+              )}
+
+              {selectedBooking.status === "upcoming" &&
+                showCustomerRescheduleSubmittedMessage(selectedBooking) && (
+                  <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                    <p className="text-sm text-amber-900">{customerRescheduleSubmittedMessage}</p>
+                  </div>
+                )}
+            </div>
+
+            {selectedBooking.status === "upcoming" && (
+              <div className="shrink-0 border-t border-gray-100 bg-white px-5 sm:px-6 pt-4 pb-5 sm:pb-6 space-y-3">
+                {needsCustomerAcceptReschedule(selectedBooking) && (
+                  <Button
+                    className="w-full h-11 justify-center bg-green-600 hover:bg-green-700"
+                    onClick={() => void handleAcceptReschedule(selectedBooking)}
+                    disabled={
+                      acceptingBookingId === selectedBooking.id ||
+                      isCancelling === selectedBooking.id ||
+                      payingBookingId === selectedBooking.id
+                    }
+                  >
+                    {acceptingBookingId === selectedBooking.id ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Accepting...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Accept reschedule
+                      </>
+                    )}
+                  </Button>
+                )}
+                {bookingNeedsPayment(selectedBooking) && (
+                  <Button
+                    className="w-full h-11 justify-center bg-red-600 hover:bg-red-700 text-white"
+                    onClick={() => handlePayBooking(selectedBooking)}
+                    disabled={
+                      payingBookingId === selectedBooking.id ||
+                      isCancelling === selectedBooking.id
+                    }
+                  >
+                    {payingBookingId === selectedBooking.id ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Redirecting...
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="w-4 h-4 mr-2" />
+                        Pay now
+                      </>
+                    )}
+                  </Button>
+                )}
+                {(bookingAllowsCustomerReschedule(selectedBooking) ||
+                  bookingAllowsCustomerCancel(selectedBooking)) && (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:gap-2 min-w-0">
                     {bookingAllowsCustomerReschedule(selectedBooking) && (
                       <Button
+                        type="button"
                         variant="outline"
                         onClick={() => handleOpenReschedule(selectedBooking)}
-                        className="flex-1"
+                        className="w-full sm:flex-1 h-11 justify-center border-gray-300 bg-white text-[#0A1A2F] font-normal hover:bg-gray-50"
                         disabled={
                           isCancelling === selectedBooking.id ||
                           payingBookingId === selectedBooking.id ||
@@ -1227,9 +1842,10 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                     )}
                     {bookingAllowsCustomerCancel(selectedBooking) && (
                       <Button
+                        type="button"
                         variant="outline"
                         onClick={() => handleCancelBooking(selectedBooking.id)}
-                        className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                        className="w-full sm:flex-1 h-11 justify-center border-gray-300 bg-white text-red-600 font-normal hover:bg-red-50 hover:text-red-700"
                         disabled={
                           isCancelling === selectedBooking.id ||
                           payingBookingId === selectedBooking.id
@@ -1246,9 +1862,10 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                       </Button>
                     )}
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
+            </>
           )}
         </DialogContent>
       </Dialog>

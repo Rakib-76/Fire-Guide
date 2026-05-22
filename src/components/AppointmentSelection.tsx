@@ -19,6 +19,7 @@ import { fetchProfessionalProfileAvailableDates, ProfessionalProfileAvailableDat
 import { getBlockedBookingDaysListForProfessional } from "../api/professionalsService";
 import { normalizeSlotForBookingComparison, parseBookingDateKey } from "../lib/bookingSlotNormalize";
 import type { BookingData } from "./BookingFlow";
+import { BookingServiceDetailsLines } from "./BookingServiceDetailsLines";
 
 /** Parse API date string to YYYY-MM-DD. Handles "2026-03-28 00:00:00" and "2026-03-28T00:00:00.000000Z". */
 function parseDateOnly(dateStr: string): string {
@@ -330,11 +331,7 @@ export function AppointmentSelection({
                   <div className="flex items-start justify-between">
                     <div>
                       <h3 className="font-semibold text-gray-900 mb-2">{service.name}</h3>
-                      <div className="space-y-1 text-sm text-gray-600">
-                        <p>Property Type: <span className="text-gray-900">{service.propertyType}</span></p>
-                        <p>Number of Floors: <span className="text-gray-900">{service.floors}</span></p>
-                        <p>Number of People: <span className="text-gray-900">{service.people}</span></p>
-                      </div>
+                      <BookingServiceDetailsLines service={service} />
                     </div>
                   </div>
                 </CardContent>

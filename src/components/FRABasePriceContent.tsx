@@ -88,6 +88,25 @@ import {
 } from "../api/servicesService";
 import { toast } from "sonner";
 import { getApiToken, getProfessionalId } from "../lib/auth";
+import {
+  AdminPriceOptionList,
+  AdminProfessionalMobilePriceCard,
+  FRA_SYSTEM_OPTIONS,
+  ALARM_SYSTEM_OPTIONS,
+  EXTINGUISHER_SYSTEM_OPTIONS,
+  EMERGENCY_LIGHT_SYSTEM_OPTIONS,
+  TRAINING_SYSTEM_OPTIONS,
+  CONSULTATION_SYSTEM_OPTIONS,
+  getFraAdminPriceRows,
+  getFraAdminPriceGroups,
+  FraGroupedAddonList,
+  getSystemOptionLabel,
+  getAlarmAdminPriceRows,
+  getExtinguisherAdminPriceRows,
+  getEmergencyLightAdminPriceRows,
+  getTrainingAdminPriceRows,
+  getConsultationAdminPriceRows,
+} from "./AdminPricingMobileCards";
 
 interface FRABasePriceContentProps {
   /** When true, shows all records (Admin). When false, filters by current professional (Professional). */
@@ -266,6 +285,19 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
   const HOVER_CLOSE_DELAY_MS = 400;
 
   const [fraPriceTab, setFraPriceTab] = useState<string>("fra-price");
+  const [fraFloorCatalogSize, setFraFloorCatalogSize] = useState(0);
+  const [fraPeopleCatalogSize, setFraPeopleCatalogSize] = useState(0);
+  const [fraDurationCatalogSize, setFraDurationCatalogSize] = useState(0);
+  const pricingTabsScrollRef = useRef<HTMLDivElement>(null);
+
+  const PRICING_SERVICE_TABS = [
+    { value: "fra-price", label: "FRA Price" },
+    { value: "fire-alarm", label: "Fire Alarm" },
+    { value: "extinguishers", label: "Extinguishers" },
+    { value: "emergency-lighting", label: "Emergency Lighting" },
+    { value: "training", label: "Training" },
+    { value: "consultancy", label: "Consultation" },
+  ] as const;
 
   const scheduleClose = useCallback(() => {
     if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
@@ -742,6 +774,28 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
       });
     return () => { cancelled = true; };
   }, [isAdmin, fraPriceTab, consultationFetchKey]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+    Promise.all([fetchFloorPricing(), fetchApproximatePeople(), fetchFraDurations()])
+      .then(([floors, people, durations]) => {
+        if (cancelled) return;
+        setFraFloorCatalogSize(Array.isArray(floors) ? floors.length : 0);
+        setFraPeopleCatalogSize(Array.isArray(people) ? people.length : 0);
+        setFraDurationCatalogSize(Array.isArray(durations) ? durations.length : 0);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFraFloorCatalogSize(0);
+          setFraPeopleCatalogSize(0);
+          setFraDurationCatalogSize(0);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
 
   useEffect(() => {
     if (!addModalOpen) return;
@@ -1514,6 +1568,56 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
     return isNaN(num) ? "—" : `£${num.toFixed(2)}`;
   };
 
+  const renderFraExpandedPrices = (pro: FraAllPricesProfessionalItem, selectedSystem: string) => {
+    if (selectedSystem === "property_type") {
+      return (
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="text-left py-2 px-3 font-medium text-gray-600">Option</th>
+              <th className="text-right py-2 px-3 font-medium text-gray-600">Base Price</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {pro.property_types.map((pt) => (
+              <tr key={pt.id}>
+                <td className="py-2 px-3 text-gray-900">{pt.property_type_name}</td>
+                <td className="py-2 px-3 text-right font-medium">{formatPrice(pt.price)}</td>
+              </tr>
+            ))}
+            {pro.property_types.length === 0 && (
+              <tr>
+                <td colSpan={2} className="py-3 px-3 text-gray-500 text-center">
+                  No property types configured
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      );
+    }
+    if (selectedSystem === "floor" || selectedSystem === "people" || selectedSystem === "duration") {
+      const catalogSize =
+        selectedSystem === "floor"
+          ? fraFloorCatalogSize
+          : selectedSystem === "people"
+            ? fraPeopleCatalogSize
+            : fraDurationCatalogSize;
+      const { groups, emptyMessage } = getFraAdminPriceGroups(pro, selectedSystem, catalogSize, formatPrice);
+      return <FraGroupedAddonList groups={groups} emptyMessage={emptyMessage} />;
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(min-width: 768px)").matches) return;
+    const container = pricingTabsScrollRef.current;
+    if (!container) return;
+    const activeEl = container.querySelector<HTMLElement>('[data-state="active"]');
+    activeEl?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }, [fraPriceTab]);
+
   return (
     <div className="space-y-6 pb-20 md:pb-6">
       <div>
@@ -1526,43 +1630,49 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
       </div>
 
       <Tabs value={fraPriceTab} onValueChange={setFraPriceTab} className="w-full">
-        <TabsList className="w-full flex flex-wrap h-auto gap-1 p-1 bg-gray-100 rounded-lg mb-6">
-          <TabsTrigger
-            value="fra-price"
-            className="flex-1 min-w-[120px] py-3 px-4 rounded-md font-medium transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-red-600 cursor-pointer hover:bg-gray-200 data-[state=inactive]:text-gray-700"
+        {/* Mobile only: horizontal slider */}
+        <div className="relative mb-4 -mx-4 px-4 min-w-0 md:hidden">
+          <div
+            ref={pricingTabsScrollRef}
+            className="overflow-x-auto"
+            style={{ WebkitOverflowScrolling: "touch" }}
+            aria-label="Service categories"
           >
-            FRA Price
-          </TabsTrigger>
-          <TabsTrigger
-            value="fire-alarm"
-            className="flex-1 min-w-[120px] py-3 px-4 rounded-md font-medium transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-red-600 cursor-pointer hover:bg-gray-200 data-[state=inactive]:text-gray-700"
-          >
-            Fire Alarm
-          </TabsTrigger>
-          <TabsTrigger
-            value="extinguishers"
-            className="flex-1 min-w-[120px] py-3 px-4 rounded-md font-medium transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-red-600 cursor-pointer hover:bg-gray-200 data-[state=inactive]:text-gray-700"
-          >
-            Extinguishers
-          </TabsTrigger>
-          <TabsTrigger
-            value="emergency-lighting"
-            className="flex-1 min-w-[120px] py-3 px-4 rounded-md font-medium transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-red-600 cursor-pointer hover:bg-gray-200 data-[state=inactive]:text-gray-700"
-          >
-            Emergency Lighting
-          </TabsTrigger>
-          <TabsTrigger
-            value="training"
-            className="flex-1 min-w-[120px] py-3 px-4 rounded-md font-medium transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-red-600 cursor-pointer hover:bg-gray-200 data-[state=inactive]:text-gray-700"
-          >
-            Training
-          </TabsTrigger>
-          <TabsTrigger
-            value="consultancy"
-            className="flex-1 min-w-[120px] py-3 px-4 rounded-md font-medium transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-red-600 cursor-pointer hover:bg-gray-200 data-[state=inactive]:text-gray-700"
-          >
-            Consultation
-          </TabsTrigger>
+            <TabsList className="inline-flex h-auto min-w-0 gap-1.5 p-1.5 bg-gray-100 rounded-lg mb-0">
+              {PRICING_SERVICE_TABS.map(({ value, label }) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="shrink-0 whitespace-nowrap py-2.5 px-3 text-sm rounded-md font-medium transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-red-600 cursor-pointer hover:bg-gray-200 data-[state=inactive]:text-gray-700"
+                >
+                  {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+          <div
+            className="pointer-events-none absolute left-0 top-0 bottom-0 w-10 z-10"
+            style={{ background: "linear-gradient(to right, #fff 20%, transparent)" }}
+            aria-hidden
+          />
+          <div
+            className="pointer-events-none absolute right-0 top-0 bottom-0 w-10 z-10"
+            style={{ background: "linear-gradient(to left, #fff 20%, transparent)" }}
+            aria-hidden
+          />
+        </div>
+
+        {/* Medium & large: original layout (unchanged) */}
+        <TabsList className="hidden md:flex w-full flex-wrap h-auto gap-1 p-1 bg-gray-100 rounded-lg mb-6">
+          {PRICING_SERVICE_TABS.map(({ value, label }) => (
+            <TabsTrigger
+              key={value}
+              value={value}
+              className="flex-1 min-w-[120px] py-3 px-4 rounded-md font-medium transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-red-600 cursor-pointer hover:bg-gray-200 data-[state=inactive]:text-gray-700"
+            >
+              {label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="fra-price" className="mt-0">
@@ -1606,7 +1716,8 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
               {fraAllPrices.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">No professionals' FRA prices found.</div>
               ) : (
-                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <>
+                <div className="hidden md:block overflow-x-auto rounded-lg border border-gray-200">
                   <table className="w-full table-fixed">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
@@ -1640,13 +1751,17 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                                     }}
                                   >
                                     <SelectTrigger className="flex-1 min-w-0 h-9 text-sm border-gray-200">
-                                      <SelectValue placeholder="Select system" />
+                                      <SelectValue
+                                        placeholder="Select system"
+                                        label={getSystemOptionLabel(selectedSystem, FRA_SYSTEM_OPTIONS)}
+                                      />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="property_type">Property type</SelectItem>
-                                      <SelectItem value="floor">Floor</SelectItem>
-                                      <SelectItem value="people">People</SelectItem>
-                                      <SelectItem value="duration">Duration</SelectItem>
+                                      {FRA_SYSTEM_OPTIONS.map((opt) => (
+                                        <SelectItem key={opt.value} value={opt.value}>
+                                          {opt.label}
+                                        </SelectItem>
+                                      ))}
                                     </SelectContent>
                                   </Select>
                                   <Button
@@ -1688,73 +1803,8 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                               <tr className="bg-white">
                                 <td colSpan={3} className="p-0 align-top">
                                   <div className="bg-white px-4 pb-4 pt-1 w-full">
-                                    <div className="rounded border border-gray-200 bg-white overflow-hidden w-full">
-                                      <table className="w-full text-sm">
-                                        <thead className="bg-gray-50 border-b border-gray-200">
-                                          <tr>
-                                            <th className="text-left py-2 px-3 font-medium text-gray-600">Option</th>
-                                            <th className="text-right py-2 px-3 font-medium text-gray-600">Base Price</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-100 bg-white">
-                                          {selectedSystem === "property_type" &&
-                                            pro.property_types.map((pt) => (
-                                              <tr key={pt.id}>
-                                                <td className="py-2 px-3 text-gray-900">{pt.property_type_name}</td>
-                                                <td className="py-2 px-3 text-right font-medium">{formatPrice(pt.price)}</td>
-                                              </tr>
-                                            ))}
-                                          {selectedSystem === "floor" &&
-                                            pro.floors.map((f) => (
-                                              <tr key={f.id}>
-                                                <td className="py-2 px-3 text-gray-900">{f.floor}</td>
-                                                <td className="py-2 px-3 text-right font-medium">{formatPrice(f.price)}</td>
-                                              </tr>
-                                            ))}
-                                          {selectedSystem === "people" &&
-                                            pro.people.map((p) => (
-                                              <tr key={p.id}>
-                                                <td className="py-2 px-3 text-gray-900">{p.people_name ?? `People #${p.id}`}</td>
-                                                <td className="py-2 px-3 text-right font-medium">{formatPrice(p.price)}</td>
-                                              </tr>
-                                            ))}
-                                          {selectedSystem === "duration" &&
-                                            pro.durations.map((d) => (
-                                              <tr key={d.id}>
-                                                <td className="py-2 px-3 text-gray-900">{d.duration_name}</td>
-                                                <td className="py-2 px-3 text-right font-medium">{formatPrice(d.price)}</td>
-                                              </tr>
-                                            ))}
-                                          {selectedSystem === "property_type" && pro.property_types.length === 0 && (
-                                            <tr>
-                                              <td colSpan={2} className="py-3 px-3 text-gray-500 text-center">
-                                                No property types configured
-                                              </td>
-                                            </tr>
-                                          )}
-                                          {selectedSystem === "floor" && pro.floors.length === 0 && (
-                                            <tr>
-                                              <td colSpan={2} className="py-3 px-3 text-gray-500 text-center">
-                                                No floors configured
-                                              </td>
-                                            </tr>
-                                          )}
-                                          {selectedSystem === "people" && pro.people.length === 0 && (
-                                            <tr>
-                                              <td colSpan={2} className="py-3 px-3 text-gray-500 text-center">
-                                                No people options configured
-                                              </td>
-                                            </tr>
-                                          )}
-                                          {selectedSystem === "duration" && pro.durations.length === 0 && (
-                                            <tr>
-                                              <td colSpan={2} className="py-3 px-3 text-gray-500 text-center">
-                                                No durations configured
-                                              </td>
-                                            </tr>
-                                          )}
-                                        </tbody>
-                                      </table>
+                                    <div className="rounded border border-gray-200 bg-white overflow-hidden w-full p-3">
+                                      {renderFraExpandedPrices(pro, selectedSystem)}
                                     </div>
                                   </div>
                                 </td>
@@ -1766,6 +1816,60 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                     </tbody>
                   </table>
                 </div>
+                <div className="md:hidden space-y-3">
+                  {fraAllPrices.map((pro) => {
+                    const selectedSystem = selectedSystemByPro[pro.professional_id] ?? "";
+                    const expanded = fraExpandedByPro[pro.professional_id] !== false;
+                    const catalogSize =
+                      selectedSystem === "floor"
+                        ? fraFloorCatalogSize
+                        : selectedSystem === "people"
+                          ? fraPeopleCatalogSize
+                          : selectedSystem === "duration"
+                            ? fraDurationCatalogSize
+                            : 0;
+                    const fraGroups =
+                      selectedSystem === "floor" || selectedSystem === "people" || selectedSystem === "duration"
+                        ? getFraAdminPriceGroups(pro, selectedSystem, catalogSize, formatPrice)
+                        : null;
+                    const flatRows = fraGroups ? null : getFraAdminPriceRows(pro, selectedSystem, formatPrice);
+                    return (
+                      <AdminProfessionalMobilePriceCard
+                        key={pro.professional_id}
+                        reference={`BS-${pro.professional_id}`}
+                        professionalName={pro.professional_name}
+                        systemOptions={FRA_SYSTEM_OPTIONS}
+                        selectedSystem={selectedSystem}
+                        onSystemChange={(value) => {
+                          setSelectedSystemByPro((prev) => ({
+                            ...prev,
+                            [pro.professional_id]: value,
+                          }));
+                          setFraExpandedByPro((prev) => ({ ...prev, [pro.professional_id]: true }));
+                        }}
+                        expanded={expanded}
+                        onToggleExpand={() =>
+                          setFraExpandedByPro((prev) => ({
+                            ...prev,
+                            [pro.professional_id]: !(prev[pro.professional_id] !== false),
+                          }))
+                        }
+                        onEdit={() => {
+                          setFraModalProfessionalId(String(pro.professional_id));
+                          setFraModalOpen(true);
+                        }}
+                        editAriaLabel="Edit FRA prices"
+                      >
+                        {fraGroups ? (
+                          <FraGroupedAddonList groups={fraGroups.groups} emptyMessage={fraGroups.emptyMessage} />
+                        ) : (
+                          <AdminPriceOptionList rows={flatRows!.rows} emptyMessage={flatRows!.emptyMessage} />
+                        )}
+                      </AdminProfessionalMobilePriceCard>
+                    );
+                  })}
+                </div>
+                </>
               )}
             </>
           )}
@@ -2003,7 +2107,8 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                   {alarmAllPrices.length === 0 ? (
                     <div className="text-center py-12 text-gray-500">No Fire Alarm prices found.</div>
                   ) : (
-                    <div className="overflow-x-auto rounded-lg border border-gray-200">
+                    <>
+                    <div className="hidden md:block overflow-x-auto rounded-lg border border-gray-200">
                       <table className="w-full table-fixed">
                         <thead className="bg-gray-50 border-b border-gray-200">
                           <tr>
@@ -2037,16 +2142,17 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                                         }}
                                       >
                                         <SelectTrigger className="flex-1 min-w-0 h-9 text-sm border-gray-200">
-                                          <SelectValue placeholder="Select system" />
+                                          <SelectValue
+                                            placeholder="Select system"
+                                            label={getSystemOptionLabel(selectedSystem, ALARM_SYSTEM_OPTIONS)}
+                                          />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="base_price">Base price</SelectItem>
-                                          <SelectItem value="smoke_detectors">Smoke detectors</SelectItem>
-                                          <SelectItem value="call_points">Call points</SelectItem>
-                                          <SelectItem value="floors">Floors</SelectItem>
-                                          <SelectItem value="panels">Panels</SelectItem>
-                                          <SelectItem value="last_services">Last services</SelectItem>
-                                          <SelectItem value="system_types">System types</SelectItem>
+                                          {ALARM_SYSTEM_OPTIONS.map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value}>
+                                              {opt.label}
+                                            </SelectItem>
+                                          ))}
                                         </SelectContent>
                                       </Select>
                                       <Button
@@ -2201,6 +2307,44 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                         </tbody>
                       </table>
                     </div>
+                    <div className="md:hidden space-y-3">
+                      {alarmAllPrices.map((pro) => {
+                        const selectedSystem = selectedAlarmSystemByPro[pro.professional_id] ?? "";
+                        const expanded = alarmExpandedByPro[pro.professional_id] !== false;
+                        const { rows, emptyMessage } = getAlarmAdminPriceRows(pro, selectedSystem, formatPrice);
+                        return (
+                          <AdminProfessionalMobilePriceCard
+                            key={pro.professional_id}
+                            reference={`BS-${pro.professional_id}`}
+                            professionalName={pro.professional_name}
+                            systemOptions={ALARM_SYSTEM_OPTIONS}
+                            selectedSystem={selectedSystem}
+                            onSystemChange={(value) => {
+                              setSelectedAlarmSystemByPro((prev) => ({
+                                ...prev,
+                                [pro.professional_id]: value,
+                              }));
+                              setAlarmExpandedByPro((prev) => ({ ...prev, [pro.professional_id]: true }));
+                            }}
+                            expanded={expanded}
+                            onToggleExpand={() =>
+                              setAlarmExpandedByPro((prev) => ({
+                                ...prev,
+                                [pro.professional_id]: !(prev[pro.professional_id] !== false),
+                              }))
+                            }
+                            onEdit={() => {
+                              setAlarmModalProfessionalId(String(pro.professional_id));
+                              setAlarmModalOpen(true);
+                            }}
+                            editAriaLabel="Edit Fire Alarm prices"
+                          >
+                            <AdminPriceOptionList rows={rows} emptyMessage={emptyMessage} />
+                          </AdminProfessionalMobilePriceCard>
+                        );
+                      })}
+                    </div>
+                    </>
                   )}
                 </>
               )}
@@ -2239,7 +2383,8 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                   {extinguisherAllPrices.length === 0 ? (
                     <div className="text-center py-12 text-gray-500">No Extinguisher prices found.</div>
                   ) : (
-                    <div className="overflow-x-auto rounded-lg border border-gray-200">
+                    <>
+                    <div className="hidden md:block overflow-x-auto rounded-lg border border-gray-200">
                       <table className="w-full table-fixed">
                         <thead className="bg-gray-50 border-b border-gray-200">
                           <tr>
@@ -2273,14 +2418,17 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                                         }}
                                       >
                                         <SelectTrigger className="flex-1 min-w-0 h-9 text-sm border-gray-200">
-                                          <SelectValue placeholder="Select system" />
+                                          <SelectValue
+                                            placeholder="Select system"
+                                            label={getSystemOptionLabel(selectedSystem, EXTINGUISHER_SYSTEM_OPTIONS)}
+                                          />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="base_price">Base price</SelectItem>
-                                          <SelectItem value="extinguishers">Extinguishers</SelectItem>
-                                          <SelectItem value="floors">Floors</SelectItem>
-                                          <SelectItem value="last_services">Last services</SelectItem>
-                                          <SelectItem value="extinguisher_types">Extinguisher types</SelectItem>
+                                          {EXTINGUISHER_SYSTEM_OPTIONS.map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value}>
+                                              {opt.label}
+                                            </SelectItem>
+                                          ))}
                                         </SelectContent>
                                       </Select>
                                       <Button
@@ -2409,6 +2557,44 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                         </tbody>
                       </table>
                     </div>
+                    <div className="md:hidden space-y-3">
+                      {extinguisherAllPrices.map((pro) => {
+                        const selectedSystem = selectedExtinguisherSystemByPro[pro.professional_id] ?? "";
+                        const expanded = extinguisherExpandedByPro[pro.professional_id] !== false;
+                        const { rows, emptyMessage } = getExtinguisherAdminPriceRows(pro, selectedSystem, formatPrice);
+                        return (
+                          <AdminProfessionalMobilePriceCard
+                            key={pro.professional_id}
+                            reference={`BS-${pro.professional_id}`}
+                            professionalName={pro.professional_name}
+                            systemOptions={EXTINGUISHER_SYSTEM_OPTIONS}
+                            selectedSystem={selectedSystem}
+                            onSystemChange={(value) => {
+                              setSelectedExtinguisherSystemByPro((prev) => ({
+                                ...prev,
+                                [pro.professional_id]: value,
+                              }));
+                              setExtinguisherExpandedByPro((prev) => ({ ...prev, [pro.professional_id]: true }));
+                            }}
+                            expanded={expanded}
+                            onToggleExpand={() =>
+                              setExtinguisherExpandedByPro((prev) => ({
+                                ...prev,
+                                [pro.professional_id]: !(prev[pro.professional_id] !== false),
+                              }))
+                            }
+                            onEdit={() => {
+                              setExtinguisherModalProfessionalId(String(pro.professional_id));
+                              setExtinguisherModalOpen(true);
+                            }}
+                            editAriaLabel="Edit Extinguisher prices"
+                          >
+                            <AdminPriceOptionList rows={rows} emptyMessage={emptyMessage} />
+                          </AdminProfessionalMobilePriceCard>
+                        );
+                      })}
+                    </div>
+                    </>
                   )}
                 </>
               )}
@@ -2447,7 +2633,8 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                   {lightTestingAllPrices.length === 0 ? (
                     <div className="text-center py-12 text-gray-500">No Emergency Lighting prices found.</div>
                   ) : (
-                    <div className="overflow-x-auto rounded-lg border border-gray-200">
+                    <>
+                    <div className="hidden md:block overflow-x-auto rounded-lg border border-gray-200">
                       <table className="w-full table-fixed">
                         <thead className="bg-gray-50 border-b border-gray-200">
                           <tr>
@@ -2481,14 +2668,17 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                                         }}
                                       >
                                         <SelectTrigger className="flex-1 min-w-0 h-9 text-sm border-gray-200">
-                                          <SelectValue placeholder="Select system" />
+                                          <SelectValue
+                                            placeholder="Select system"
+                                            label={getSystemOptionLabel(selectedSystem, EMERGENCY_LIGHT_SYSTEM_OPTIONS)}
+                                          />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="base_price">Base price</SelectItem>
-                                          <SelectItem value="lights">Lights</SelectItem>
-                                          <SelectItem value="floors">Floors</SelectItem>
-                                          <SelectItem value="light_tests">Light tests</SelectItem>
-                                          <SelectItem value="light_types">Light types</SelectItem>
+                                          {EMERGENCY_LIGHT_SYSTEM_OPTIONS.map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value}>
+                                              {opt.label}
+                                            </SelectItem>
+                                          ))}
                                         </SelectContent>
                                       </Select>
                                       <Button
@@ -2617,6 +2807,44 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                         </tbody>
                       </table>
                     </div>
+                    <div className="md:hidden space-y-3">
+                      {lightTestingAllPrices.map((pro) => {
+                        const selectedSystem = selectedLightTestingSystemByPro[pro.professional_id] ?? "";
+                        const expanded = lightTestingExpandedByPro[pro.professional_id] !== false;
+                        const { rows, emptyMessage } = getEmergencyLightAdminPriceRows(pro, selectedSystem, formatPrice);
+                        return (
+                          <AdminProfessionalMobilePriceCard
+                            key={pro.professional_id}
+                            reference={`BS-${pro.professional_id}`}
+                            professionalName={pro.professional_name}
+                            systemOptions={EMERGENCY_LIGHT_SYSTEM_OPTIONS}
+                            selectedSystem={selectedSystem}
+                            onSystemChange={(value) => {
+                              setSelectedLightTestingSystemByPro((prev) => ({
+                                ...prev,
+                                [pro.professional_id]: value,
+                              }));
+                              setLightTestingExpandedByPro((prev) => ({ ...prev, [pro.professional_id]: true }));
+                            }}
+                            expanded={expanded}
+                            onToggleExpand={() =>
+                              setLightTestingExpandedByPro((prev) => ({
+                                ...prev,
+                                [pro.professional_id]: !(prev[pro.professional_id] !== false),
+                              }))
+                            }
+                            onEdit={() => {
+                              setEmergencyLightingModalProfessionalId(String(pro.professional_id));
+                              setEmergencyLightingModalOpen(true);
+                            }}
+                            editAriaLabel="Edit Emergency Lighting prices"
+                          >
+                            <AdminPriceOptionList rows={rows} emptyMessage={emptyMessage} />
+                          </AdminProfessionalMobilePriceCard>
+                        );
+                      })}
+                    </div>
+                    </>
                   )}
                 </>
               )}
@@ -2655,7 +2883,8 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                   {marshalAllPrices.length === 0 ? (
                     <div className="text-center py-12 text-gray-500">No Training (Marshal) prices found.</div>
                   ) : (
-                    <div className="overflow-x-auto rounded-lg border border-gray-200">
+                    <>
+                    <div className="hidden md:block overflow-x-auto rounded-lg border border-gray-200">
                       <table className="w-full table-fixed">
                         <thead className="bg-gray-50 border-b border-gray-200">
                           <tr>
@@ -2689,14 +2918,17 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                                         }}
                                       >
                                         <SelectTrigger className="flex-1 min-w-0 h-9 text-sm border-gray-200">
-                                          <SelectValue placeholder="Select system" />
+                                          <SelectValue
+                                            placeholder="Select system"
+                                            label={getSystemOptionLabel(selectedSystem, TRAINING_SYSTEM_OPTIONS)}
+                                          />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="base_price">Base price</SelectItem>
-                                          <SelectItem value="people">People</SelectItem>
-                                          <SelectItem value="places">Places</SelectItem>
-                                          <SelectItem value="training_on">Training On</SelectItem>
-                                          <SelectItem value="experience">Experience</SelectItem>
+                                          {TRAINING_SYSTEM_OPTIONS.map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value}>
+                                              {opt.label}
+                                            </SelectItem>
+                                          ))}
                                         </SelectContent>
                                       </Select>
                                       <Button
@@ -2825,6 +3057,44 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                         </tbody>
                       </table>
                     </div>
+                    <div className="md:hidden space-y-3">
+                      {marshalAllPrices.map((pro) => {
+                        const selectedSystem = selectedMarshalSystemByPro[pro.professional_id] ?? "";
+                        const expanded = marshalExpandedByPro[pro.professional_id] !== false;
+                        const { rows, emptyMessage } = getTrainingAdminPriceRows(pro, selectedSystem, formatPrice);
+                        return (
+                          <AdminProfessionalMobilePriceCard
+                            key={pro.professional_id}
+                            reference={`BS-${pro.professional_id}`}
+                            professionalName={pro.professional_name}
+                            systemOptions={TRAINING_SYSTEM_OPTIONS}
+                            selectedSystem={selectedSystem}
+                            onSystemChange={(value) => {
+                              setSelectedMarshalSystemByPro((prev) => ({
+                                ...prev,
+                                [pro.professional_id]: value,
+                              }));
+                              setMarshalExpandedByPro((prev) => ({ ...prev, [pro.professional_id]: true }));
+                            }}
+                            expanded={expanded}
+                            onToggleExpand={() =>
+                              setMarshalExpandedByPro((prev) => ({
+                                ...prev,
+                                [pro.professional_id]: !(prev[pro.professional_id] !== false),
+                              }))
+                            }
+                            onEdit={() => {
+                              setTrainingModalProfessionalId(String(pro.professional_id));
+                              setTrainingPricingModalOpen(true);
+                            }}
+                            editAriaLabel="Edit Training prices"
+                          >
+                            <AdminPriceOptionList rows={rows} emptyMessage={emptyMessage} />
+                          </AdminProfessionalMobilePriceCard>
+                        );
+                      })}
+                    </div>
+                    </>
                   )}
                 </>
               )}
@@ -2863,7 +3133,8 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                   {consultationAllPrices.length === 0 ? (
                     <div className="text-center py-12 text-gray-500">No Consultation prices found.</div>
                   ) : (
-                    <div className="overflow-x-auto rounded-lg border border-gray-200">
+                    <>
+                    <div className="hidden md:block overflow-x-auto rounded-lg border border-gray-200">
                       <table className="w-full table-fixed">
                         <thead className="bg-gray-50 border-b border-gray-200">
                           <tr>
@@ -2897,12 +3168,17 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                                         }}
                                       >
                                         <SelectTrigger className="flex-1 min-w-0 h-9 text-sm border-gray-200">
-                                          <SelectValue placeholder="Select system" />
+                                          <SelectValue
+                                            placeholder="Select system"
+                                            label={getSystemOptionLabel(selectedSystem, CONSULTATION_SYSTEM_OPTIONS)}
+                                          />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="base_price">Base price</SelectItem>
-                                          <SelectItem value="modes">Modes</SelectItem>
-                                          <SelectItem value="hours">Hours</SelectItem>
+                                          {CONSULTATION_SYSTEM_OPTIONS.map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value}>
+                                              {opt.label}
+                                            </SelectItem>
+                                          ))}
                                         </SelectContent>
                                       </Select>
                                       <Button
@@ -3005,6 +3281,44 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
                         </tbody>
                       </table>
                     </div>
+                    <div className="md:hidden space-y-3">
+                      {consultationAllPrices.map((pro) => {
+                        const selectedSystem = selectedConsultationSystemByPro[pro.professional_id] ?? "";
+                        const expanded = consultationExpandedByPro[pro.professional_id] !== false;
+                        const { rows, emptyMessage } = getConsultationAdminPriceRows(pro, selectedSystem, formatPrice);
+                        return (
+                          <AdminProfessionalMobilePriceCard
+                            key={pro.professional_id}
+                            reference={`BS-${pro.professional_id}`}
+                            professionalName={pro.professional_name}
+                            systemOptions={CONSULTATION_SYSTEM_OPTIONS}
+                            selectedSystem={selectedSystem}
+                            onSystemChange={(value) => {
+                              setSelectedConsultationSystemByPro((prev) => ({
+                                ...prev,
+                                [pro.professional_id]: value,
+                              }));
+                              setConsultationExpandedByPro((prev) => ({ ...prev, [pro.professional_id]: true }));
+                            }}
+                            expanded={expanded}
+                            onToggleExpand={() =>
+                              setConsultationExpandedByPro((prev) => ({
+                                ...prev,
+                                [pro.professional_id]: !(prev[pro.professional_id] !== false),
+                              }))
+                            }
+                            onEdit={() => {
+                              setConsultancyModalProfessionalId(String(pro.professional_id));
+                              setConsultationPricingModalOpen(true);
+                            }}
+                            editAriaLabel="Edit consultation prices"
+                          >
+                            <AdminPriceOptionList rows={rows} emptyMessage={emptyMessage} />
+                          </AdminProfessionalMobilePriceCard>
+                        );
+                      })}
+                    </div>
+                    </>
                   )}
                 </>
               )}
@@ -3261,8 +3575,8 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
       {/* Consultancy Pricing Modal – opened from edit icon on "All professionals' Consultation prices" card */}
       <Dialog open={consultationPricingModalOpen} onOpenChange={setConsultationPricingModalOpen}>
         <DialogContent className="max-w-4xl w-full max-h-[90vh] flex flex-col p-0 overflow-hidden">
-          <div className="flex-shrink-0 bg-gradient-to-r from-red-50 to-orange-50 border-b pl-6 pr-14 pt-6 pb-4">
-            <div>
+          <div className="flex-shrink-0 w-full bg-gradient-to-r from-red-50 to-orange-50 border-b">
+            <div className="pl-4 pr-12 pt-6 pb-4 md:pl-8 md:pr-14">
               <DialogTitle className="text-lg text-[#0A1A2F] font-semibold">
                 Consultancy Pricing
               </DialogTitle>
@@ -3546,8 +3860,8 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
       {/* Training Pricing Modal – scrollable body + sticky footer (same as Fire Alarm) */}
       <Dialog open={trainingPricingModalOpen} onOpenChange={setTrainingPricingModalOpen}>
         <DialogContent className="max-w-4xl w-full max-h-[90vh] flex flex-col p-0 overflow-hidden">
-          <div className="flex-shrink-0 bg-gradient-to-r from-red-50 to-orange-50 border-b pl-6 pr-14 pt-6 pb-4">
-            <div>
+          <div className="flex-shrink-0 w-full bg-gradient-to-r from-red-50 to-orange-50 border-b">
+            <div className="pl-4 pr-12 pt-6 pb-4 md:pl-8 md:pr-14">
               <DialogTitle className="text-lg text-[#0A1A2F] font-semibold">
                 Training Pricing
               </DialogTitle>
@@ -3990,8 +4304,8 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
       {/* Extinguisher Pricing Modal – scrollable body + sticky footer (same as Fire Alarm) */}
       <Dialog open={extinguisherModalOpen} onOpenChange={setExtinguisherModalOpen}>
         <DialogContent className="max-w-4xl w-full max-h-[90vh] flex flex-col p-0 overflow-hidden">
-          <div className="flex-shrink-0 bg-gradient-to-r from-red-50 to-orange-50 border-b pl-6 pr-14 pt-6 pb-4">
-            <div>
+          <div className="flex-shrink-0 w-full bg-gradient-to-r from-red-50 to-orange-50 border-b">
+            <div className="pl-4 pr-12 pt-6 pb-4 md:pl-8 md:pr-14">
               <DialogTitle className="text-lg text-[#0A1A2F] font-semibold">
                 Fire Extinguisher Pricing
               </DialogTitle>
@@ -4445,8 +4759,8 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
       {/* Fire Alarm Pricing Modal – scrollable body, sticky footer so Update Price is always visible */}
       <Dialog open={alarmModalOpen} onOpenChange={setAlarmModalOpen}>
         <DialogContent className="max-w-4xl w-full max-h-[90vh] flex flex-col p-0 overflow-hidden">
-          <div className="flex-shrink-0 bg-gradient-to-r from-red-50 to-orange-50 border-b pl-6 pr-14 pt-6 pb-4">
-            <div>
+          <div className="flex-shrink-0 w-full bg-gradient-to-r from-red-50 to-orange-50 border-b">
+            <div className="pl-4 pr-12 pt-6 pb-4 md:pl-8 md:pr-14">
               <DialogTitle className="text-lg text-[#0A1A2F] font-semibold">
                 Fire Alarm Pricing
               </DialogTitle>
@@ -5026,8 +5340,8 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
       {/* FRA Pricing Modal – scrollable body + sticky footer (same as Fire Alarm) */}
       <Dialog open={fraModalOpen} onOpenChange={setFraModalOpen}>
         <DialogContent className="max-w-4xl w-full max-h-[90vh] flex flex-col p-0 overflow-hidden">
-          <div className="flex-shrink-0 bg-gradient-to-r from-red-50 to-orange-50 border-b pl-6 pr-14 pt-6 pb-4">
-            <div>
+          <div className="flex-shrink-0 w-full bg-gradient-to-r from-red-50 to-orange-50 border-b">
+            <div className="pl-4 pr-12 pt-6 pb-4 md:pl-8 md:pr-14">
               <DialogTitle className="text-lg text-[#0A1A2F] font-semibold">
                 Fire Risk Assessment Pricing
               </DialogTitle>
@@ -5393,8 +5707,8 @@ function FRABasePriceContent({ isAdmin = false }: FRABasePriceContentProps) {
 
       <Dialog open={emergencyLightingModalOpen} onOpenChange={setEmergencyLightingModalOpen}>
         <DialogContent className="max-w-4xl w-full max-h-[90vh] flex flex-col p-0 overflow-hidden">
-          <div className="flex-shrink-0 bg-gradient-to-r from-red-50 to-orange-50 border-b pl-6 pr-14 pt-6 pb-4">
-            <div>
+          <div className="flex-shrink-0 w-full bg-gradient-to-r from-red-50 to-orange-50 border-b">
+            <div className="pl-4 pr-12 pt-6 pb-4 md:pl-8 md:pr-14">
               <DialogTitle className="text-lg text-[#0A1A2F] font-semibold">
                 Emergency Lighting Pricing
               </DialogTitle>

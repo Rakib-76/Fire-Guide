@@ -19,6 +19,48 @@ import { getApiToken } from "../lib/auth";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import fireGuideLogoImage from "../assets/FireguideLogo.png";
+
+function loadImageForPdf(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Logo image failed to load"));
+    img.src = src;
+  });
+}
+
+/** Fire Guide logo in PDF header (replaces red FG placeholder). */
+async function drawFireGuidePdfHeader(
+  doc: jsPDF,
+  opts?: { margin?: number; y?: number; logoMaxH?: number; logoMaxW?: number }
+): Promise<void> {
+  const margin = opts?.margin ?? 14;
+  const y = opts?.y ?? 10;
+  const logoMaxH = opts?.logoMaxH ?? 16;
+  const logoMaxW = opts?.logoMaxW ?? 95;
+  try {
+    const logoImg = await loadImageForPdf(fireGuideLogoImage);
+    const nw = logoImg.naturalWidth || logoImg.width;
+    const nh = logoImg.naturalHeight || logoImg.height;
+    const ratio = nw > 0 && nh > 0 ? nw / nh : 3.5;
+    let logoH = logoMaxH;
+    let logoW = logoH * ratio;
+    if (logoW > logoMaxW) {
+      logoW = logoMaxW;
+      logoH = logoW / ratio;
+    }
+    doc.addImage(logoImg, "PNG", margin, y, logoW, logoH);
+  } catch {
+    doc.setFillColor(220, 38, 38);
+    doc.rect(margin, y, 18, 12, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text("FG", margin + 5, y + 8);
+  }
+}
 
 interface PaymentHistoryItem {
   id: number;
@@ -91,20 +133,7 @@ export function ProfessionalPayments() {
       const statementDate = new Date().toLocaleDateString('en-GB');
       const statementNumber = `STM-${new Date().getFullYear()}-${String(paymentHistory.length).padStart(4, '0')}`;
       
-      // Header Section
-      // Logo placeholder (red rectangle for Fire Guide)
-      doc.setFillColor(220, 38, 38);
-      doc.rect(14, 10, 12, 12, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'bold');
-      doc.text('FG', 16.5, 17.5);
-      
-      // Company Name
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(18);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Fire Guide', 30, 18);
+      await drawFireGuidePdfHeader(doc, { margin: 14, y: 10, logoMaxH: 16, logoMaxW: 95 });
       
       // STATEMENT Title
       doc.setTextColor(...primaryBlue);
@@ -716,7 +745,7 @@ export function ProfessionalPayments() {
         </CardContent>
       </Card>
 
-      {/* Bank Details */}
+      {/* Payout Settings — hidden until bank payout flow is ready
       <Card>
         <CardHeader>
           <CardTitle className="text-[#0A1A2F]">Payout Settings</CardTitle>
@@ -742,6 +771,7 @@ export function ProfessionalPayments() {
           </div>
         </CardContent>
       </Card>
+      */}
     </div>
   );
 }

@@ -70,23 +70,26 @@ type SelectValueProps = {
   placeholder?: string;
   /** When the Select `value` is an id, pass the human-readable label here so the trigger does not show the raw id. */
   label?: string;
+  /** Label stays narrow so the chevron sits close (header filters). */
+  compact?: boolean;
 };
 
-const SelectValue = ({ placeholder, label }: SelectValueProps) => {
+const SelectValue = ({ placeholder, label, compact }: SelectValueProps) => {
   const context = React.useContext(SelectContext);
   const raw = context?.value ?? "";
+  const valueClass = cn("block min-w-0 truncate text-left", compact ? "shrink-0" : "flex-1");
   if (label !== undefined) {
     const hasSelection = raw !== "";
     return (
-      <span className={cn("block min-w-0 flex-1 truncate text-left", !hasSelection && "text-gray-500")}>
+      <span className={cn(valueClass, !hasSelection && "text-gray-500")}>
         {!hasSelection ? (placeholder ?? "") : label.trim() ? label : "—"}
       </span>
     );
   }
   if (!raw) {
-    return <span className="block min-w-0 flex-1 truncate text-left text-gray-500">{placeholder ?? ""}</span>;
+    return <span className={cn(valueClass, "text-gray-500")}>{placeholder ?? ""}</span>;
   }
-  return <span className="block min-w-0 flex-1 truncate text-left">{raw}</span>;
+  return <span className={valueClass}>{raw}</span>;
 };
 
 const SelectContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(

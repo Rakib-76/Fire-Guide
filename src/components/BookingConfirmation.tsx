@@ -13,6 +13,7 @@ import {
   CreditCard
 } from "lucide-react";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
+import { BookingServiceDetailsLines } from "./BookingServiceDetailsLines";
 import type { BookingData } from "./BookingFlow";
 
 interface BookingConfirmationProps {
@@ -84,10 +85,8 @@ export function BookingConfirmation({ bookingData, onDone }: BookingConfirmation
                     Service
                   </p>
                   <p className="font-semibold text-gray-900 text-lg">{service.name}</p>
-                  <div className="mt-2 space-y-1 text-sm text-gray-600">
-                    <p>Property Type: <span className="text-gray-900">{service.propertyType}</span></p>
-                    <p>Number of Floors: <span className="text-gray-900">{service.floors}</span></p>
-                    <p>Occupancy: <span className="text-gray-900">{service.people} people</span></p>
+                  <div className="mt-2">
+                    <BookingServiceDetailsLines service={service} />
                   </div>
                 </div>
 

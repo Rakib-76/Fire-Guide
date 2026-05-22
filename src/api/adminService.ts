@@ -214,6 +214,105 @@ export const getProfessionalPayoutRequestList = async (
   return response.data;
 };
 
+/** Admin Payout page summary cards — from POST /professional/payout-dashboard */
+export interface ProfessionalPayoutDashboardData {
+  total_invoices: number;
+  paid_invoices: number;
+  pending_invoices: number;
+  total_amount: number;
+  total_paid_amount: number;
+  total_pending_amount: number;
+}
+
+export interface ProfessionalPayoutDashboardResponse {
+  status?: boolean;
+  success?: boolean;
+  message?: string;
+  data?: unknown;
+}
+
+function pickPayoutDashboardNumber(source: Record<string, unknown>, keys: string[]): number {
+  for (const key of keys) {
+    const raw = source[key];
+    if (raw == null || raw === '') continue;
+    const n = typeof raw === 'number' ? raw : Number(raw);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
+/** Normalize payout dashboard payload (supports nested `data` and snake_case variants). */
+export function normalizeProfessionalPayoutDashboard(
+  payload: unknown
+): ProfessionalPayoutDashboardData | null {
+  if (payload == null) return null;
+  let record: Record<string, unknown> | null = null;
+  if (typeof payload === 'object') {
+    const root = payload as Record<string, unknown>;
+    const inner = root.data;
+    if (inner != null && typeof inner === 'object' && !Array.isArray(inner)) {
+      const nested = inner as Record<string, unknown>;
+      record =
+        nested.data != null && typeof nested.data === 'object' && !Array.isArray(nested.data)
+          ? (nested.data as Record<string, unknown>)
+          : nested;
+    } else {
+      record = root;
+    }
+  }
+  if (!record) return null;
+
+  return {
+    total_invoices: pickPayoutDashboardNumber(record, [
+      'total_invoices',
+      'total_invoice',
+      'total',
+    ]),
+    paid_invoices: pickPayoutDashboardNumber(record, [
+      'paid_invoices',
+      'paid_invoice',
+      'paid',
+      'paid_count',
+    ]),
+    pending_invoices: pickPayoutDashboardNumber(record, [
+      'pending_invoices',
+      'pending_invoice',
+      'pending_payment',
+      'pending',
+      'unpaid_invoices',
+    ]),
+    total_amount: pickPayoutDashboardNumber(record, [
+      'total_amount',
+      'total_price',
+      'amount',
+    ]),
+    total_paid_amount: pickPayoutDashboardNumber(record, [
+      'total_paid_amount',
+      'paid_amount',
+      'total_paid',
+    ]),
+    total_pending_amount: pickPayoutDashboardNumber(record, [
+      'total_pending_amount',
+      'pending_amount',
+      'total_pending',
+    ]),
+  };
+}
+
+/**
+ * POST /professional/payout-dashboard — admin payout summary (Total invoices, Paid, Total amount)
+ * Body: { api_token }
+ */
+export const getProfessionalPayoutDashboard = async (
+  data: AdminOverviewSummaryRequest
+): Promise<ProfessionalPayoutDashboardResponse> => {
+  const response = await apiClient.post<ProfessionalPayoutDashboardResponse>(
+    '/professional/payout-dashboard',
+    { api_token: data.api_token }
+  );
+  return response.data;
+};
+
 export interface UpdateAdminPayoutRequestStatusRequest {
   api_token: string;
   payout_request_id: number;
@@ -252,18 +351,27 @@ export interface FraAllPricesFloor {
   id: number;
   floor: string;
   price: string;
+  property_type_id?: number;
+  property_type_name?: string;
+  floor_id?: number;
 }
 
 export interface FraAllPricesPeople {
   id: number;
   people_name: string | null;
   price: string;
+  property_type_id?: number;
+  property_type_name?: string;
+  people_id?: number;
 }
 
 export interface FraAllPricesDuration {
   id: number;
   duration_name: string;
   price: string;
+  property_type_id?: number;
+  property_type_name?: string;
+  duration_id?: number;
 }
 
 export interface FraAllPricesProfessionalItem {
@@ -1894,6 +2002,7 @@ export interface AdminCustomerItem {
   total_bookings: number;
   total_price: number;
   property_address: string;
+  last_booking?: string | null;
 }
 
 export interface AdminCustomerListResponse {
@@ -2040,6 +2149,18 @@ export const getAdminProfessionalSummary = async (
 };
 
 // Admin professionals list (Professional Management cards)
+export interface AdminProfessionalListCertificate {
+  id?: number;
+  name?: string;
+  evidence?: string;
+}
+
+export interface AdminProfessionalListExperience {
+  id?: number;
+  experience_name?: string;
+  evidence?: string;
+}
+
 export interface AdminProfessionalListItem {
   id: number;
   name: string;
@@ -2057,6 +2178,12 @@ export interface AdminProfessionalListItem {
   review: number | null;
   professional_image: string | null;
   services: string[];
+  /** Certificates shown on list cards */
+  certificates?: AdminProfessionalListCertificate[];
+  /** Experience / expertise rows shown on list cards */
+  experience?: AdminProfessionalListExperience[];
+  longitude?: number | null;
+  latitude?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -2485,6 +2612,40 @@ export const getAdminBookingsSummary = async (
   return response.data;
 };
 
+export interface AdminCancelBookingRequest {
+  api_token: string;
+  booking_id: number;
+  cancellation_reason?: string;
+  cancellation_note?: string;
+}
+
+export interface AdminCancelBookingResponse {
+  success?: boolean;
+  status?: string | boolean;
+  message?: string;
+}
+
+/**
+ * Cancel a booking from admin dashboard
+ * POST /admin_dashboard/cancel_booking
+ */
+export const cancelAdminBooking = async (
+  data: AdminCancelBookingRequest
+): Promise<AdminCancelBookingResponse> => {
+  const response = await apiClient.post<AdminCancelBookingResponse>(
+    '/admin_dashboard/cancel_booking',
+    {
+      api_token: data.api_token,
+      booking_id: data.booking_id,
+      ...(data.cancellation_reason ? { cancellation_reason: data.cancellation_reason } : {}),
+      ...(data.cancellation_note?.trim()
+        ? { cancellation_note: data.cancellation_note.trim() }
+        : {}),
+    }
+  );
+  return response.data;
+};
+
 // Admin reviews summary (Review Management stat cards)
 export interface AdminReviewsSummaryData {
   total_review: number;
@@ -2494,22 +2655,80 @@ export interface AdminReviewsSummaryData {
 }
 
 export interface AdminReviewsSummaryResponse {
-  success: boolean;
-  data: AdminReviewsSummaryData;
+  success?: boolean;
+  status?: string | boolean;
+  message?: string;
+  data?: AdminReviewsSummaryData | Record<string, unknown>;
+}
+
+function pickAdminReviewsSummaryNumber(
+  block: Record<string, unknown>,
+  keys: string[]
+): number {
+  for (const key of keys) {
+    const raw = block[key];
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string") {
+      const n = parseInt(raw, 10);
+      if (!Number.isNaN(n)) return n;
+    }
+  }
+  return 0;
+}
+
+/** Normalize POST /admin-reviews/summary payload into stat card values. */
+export function normalizeAdminReviewsSummary(payload: unknown): AdminReviewsSummaryData | null {
+  if (!payload || typeof payload !== "object") return null;
+  const root = payload as Record<string, unknown>;
+
+  const success =
+    root.success === true ||
+    root.status === true ||
+    root.status === "success" ||
+    root.data != null;
+  if (!success && root.data == null) return null;
+
+  let block: Record<string, unknown> = root;
+  if (root.data != null && typeof root.data === "object" && !Array.isArray(root.data)) {
+    block = root.data as Record<string, unknown>;
+  }
+
+  return {
+    total_review: pickAdminReviewsSummaryNumber(block, [
+      "total_review",
+      "total_reviews",
+      "total",
+    ]),
+    pending_review: pickAdminReviewsSummaryNumber(block, [
+      "pending_review",
+      "pending_reviews",
+      "pending",
+    ]),
+    approved_review: pickAdminReviewsSummaryNumber(block, [
+      "approved_review",
+      "approved_reviews",
+      "approved",
+    ]),
+    rejected_review: pickAdminReviewsSummaryNumber(block, [
+      "rejected_review",
+      "rejected_reviews",
+      "rejected",
+    ]),
+  };
 }
 
 /**
- * Fetch admin reviews summary
- * POST https://fireguide.attoexasolutions.com/api/admin-reviews/summary
+ * Fetch admin reviews summary (stat cards).
+ * POST /admin-reviews/summary — body: { api_token }
  */
 export const getAdminReviewsSummary = async (
   data: AdminOverviewSummaryRequest
-): Promise<AdminReviewsSummaryResponse> => {
+): Promise<AdminReviewsSummaryData | null> => {
   const response = await apiClient.post<AdminReviewsSummaryResponse>(
-    '/admin-reviews/summary',
+    "/admin-reviews/summary",
     { api_token: data.api_token }
   );
-  return response.data;
+  return normalizeAdminReviewsSummary(response.data);
 };
 
 // Admin reviews list (Review Management - individual review cards)
@@ -2522,6 +2741,8 @@ export interface AdminReviewListItem {
   status: string;
   professional_name: string;
   professional_email: string;
+  ref_code?: string;
+  booking_ref?: string;
   /** For admin “Contact professional” (POST /contact-professional/create); number or numeric string from API. */
   professional_id?: number | string;
   professional_user_id?: number | string;
@@ -2796,11 +3017,15 @@ function extractAdminNotificationsSummaryRecord(body: unknown): Record<string, u
     if (isAdminNotifRecord(d2)) layers.push(d2);
   }
   const hintKeys = [
+    'total_notification',
     'total_notifications',
     'total',
+    'unread_notification',
     'unread',
+    'payment_notification',
     'payments',
     'critical',
+    'system_notification',
     'system_alerts',
     'system',
   ] as const;
@@ -2813,12 +3038,14 @@ function extractAdminNotificationsSummaryRecord(body: unknown): Record<string, u
 
 function normalizeAdminNotificationsSummaryCards(payload: Record<string, unknown>): AdminNotificationCards {
   const total_notifications = readNonNegativeSummaryInt(payload, [
+    'total_notification',
     'total_notifications',
     'total',
     'total_count',
     'all',
   ]);
   const unread = readNonNegativeSummaryInt(payload, [
+    'unread_notification',
     'unread',
     'unread_count',
     'unread_notifications',
@@ -2828,6 +3055,7 @@ function normalizeAdminNotificationsSummaryCards(payload: Record<string, unknown
     'unRead',
   ]);
   const paymentsRaw = readNonNegativeSummaryInt(payload, [
+    'payment_notification',
     'payments',
     'payment',
     'payment_notifications',
@@ -2836,6 +3064,7 @@ function normalizeAdminNotificationsSummaryCards(payload: Record<string, unknown
   const criticalRaw = readNonNegativeSummaryInt(payload, ['critical']);
   const paymentsMerged = paymentsRaw || criticalRaw;
   const system_alerts = readNonNegativeSummaryInt(payload, [
+    'system_notification',
     'system_alerts',
     'system',
     'system_count',
@@ -2978,6 +3207,27 @@ export const getAdminPaymentList = async (
   const response = await apiClient.post<AdminPaymentListResponse>(
     '/admin-payment/list',
     { api_token: data.api_token }
+  );
+  return response.data;
+};
+
+export type AdminPaymentFilterPeriod = 'all' | 'today' | 'week' | 'month';
+
+export interface AdminPaymentFilterRequest {
+  api_token: string;
+  filter: AdminPaymentFilterPeriod;
+}
+
+/**
+ * Filter admin payment list by period.
+ * POST https://fireguide.attoexasolutions.com/api/admin-payment/filter
+ */
+export const getAdminPaymentFilter = async (
+  data: AdminPaymentFilterRequest
+): Promise<AdminPaymentListResponse> => {
+  const response = await apiClient.post<AdminPaymentListResponse>(
+    '/admin-payment/filter',
+    { api_token: data.api_token, filter: data.filter }
   );
   return response.data;
 };

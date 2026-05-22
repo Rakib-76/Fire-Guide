@@ -559,16 +559,31 @@ export interface ProfessionalBookingItem {
   user_id: number | null;
   created_at: string;
   updated_at: string;
-  selected_service: {
-    id: number;
-    name: string;
-    price: string;
-  } | null;
+  selected_service?:
+    | {
+        id: number;
+        name: string;
+        price: string;
+      }
+    | {
+        type?: string;
+        data?: Record<string, { id?: number; value?: string } | string | number | null>;
+      }
+    | null;
   /** Present when `selected_service` is null; use `service_name` for display */
   service?: {
     id: number;
     service_name: string;
   } | null;
+  /** Flat fields on search/list payloads (service_name used for card title only). */
+  service_name?: string;
+  service_id?: number;
+  service_type?: string;
+  mode_id?: number;
+  hour_id?: number;
+  mode_value?: string;
+  hour_value?: string;
+  access_note?: string | null;
   creator: {
     id: number;
     full_name: string;
@@ -581,6 +596,12 @@ export interface ProfessionalBookingItem {
   is_payout_requested?: boolean | number | string | null;
   payout_requested?: boolean | number | string | null;
   payout_request_status?: string | null;
+  is_renewal?: boolean | number | string | null;
+  renewal_request?: boolean | number | string | null;
+  is_renewal_requested?: boolean | number | string | null;
+  renewal_requested?: boolean | number | string | null;
+  renewal_request_status?: string | null;
+  is_renewal_sent?: boolean | number | string | null;
 }
 
 export interface GetProfessionalBookingsResponse {
@@ -966,6 +987,60 @@ export interface ProfessionalPayoutRequestResponse {
  * Request payout to admin for a completed booking.
  * POST /professional/payout-request — body: { api_token, booking_id }
  */
+export interface ProfessionalRenewalRequestBody {
+  api_token: string;
+  booking_id: number;
+}
+
+export interface ProfessionalRenewalRequestResponse {
+  status?: boolean | string;
+  success?: boolean;
+  message?: string;
+  data?: unknown;
+}
+
+/**
+ * Send renewal request for a completed booking (when is_renewal is true).
+ * POST /custommer/renewal-request — body: { api_token, booking_id }
+ */
+export const requestProfessionalRenewal = async (
+  data: ProfessionalRenewalRequestBody
+): Promise<ProfessionalRenewalRequestResponse> => {
+  try {
+    const response = await apiClient.post<ProfessionalRenewalRequestResponse>(
+      '/custommer/renewal-request',
+      {
+        api_token: data.api_token,
+        booking_id: data.booking_id,
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error sending renewal request:', error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          success: false,
+          message: error.response.data?.message || 'Failed to send renewal request',
+          error: error.response.data?.error || error.message,
+          status: error.response.status,
+        };
+      } else if (error.request) {
+        throw {
+          success: false,
+          message: 'No response from server. Please check your connection.',
+          error: 'Network error',
+        };
+      }
+    }
+    throw {
+      success: false,
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
+
 export const requestProfessionalPayout = async (
   data: ProfessionalPayoutRequestBody
 ): Promise<ProfessionalPayoutRequestResponse> => {

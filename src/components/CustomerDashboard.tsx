@@ -55,7 +55,11 @@ import { uploadProfileImage, UploadProfileImageRequest, updateUser, UpdateUserRe
 import { getApiToken, getUserInfo, setUserInfo } from "../lib/auth";
 import { Loader2, Upload, ArrowLeft, Save } from "lucide-react";
 import { storeAddress, StoreAddressRequest, fetchAddresses, AddressResponse, deleteAddress, updateAddress } from "../api/addressService";
-import { getMyQuoteRequests, MyQuoteRequestItem } from "../api/customQuoteRequestsService";
+import {
+  getMyQuoteRequests,
+  updateQuoteRequestStatus,
+  type MyQuoteRequestItem,
+} from "../api/customQuoteRequestsService";
 import {
   storePaymentInvoiceQuoteCustomer,
   isPaymentInvoiceStoreSuccess,
@@ -155,6 +159,40 @@ function parseQuotedPriceNumberForQuote(quoted: string | number | null | undefin
   return Number.isFinite(n) ? n : NaN;
 }
 
+/** Resolve quoted amount from API row (several backends use different keys). */
+function getQuoteRequestQuotedPriceRaw(req: MyQuoteRequestItem): string | number | null | undefined {
+  const root = req as MyQuoteRequestItem & Record<string, unknown>;
+  const candidates: unknown[] = [
+    req.quoted_price,
+    root.price,
+    root.quoted_amount,
+    root.total_price,
+    root.amount,
+    root.total,
+  ];
+  for (const raw of candidates) {
+    if (raw != null && raw !== "") return raw as string | number;
+  }
+  try {
+    const parsed =
+      typeof req.request_data === "string" ? JSON.parse(req.request_data) : req.request_data;
+    if (parsed && typeof parsed === "object" && parsed !== null) {
+      const rec = parsed as Record<string, unknown>;
+      for (const key of ["quoted_price", "price", "quoted_amount", "total_price", "amount", "total"]) {
+        const v = rec[key];
+        if (v != null && v !== "") return v as string | number;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return undefined;
+}
+
+function getQuoteRequestQuotedPriceNumber(req: MyQuoteRequestItem): number {
+  return parseQuotedPriceNumberForQuote(getQuoteRequestQuotedPriceRaw(req));
+}
+
 /**
  * True when API `is_paid` explicitly means paid — hide Pay when true.
  * Handles bool, 0/1, and common string forms from Laravel/JSON.
@@ -178,6 +216,25 @@ function isQuoteRequestPaid(req: MyQuoteRequestItem): boolean {
   const st = req.status;
   if (st != null && String(st).trim().toLowerCase() === "paid") return true;
   return isCustomQuoteRequestPaidLocally(req.id);
+}
+
+function normalizeQuoteRequestStatus(status: string | undefined | null): string {
+  return String(status ?? "").trim().toLowerCase();
+}
+
+function isQuoteRequestStatusAssigned(req: MyQuoteRequestItem): boolean {
+  return normalizeQuoteRequestStatus(req.status) === "assigned";
+}
+
+function isQuoteRequestStatusAccept(req: MyQuoteRequestItem): boolean {
+  const s = normalizeQuoteRequestStatus(req.status);
+  return (
+    s === "accept" ||
+    s === "accepted" ||
+    s === "approve" ||
+    s === "approved" ||
+    s.startsWith("accept")
+  );
 }
 
 function isAddressUpdateSuccess(response: {
@@ -526,7 +583,59 @@ export function CustomerDashboard({
   /** FRA duration_id → label (GET /fra-durations); used to show wording instead of raw id on quote cards. */
   const [fraDurationLabels, setFraDurationLabels] = useState<ReadonlyMap<number, string>>(() => new Map());
   const [payingQuoteRequestId, setPayingQuoteRequestId] = useState<number | null>(null);
+  const [approvingQuoteRequestId, setApprovingQuoteRequestId] = useState<number | null>(null);
   const [selectedQuoteRequest, setSelectedQuoteRequest] = useState<MyQuoteRequestItem | null>(null);
+
+  const handleApproveAssignedQuoteRequest = useCallback(async (req: MyQuoteRequestItem) => {
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Please log in to approve this quote.");
+      return;
+    }
+    if (!isQuoteRequestStatusAssigned(req)) {
+      toast.info("This quote is no longer awaiting approval.");
+      return;
+    }
+
+    setApprovingQuoteRequestId(req.id);
+    try {
+      const response = await updateQuoteRequestStatus(token, req.id, "accept");
+      const updated = response.data;
+      const nextStatus = updated?.status ?? "accept";
+      setQuoteRequests((prev) =>
+        prev.map((r) =>
+          r.id === req.id
+            ? {
+                ...r,
+                ...updated,
+                id: r.id,
+                status: nextStatus,
+                quoted_price: updated?.quoted_price ?? r.quoted_price,
+                professional: updated?.professional ?? r.professional,
+              }
+            : r
+        )
+      );
+      setSelectedQuoteRequest((prev) =>
+        prev?.id === req.id
+          ? {
+              ...prev,
+              ...updated,
+              id: prev.id,
+              status: nextStatus,
+              quoted_price: updated?.quoted_price ?? prev.quoted_price,
+              professional: updated?.professional ?? prev.professional,
+            }
+          : prev
+      );
+      toast.success(response.message || "Quote approved. You can now proceed to payment.");
+    } catch (error: unknown) {
+      console.error("Approve quote request error:", error);
+      toast.error(error instanceof Error ? error.message : "Could not approve quote. Please try again.");
+    } finally {
+      setApprovingQuoteRequestId(null);
+    }
+  }, []);
 
   const handlePayAssignedQuoteRequest = useCallback(async (req: MyQuoteRequestItem) => {
     const token = getApiToken();
@@ -534,14 +643,22 @@ export function CustomerDashboard({
       toast.error("Please log in to complete payment.");
       return;
     }
-    const price = parseQuotedPriceNumberForQuote(req.quoted_price);
+    const price = getQuoteRequestQuotedPriceNumber(req);
     if (!Number.isFinite(price) || price <= 0) {
       toast.error("Could not read the quoted amount. Please contact support.");
       return;
     }
-    const reqStatusLower = String(req.status || "").trim().toLowerCase();
+    const reqStatusLower = normalizeQuoteRequestStatus(req.status);
     if (reqStatusLower === "completed") {
       toast.info("This quote request is already completed.");
+      return;
+    }
+    if (!isQuoteRequestStatusAccept(req) && !isQuoteRequestStatusAssigned(req)) {
+      toast.info("Payment is available after you approve the assigned quote.");
+      return;
+    }
+    if (isQuoteRequestStatusAssigned(req)) {
+      toast.info("Please approve this quote before paying.");
       return;
     }
     if (isQuoteRequestPaid(req)) {
@@ -1795,7 +1912,7 @@ export function CustomerDashboard({
   ];
 
   const renderOverview = () => (
-    <div className="space-y-6">
+    <div className="space-y-6 min-w-0">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-2xl md:text-3xl text-[#0A1A2F] mb-2">Welcome back, {customerName}!</h1>
@@ -1811,7 +1928,7 @@ export function CustomerDashboard({
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 min-w-0">
         <Card 
           className="cursor-pointer hover:shadow-lg transition-all duration-200 active:scale-[0.98]"
           onClick={() => handleViewChange("bookings")}
@@ -1895,14 +2012,14 @@ export function CustomerDashboard({
       </div>
 
       {/* Upcoming Bookings & Quick Actions */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[#0A1A2F]">Upcoming Bookings</h3>
+      <div className="grid lg:grid-cols-2 gap-6 min-w-0">
+        <Card className="overflow-hidden min-w-0">
+          <CardContent className="p-4 sm:p-6 min-w-0">
+            <div className="flex items-center justify-between gap-2 mb-4 min-w-0">
+              <h3 className="text-[#0A1A2F] min-w-0 truncate">Upcoming Bookings</h3>
               <Button 
                 variant="link" 
-                className="text-red-600 p-0 h-auto"
+                className="text-red-600 p-0 h-auto shrink-0 whitespace-nowrap text-sm"
                 onClick={() => handleViewChange("bookings")}
               >
                 View All →
@@ -1944,21 +2061,28 @@ export function CustomerDashboard({
                     return (
                       <div 
                         key={booking.id} 
-                        className="flex items-start gap-3 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                        className="flex items-start gap-2 sm:gap-3 p-3 sm:p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer min-w-0"
                         onClick={() => handleViewChange("bookings")}
                       >
-                        <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center shrink-0">
                           <Shield className="w-5 h-5 text-red-600" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 truncate">{serviceName}</p>
-                          <p className="text-sm text-gray-600">{professionalName}</p>
-                          <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {formattedDate} at {booking.selected_time}
+                          <p className="font-medium text-gray-900 break-words">{serviceName}</p>
+                          <p className="text-sm text-gray-600 break-words">{professionalName}</p>
+                          <p className="text-xs text-gray-500 mt-1 flex items-start gap-1 min-w-0">
+                            <Clock className="w-3 h-3 shrink-0 mt-0.5" />
+                            <span className="break-words">
+                              {formattedDate} at {booking.selected_time}
+                            </span>
                           </p>
                         </div>
-                        <Badge className="bg-blue-100 text-blue-700">Upcoming</Badge>
+                        <Badge
+                          variant="custom"
+                          className="w-fit shrink-0 whitespace-nowrap bg-blue-100 text-blue-700 border border-blue-200"
+                        >
+                          Upcoming
+                        </Badge>
                       </div>
                     );
                   })}
@@ -1967,13 +2091,13 @@ export function CustomerDashboard({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-start justify-between gap-3 mb-4">
-              <div>
+        <Card className="overflow-hidden min-w-0">
+          <CardContent className="p-4 sm:p-6 min-w-0">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3 mb-4 min-w-0">
+              <div className="min-w-0 flex-1">
                 <h3 className="text-[#0A1A2F]">Recent Activity</h3>
                 {!isLoadingRecentActivity && recentActivity.length > 0 && (
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 mt-1 break-words">
                     {recentActivity.length} update{recentActivity.length === 1 ? "" : "s"}
                     {recentActivity.length > 10 ? " — scroll the list for older items" : ""}
                   </p>
@@ -1982,7 +2106,7 @@ export function CustomerDashboard({
               {!isLoadingRecentActivity && recentActivity.length > 0 && (
                 <Button
                   variant="link"
-                  className="text-red-600 p-0 h-auto shrink-0 text-sm"
+                  className="text-red-600 p-0 h-auto shrink-0 whitespace-nowrap text-sm self-start"
                   onClick={() => handleViewChange("notifications")}
                 >
                   Notifications →
@@ -2004,8 +2128,8 @@ export function CustomerDashboard({
                 <div
                   className={
                     recentActivity.length > 10
-                      ? "max-h-96 overflow-y-auto overscroll-y-contain pr-1 -mr-1 [scrollbar-gutter:stable]"
-                      : ""
+                      ? "max-h-96 overflow-y-auto overscroll-y-contain pr-1 min-w-0"
+                      : "min-w-0"
                   }
                 >
                   <div className="space-y-2 pb-0.5">
@@ -2019,7 +2143,7 @@ export function CustomerDashboard({
                       return (
                         <div
                           key={`${activity.date}-${activity.title}-${index}`}
-                          className="flex items-start gap-3 rounded-lg border border-gray-100 bg-gray-50/80 p-3 hover:bg-gray-100/90 transition-colors"
+                          className="flex items-start gap-3 rounded-lg border border-gray-100 bg-gray-50/80 p-3 hover:bg-gray-100/90 transition-colors min-w-0"
                         >
                           <div
                             className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${
@@ -3419,6 +3543,9 @@ export function CustomerDashboard({
               return { backgroundColor: "#d1fae5", color: "#047857", border: "1px solid #6ee7b7" };
             case "assigned":
               return { backgroundColor: "#ede9fe", color: "#5b21b6", border: "1px solid #c4b5fd" };
+            case "accept":
+            case "accepted":
+              return { backgroundColor: "#dbeafe", color: "#1d4ed8", border: "1px solid #93c5fd" };
             case "completed":
               return { backgroundColor: "#e0f2fe", color: "#0c4a6e", border: "1px solid #7dd3fc" };
             case "paid":
@@ -3427,8 +3554,12 @@ export function CustomerDashboard({
               return { backgroundColor: "#f1f5f9", color: "#334155", border: "1px solid #e2e8f0" };
           }
         };
-        const formatQuoteStatusModal = (s: string) =>
-          s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "";
+        const formatQuoteStatusModal = (s: string) => {
+          const lower = String(s ?? "").trim().toLowerCase();
+          if (lower === "accept" || lower === "accepted") return "Accepted";
+          if (!s) return "";
+          return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+        };
 
         const modalReq = selectedQuoteRequest;
         const modalRd =
@@ -3458,10 +3589,11 @@ export function CustomerDashboard({
             modalNotes = "";
           }
         }
-        const modalStatusLower = (modalReq?.status || "").toLowerCase();
+        const modalStatusLower = normalizeQuoteRequestStatus(modalReq?.status);
         const modalIsAssigned = modalStatusLower === "assigned";
+        const modalIsAccept = modalStatusLower === "accept" || modalStatusLower === "accepted";
         const modalIsCompleted = modalStatusLower === "completed";
-        const modalQuoted = modalReq == null ? NaN : parseQuotedPriceNumberForQuote(modalReq.quoted_price);
+        const modalQuoted = modalReq == null ? NaN : getQuoteRequestQuotedPriceNumber(modalReq);
         const modalHasPrice = Number.isFinite(modalQuoted) && modalQuoted > 0;
         const modalProName =
           modalReq?.professional?.name?.trim() || modalReq?.professional?.full_name?.trim() || "";
@@ -3532,22 +3664,25 @@ export function CustomerDashboard({
                       } catch {
                         preferredDateRaw = "";
                       }
-                      const statusLower = (req.status || "").toLowerCase();
+                      const statusLower = normalizeQuoteRequestStatus(req.status);
                       const isAssignedQuote = statusLower === "assigned";
+                      const isAcceptQuote = statusLower === "accept" || statusLower === "accepted";
                       const isCompletedQuote = statusLower === "completed";
-                      const quotedAmount = parseQuotedPriceNumberForQuote(req.quoted_price);
+                      const quotedAmount = getQuoteRequestQuotedPriceNumber(req);
                       const hasQuotedPrice = Number.isFinite(quotedAmount) && quotedAmount > 0;
-                      const professionalName = req.professional?.name?.trim() || "";
+                      const professionalName =
+                        req.professional?.name?.trim() || req.professional?.full_name?.trim() || "";
                       const quotePaid = isQuoteRequestPaid(req);
                       const badgeStatus = isCompletedQuote
                         ? "completed"
                         : quotePaid
                           ? "paid"
                           : req.status;
+                      const showQuoteApproveButton = isAssignedQuote && !isCompletedQuote && !quotePaid;
                       const showQuotePayButton =
-                        isAssignedQuote &&
-                        hasQuotedPrice &&
+                        isAcceptQuote &&
                         !isQuoteRequestIsPaidFieldTrue(req) &&
+                        !quotePaid &&
                         !isCompletedQuote;
                       const priceDisplay = hasQuotedPrice
                         ? `£${quotedAmount.toLocaleString("en-GB", {
@@ -3588,7 +3723,8 @@ export function CustomerDashboard({
                                   })}
                                 </p>
 
-                                {(isAssignedQuote || isCompletedQuote) && (professionalName || preferredDateLabel) && (
+                                {(isAssignedQuote || isAcceptQuote || isCompletedQuote) &&
+                                  (professionalName || preferredDateLabel) && (
                                   <div className="grid md:grid-cols-2 gap-3 text-sm">
                                     {professionalName ? (
                                       <div className="flex items-center gap-2 text-gray-600">
@@ -3605,7 +3741,7 @@ export function CustomerDashboard({
                                   </div>
                                 )}
 
-                                {(isAssignedQuote || isCompletedQuote) && hasQuotedPrice && (
+                                {(isAssignedQuote || isAcceptQuote || isCompletedQuote) && hasQuotedPrice && (
                                   <div className="pt-2 border-t border-gray-200">
                                     <p className="text-gray-900">
                                       Total: <span className="font-semibold">{priceDisplay}</span>
@@ -3624,6 +3760,27 @@ export function CustomerDashboard({
                                 >
                                   View Details
                                 </Button>
+                                {showQuoteApproveButton && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="w-full md:w-auto md:min-w-[140px] !bg-green-600 hover:!bg-green-700 text-white"
+                                    disabled={approvingQuoteRequestId === req.id}
+                                    onClick={() => void handleApproveAssignedQuoteRequest(req)}
+                                  >
+                                    {approvingQuoteRequestId === req.id ? (
+                                      <>
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        Approving…
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CheckCircle className="w-4 h-4 mr-2" />
+                                        Approve
+                                      </>
+                                    )}
+                                  </Button>
+                                )}
                                 {showQuotePayButton && (
                                   <Button
                                     type="button"
@@ -3772,29 +3929,50 @@ export function CustomerDashboard({
                         </div>
                       ) : null}
 
-                      {modalIsAssigned &&
-                        modalHasPrice &&
-                        !isQuoteRequestIsPaidFieldTrue(modalReq) &&
+                      {(modalIsAssigned || modalIsAccept) &&
+                        !modalPaid &&
                         !modalIsCompleted && (
-                        <DialogFooter className="gap-2 sm:gap-0">
-                          <Button
-                            type="button"
-                            className="bg-red-600 hover:bg-red-700"
-                            disabled={payingQuoteRequestId === modalReq.id}
-                            onClick={() => void handlePayAssignedQuoteRequest(modalReq)}
-                          >
-                            {payingQuoteRequestId === modalReq.id ? (
-                              <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                Redirecting…
-                              </>
-                            ) : (
-                              <>
-                                <CreditCard className="w-4 h-4 mr-2" />
-                                Pay now
-                              </>
-                            )}
-                          </Button>
+                        <DialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row">
+                          {modalIsAssigned && (
+                            <Button
+                              type="button"
+                              className="!bg-green-600 hover:!bg-green-700 text-white"
+                              disabled={approvingQuoteRequestId === modalReq.id}
+                              onClick={() => void handleApproveAssignedQuoteRequest(modalReq)}
+                            >
+                              {approvingQuoteRequestId === modalReq.id ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Approving…
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle className="w-4 h-4 mr-2" />
+                                  Approve
+                                </>
+                              )}
+                            </Button>
+                          )}
+                          {modalIsAccept && !isQuoteRequestIsPaidFieldTrue(modalReq) && !modalPaid && (
+                            <Button
+                              type="button"
+                              className="bg-red-600 hover:bg-red-700"
+                              disabled={payingQuoteRequestId === modalReq.id}
+                              onClick={() => void handlePayAssignedQuoteRequest(modalReq)}
+                            >
+                              {payingQuoteRequestId === modalReq.id ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Redirecting…
+                                </>
+                              ) : (
+                                <>
+                                  <CreditCard className="w-4 h-4 mr-2" />
+                                  Pay now
+                                </>
+                              )}
+                            </Button>
+                          )}
                         </DialogFooter>
                       )}
                     </div>
@@ -3950,11 +4128,9 @@ export function CustomerDashboard({
         {/* Spacer for fixed sidebar on large screens */}
         <div className="hidden lg:block w-64 flex-shrink-0"></div>
 
-        {/* Main Content - Original layout, centered */}
+        {/* Main Content — full width beside sidebar */}
         <main className="flex-1 p-4 md:p-6 lg:p-8 w-full min-w-0 overflow-x-hidden">
-          <div className="max-w-7xl mx-auto w-full">
-            {renderContent()}
-          </div>
+          {renderContent()}
         </main>
       </div>
 

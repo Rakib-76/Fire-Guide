@@ -5,6 +5,7 @@ import { Toaster } from "./components/ui/sonner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { PaymentReturnRedirect } from "./components/PaymentReturnRedirect";
+import { SocialAuthReturnRedirect } from "./components/SocialAuthReturnRedirect";
 
 
 export interface Booking {
@@ -31,6 +32,14 @@ export interface Booking {
   professionalType?: "individual" | "company";
   /** From API — used for reschedule calendar (available-date / booking-days-list). */
   professionalId?: number;
+  /** Customer has already submitted a review for this booking/professional. */
+  hasReview?: boolean;
+  /** Existing review record id (for POST /reviews/update). */
+  reviewId?: number;
+  /** Customer email on the booking (reviewer). */
+  customerEmail?: string;
+  /** Rows from API `selected_service.data` for details modal. */
+  serviceDetails?: Array<{ label: string; value: string }>;
 }
 
 export interface Payment {
@@ -57,6 +66,7 @@ export default function App() {
         <PaymentReturnRedirect />
         <ScrollToTop />
         <AppProvider>
+          <SocialAuthReturnRedirect />
           <div className="min-h-screen bg-white">
             <Routes />
             <Toaster />

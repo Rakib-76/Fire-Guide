@@ -17,7 +17,12 @@ export default function QuestionnairePage() {
       serviceId={serviceId && /^\d+$/.test(serviceId) ? parseInt(serviceId, 10) : undefined}
       serviceName={serviceName}
       onComplete={(data) => {
-        setQuestionnaireData(data);
+        const sid = service && /^\d+$/.test(String(service)) ? parseInt(String(service), 10) : undefined;
+        setQuestionnaireData({
+          ...data,
+          ...(sid != null && !Number.isNaN(sid) ? { service_id: sid } : {}),
+          ...(serviceName?.trim() ? { service_name: serviceName.trim() } : {}),
+        });
         navigate(`/services/${service}/location`);
       }}
       onBack={() => navigate("/services")}

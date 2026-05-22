@@ -18,9 +18,11 @@ import { fetchProfessionalProfileAvailableDates, ProfessionalProfileAvailableDat
 import {
   fetchProfessionalProfileDetails,
   fetchProfessionalProfilePricing,
+  fetchForUserWorkingHours,
   sendProfessionalMail,
   type ProfessionalProfileDetailsData,
   type ProfessionalProfilePricingItem,
+  type WorkingDayHourRecord,
 } from "../api/professionalsService";
 import {
   resolveProfessionalDisplayPhone,
@@ -36,9 +38,20 @@ interface ProfessionalProfileProps {
   /** Optional; sticky “Book & Pay” bar was removed — kept for callers that still pass it */
   onBook?: () => void;
   onBack: () => void;
+  /** e.g. "Back to Home" from landing, "Back to Results" from compare */
+  backLabel?: string;
+  /** When true, breadcrumb is Home → profile (no compare step) */
+  fromFeatured?: boolean;
 }
 
-export function ProfessionalProfile({ professional, professionalIdFromUrl, onBook, onBack }: ProfessionalProfileProps) {
+export function ProfessionalProfile({
+  professional,
+  professionalIdFromUrl,
+  onBook,
+  onBack,
+  backLabel = "Back to Results",
+  fromFeatured = false,
+}: ProfessionalProfileProps) {
   const { professionalId: urlProfessionalId } = useParams<{ professionalId?: string }>();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [profileDetails, setProfileDetails] = useState<ProfessionalProfileDetailsData | null>(null);
@@ -55,6 +68,8 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
   const [isLoadingReviews, setIsLoadingReviews] = useState(true);
   const [availableDatesData, setAvailableDatesData] = useState<ProfessionalProfileAvailableDateItem[]>([]);
   const [isLoadingAvailableDates, setIsLoadingAvailableDates] = useState(true);
+  const [workingHours, setWorkingHours] = useState<WorkingDayHourRecord[]>([]);
+  const [isLoadingWorkingHours, setIsLoadingWorkingHours] = useState(true);
   const [profilePricing, setProfilePricing] = useState<ProfessionalProfilePricingItem[]>([]);
   const [isLoadingPricing, setIsLoadingPricing] = useState(true);
   const [persistedProfessional, setPersistedProfessional] = useState<any>(null);
@@ -274,6 +289,36 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
       }
     };
     loadAvailableDates();
+    return () => { cancelled = true; };
+  }, [professionalIdNum]);
+
+  // Fetch weekly working hours (for-user/get-working-hours)
+  useEffect(() => {
+    if (professionalIdNum == null) {
+      setWorkingHours([]);
+      setIsLoadingWorkingHours(false);
+      return;
+    }
+    let cancelled = false;
+    const loadWorkingHours = async () => {
+      try {
+        setIsLoadingWorkingHours(true);
+        const data = await fetchForUserWorkingHours(professionalIdNum);
+        if (!cancelled) setWorkingHours(data ?? []);
+      } catch (error: unknown) {
+        if (!cancelled) {
+          setWorkingHours([]);
+          const message =
+            error && typeof error === 'object' && 'message' in error
+              ? String((error as { message?: string }).message)
+              : 'Failed to load working hours';
+          toast.error(message);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingWorkingHours(false);
+      }
+    };
+    loadWorkingHours();
     return () => { cancelled = true; };
   }, [professionalIdNum]);
 
@@ -588,6 +633,36 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
     return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
   };
 
+  const formatWorkingDayLabel = (day?: string | null) => {
+    if (!day) return 'Day';
+    const normalized = day.trim().toLowerCase();
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  };
+
+  const formatWorkingTime = (value?: string | null) => {
+    if (!value) return '';
+    const match = value.trim().match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return value;
+    let hours = parseInt(match[1], 10);
+    const minutes = match[2];
+    const period = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    return `${hours}:${minutes} ${period}`;
+  };
+
+  const formatWorkingHoursRange = (entry: WorkingDayHourRecord) => {
+    const closed =
+      entry.is_closed === true ||
+      entry.is_closed === 1 ||
+      (typeof entry.is_closed === 'string' && entry.is_closed === '1');
+    if (closed) return 'Closed';
+    const start = formatWorkingTime(entry.start_time);
+    const end = formatWorkingTime(entry.end_time);
+    if (start && end) return `${start} – ${end}`;
+    if (start || end) return start || end;
+    return 'Not set';
+  };
+
   const handleBookNow = useCallback(async () => {
     if (!onBook) return;
     setIsBooking(true);
@@ -608,7 +683,7 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
           </a>
           <Button type="button" variant="ghost" size="sm" onClick={onBack} className="text-[#0A1A2F] shrink-0">
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Results
+            {backLabel}
           </Button>
         </div>
       </header>
@@ -617,11 +692,17 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
       <div className="bg-white py-4 px-6 border-b">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center gap-2 text-sm text-gray-600">
-            <a href="/" className="hover:text-red-600 transition-colors">Home</a>
-            <ChevronRight className="w-4 h-4" />
-            <button type="button" onClick={onBack} className="hover:text-red-600 transition-colors">
-              Compare Professionals
-            </button>
+            <a href="/" className="hover:text-red-600 transition-colors">
+              Home
+            </a>
+            {!fromFeatured && (
+              <>
+                <ChevronRight className="w-4 h-4" />
+                <button type="button" onClick={onBack} className="hover:text-red-600 transition-colors">
+                  Compare Professionals
+                </button>
+              </>
+            )}
             <ChevronRight className="w-4 h-4" />
             <span className="text-gray-900">{prof.name}</span>
           </div>
@@ -1096,6 +1177,45 @@ export function ProfessionalProfile({ professional, professionalIdFromUrl, onBoo
                             )}
                           </div>
                         ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Working Hours */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-[#0A1A2F]">Working Hours</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {isLoadingWorkingHours ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 animate-spin text-red-600 mr-2" />
+                        <span className="text-gray-600">Loading working hours...</span>
+                      </div>
+                    ) : workingHours.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <Clock className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                        <p className="text-sm">No working hours available</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {workingHours.map((entry) => {
+                          const dayKey = entry.day ?? entry.week_day ?? "day";
+                          return (
+                            <div
+                              key={`${dayKey}-${entry.id ?? ""}`}
+                              className="flex items-center justify-between gap-3 py-2 border-b last:border-0"
+                            >
+                              <span className="text-sm font-medium text-gray-900">
+                                {formatWorkingDayLabel(dayKey)}
+                              </span>
+                              <span className="text-sm text-gray-600 text-right">
+                                {formatWorkingHoursRange(entry)}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </CardContent>

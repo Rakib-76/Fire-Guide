@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { professionalBenefitsJoinTo } from "../lib/professionalBenefitsNavigation";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -10,25 +11,8 @@ import { toast } from "sonner";
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
 import { registerUser, loginUser, sendOtp, verifyOtp, resetPassword } from "../api/authService";
 import { setAuthToken, setUserEmail, setUserInfo, setUserPhone, setUserRole, setProfessionalId } from "../lib/auth";
+import { getFacebookOAuthStartUrl, getGoogleOAuthStartUrl } from "../lib/socialAuthCallback";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
-
-function getConfiguredCustomerSocialAuthUrl(provider: string): string | null {
-  const trimmed = (value: string | undefined) => {
-    if (!value) return null;
-    const t = value.trim();
-    return t.length > 0 ? t : null;
-  };
-  switch (provider) {
-    case "Google":
-      return trimmed(import.meta.env.VITE_CUSTOMER_SOCIAL_AUTH_GOOGLE_URL);
-    case "Apple":
-      return trimmed(import.meta.env.VITE_CUSTOMER_SOCIAL_AUTH_APPLE_URL);
-    case "Facebook":
-      return trimmed(import.meta.env.VITE_CUSTOMER_SOCIAL_AUTH_FACEBOOK_URL);
-    default:
-      return null;
-  }
-}
 
 interface CustomerAuthProps {
   /** Pass `{ isNewProfessionalSignup: true }` when a new account was created with the Professional role. */
@@ -37,7 +21,9 @@ interface CustomerAuthProps {
 }
 
 export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isSocialLoading, setIsSocialLoading] = useState<string | null>(null);
   const [isSignUp, setIsSignUp] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -239,16 +225,25 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
     }
   };
 
-  const handleSocialLogin = (provider: string) => {
-    const redirectUrl = getConfiguredCustomerSocialAuthUrl(provider);
+  const handleGoogleAuth = () => {
+    setIsGoogleLoading(true);
+    window.location.assign(getGoogleOAuthStartUrl());
+  };
+
+  const handleFacebookAuth = () => {
+    setIsSocialLoading("Facebook");
+    window.location.assign(getFacebookOAuthStartUrl());
+  };
+
+  const handleAppleAuth = () => {
+    const redirectUrl = import.meta.env.VITE_CUSTOMER_SOCIAL_AUTH_APPLE_URL?.trim();
     if (redirectUrl) {
-      setIsSocialLoading(provider);
+      setIsSocialLoading("Apple");
       window.location.assign(redirectUrl);
       return;
     }
-
-    toast.message("Social sign-in is not available yet", {
-      description: "Please use the email and password fields below to sign in or create an account.",
+    toast.message("Apple sign-in is not available yet", {
+      description: "Please use Google, Facebook, or the email and password fields below.",
       duration: 7000,
     });
   };
@@ -370,33 +365,59 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
     setShowForgotPassword(false);
   };
 
+  const closeMobileMenu = () => setMobileMenuOpen(false);
+
+  const handleNavigateHome = () => {
+    closeMobileMenu();
+    navigate("/");
+  };
+
+  const handleNavigateServices = () => {
+    closeMobileMenu();
+    navigate("/services");
+  };
+
+  const handleNavigateProfessionals = () => {
+    closeMobileMenu();
+    navigate(professionalBenefitsJoinTo());
+  };
+
+  const handleNavigateAbout = () => {
+    closeMobileMenu();
+    navigate("/about");
+  };
+
+  const handleNavigateContact = () => {
+    closeMobileMenu();
+    navigate("/about#contact");
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A1A2F] via-[#0d2238] to-[#0A1A2F] overflow-x-hidden w-full">
-      {/* Header - Fully Transparent */}
-      <header className="bg-transparent text-white py-3 md:py-4 px-4 md:px-6 sticky top-0 z-50 w-full">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#0A1A2F] via-[#0d2238] to-[#0A1A2F] overflow-x-hidden w-full">
+      <header className="sticky top-0 z-[60] w-full shrink-0 bg-transparent text-white py-3 md:py-4 px-4 md:px-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between w-full">
           <Link to="/" className="flex items-center cursor-pointer hover:opacity-90 transition-opacity" aria-label="Go to home">
             <img src={logoImage} alt="Fire Guide" className="h-7 md:h-12 w-auto flex-shrink-0" />
           </Link>
           
-          <nav className="hidden md:flex items-center gap-8">
-            <button onClick={onBack} className="relative py-2 text-white hover:text-red-600 transition-colors group cursor-pointer">
+          <nav className="hidden md:flex items-center gap-8 text-lg">
+            <button type="button" onClick={handleNavigateHome} className="relative py-2 text-white hover:text-red-600 transition-colors group cursor-pointer">
               Home
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
             </button>
-            <a href="#services" className="relative py-2 text-white hover:text-red-600 transition-colors group">
+            <button type="button" onClick={handleNavigateServices} className="relative py-2 text-white hover:text-red-600 transition-colors group cursor-pointer">
               Services
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
-            </a>
-            <button onClick={onBack} className="relative py-2 text-white hover:text-red-600 transition-colors group cursor-pointer">
+            </button>
+            <button type="button" onClick={handleNavigateProfessionals} className="relative py-2 text-white hover:text-red-600 transition-colors group cursor-pointer">
               For Professionals
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
             </button>
-            <button onClick={onBack} className="relative py-2 text-white hover:text-red-600 transition-colors group cursor-pointer">
+            <button type="button" onClick={handleNavigateAbout} className="relative py-2 text-white hover:text-red-600 transition-colors group cursor-pointer">
               About
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
             </button>
-            <button onClick={onBack} className="relative py-2 text-white hover:text-red-600 transition-colors group cursor-pointer">
+            <button type="button" onClick={handleNavigateContact} className="relative py-2 text-white hover:text-red-600 transition-colors group cursor-pointer">
               Contact
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
             </button>
@@ -406,9 +427,9 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
             <Button 
               variant="ghost" 
               onClick={onBack}
-              className="text-white hover:text-red-600 hover:bg-transparent transition-colors cursor-pointer group relative"
+              className="text-lg text-white hover:text-red-600 hover:bg-transparent h-auto py-2 cursor-pointer group relative"
             >
-              <User className="w-4 h-4 mr-2" />
+              <User className="w-5 h-5 mr-2 shrink-0" />
               Login/Register
             </Button>
           </div>
@@ -426,31 +447,36 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
           <div className="md:hidden bg-transparent border-t border-white/10 mt-4 py-6">
             <nav className="flex flex-col gap-1 px-4">
               <button 
-                onClick={onBack} 
+                type="button"
+                onClick={handleNavigateHome} 
                 className="text-left py-3 px-4 rounded-lg text-white hover:bg-white/10 hover:text-red-400 transition-all cursor-pointer"
               >
                 Home
               </button>
-              <a 
-                href="#services" 
-                className="text-left py-3 px-4 rounded-lg text-white hover:bg-white/10 hover:text-red-400 transition-all cursor-pointer block"
+              <button 
+                type="button"
+                onClick={handleNavigateServices} 
+                className="text-left py-3 px-4 rounded-lg text-white hover:bg-white/10 hover:text-red-400 transition-all cursor-pointer"
               >
                 Services
-              </a>
+              </button>
               <button 
-                onClick={onBack}
+                type="button"
+                onClick={handleNavigateProfessionals}
                 className="text-left py-3 px-4 rounded-lg text-white hover:bg-white/10 hover:text-red-400 transition-all cursor-pointer"
               >
                 For Professionals
               </button>
               <button 
-                onClick={onBack} 
+                type="button"
+                onClick={handleNavigateAbout} 
                 className="text-left py-3 px-4 rounded-lg text-white hover:bg-white/10 hover:text-red-400 transition-all cursor-pointer"
               >
                 About
               </button>
               <button 
-                onClick={onBack} 
+                type="button"
+                onClick={handleNavigateContact} 
                 className="text-left py-3 px-4 rounded-lg text-white hover:bg-white/10 hover:text-red-400 transition-all cursor-pointer"
               >
                 Contact
@@ -470,10 +496,8 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
         )}
       </header>
 
-      {/* Main Content */}
-      <main className="py-6 md:py-12 px-4 md:px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
+      <main className="flex-1 flex items-center justify-center px-4 md:px-6 py-6 md:py-12 min-h-0">
+        <div className="w-full max-w-6xl mx-auto grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
             {/* Left Side - Branding */}
             <div className="text-white space-y-6 md:space-y-8 order-2 lg:order-1">
               <div>
@@ -546,7 +570,7 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
             </div>
 
             {/* Right Side - Auth Form */}
-            <div className="order-1 lg:order-2 relative z-10">
+            <div className="order-1 lg:order-2">
               <Card className="border-0 shadow-2xl overflow-visible">
                 <CardHeader className="text-center pb-4">
                   <div className="w-14 h-14 md:w-16 md:h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3 md:mb-4">
@@ -563,14 +587,14 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5 md:space-y-6 p-4 md:p-6 overflow-visible">
-                  {/* Social Login Buttons */}
+                  {/* Social login — Google /auth/google, Facebook /auth/facebook; Apple via env when configured */}
                   <div className="space-y-3">
                     <Button
                       type="button"
                       variant="outline"
                       className="w-full h-12"
-                      onClick={() => handleSocialLogin("Google")}
-                      disabled={isSocialLoading !== null}
+                      onClick={handleGoogleAuth}
+                      disabled={isGoogleLoading || isSocialLoading !== null}
                     >
                       <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
                         <path
@@ -590,7 +614,7 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
                           d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                         />
                       </svg>
-                      {isSocialLoading === "Google" ? "Connecting..." : "Continue with Google"}
+                      {isGoogleLoading ? "Connecting..." : "Continue with Google"}
                     </Button>
 
                     <div className="grid grid-cols-2 gap-3">
@@ -598,8 +622,8 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
                         type="button"
                         variant="outline"
                         className="w-full h-12"
-                        onClick={() => handleSocialLogin("Apple")}
-                        disabled={isSocialLoading !== null}
+                        onClick={handleAppleAuth}
+                        disabled={isGoogleLoading || isSocialLoading !== null}
                       >
                         <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
                           <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
@@ -611,13 +635,13 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
                         type="button"
                         variant="outline"
                         className="w-full h-12"
-                        onClick={() => handleSocialLogin("Facebook")}
-                        disabled={isSocialLoading !== null}
+                        onClick={handleFacebookAuth}
+                        disabled={isGoogleLoading || isSocialLoading !== null}
                       >
                         <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="#1877F2">
                           <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
                         </svg>
-                        {isSocialLoading === "Facebook" ? "..." : "Facebook"}
+                        {isSocialLoading === "Facebook" ? "Connecting..." : "Continue with Facebook"}
                       </Button>
                     </div>
                   </div>
@@ -857,7 +881,6 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
                 </p>
               </div>
             </div>
-          </div>
         </div>
       </main>
 

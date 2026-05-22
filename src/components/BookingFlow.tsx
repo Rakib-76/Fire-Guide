@@ -3,6 +3,8 @@ import { AppointmentSelection } from "./AppointmentSelection";
 import { CustomerDetailsForm } from "./CustomerDetailsForm";
 import { PaymentPage } from "./PaymentPage";
 import { BookingConfirmation } from "./BookingConfirmation";
+import { buildBookingServiceDisplay } from "../lib/bookingServiceDetails";
+import type { BookingServiceDetailRow } from "../lib/bookingServiceDetails";
 
 /** Questionnaire payload may include display labels for service details (e.g. property_type_label, approximate_people_label). */
 export type QuestionnaireDataForBooking = {
@@ -32,6 +34,8 @@ interface BookingFlowProps {
   isCustomQuote?: boolean;
   customQuoteRequestData?: { building_type: string; people_count: string; floors: number };
   serviceIdForQuote?: number;
+  /** Human-readable service name from selection / questionnaire */
+  serviceNameHint?: string;
 }
 
 export type BookingStep = "appointment" | "details" | "payment" | "confirmation";
@@ -40,8 +44,10 @@ export interface BookingData {
   // Service info
   service: {
     name: string;
+    details: BookingServiceDetailRow[];
+    summaryLine: string;
     propertyType: string;
-    floors: number;
+    floors: string | number;
     people: string;
   };
   // Professional info
@@ -87,33 +93,28 @@ export interface BookingData {
 
 const defaultPricing = { servicePrice: 285, platformFee: 15, total: 300 };
 
-function getServiceDisplayName(selectedService?: string): string {
-  if (!selectedService) return "Fire Risk Assessment";
-  const map: Record<string, string> = {
-    fra: "Fire Risk Assessment",
-    "fire-alarm": "Fire Alarm",
-    "fire-extinguisher": "Fire Extinguisher",
-    "emergency-lighting": "Emergency Lighting",
-    "fire-marshal": "Fire Marshal",
-    "fire-safety-consultation": "Fire Safety Consultation",
-  };
-  return map[selectedService] ?? "Fire Risk Assessment";
+function getInitialService(
+  questionnaireData?: QuestionnaireDataForBooking | null,
+  options?: {
+    selectedService?: string;
+    serviceId?: number;
+    serviceNameHint?: string;
+    isCustomQuote?: boolean;
+    customQuoteRequestData?: { building_type?: string; people_count?: string; floors?: number };
+  }
+) {
+  return buildBookingServiceDisplay(questionnaireData as Record<string, unknown> | null | undefined, {
+    selectedService: options?.selectedService,
+    serviceId: options?.serviceId,
+    serviceNameHint:
+      options?.serviceNameHint ??
+      (questionnaireData?.service_name as string | undefined),
+    isCustomQuote: options?.isCustomQuote,
+    customQuoteRequestData: options?.customQuoteRequestData,
+  });
 }
 
-function getInitialService(questionnaireData?: QuestionnaireDataForBooking | null, selectedService?: string) {
-  const name = getServiceDisplayName(selectedService);
-  const propertyType = questionnaireData?.property_type_label ?? "Office Building";
-  const floors = (() => {
-    const v = questionnaireData?.number_of_floors;
-    if (v == null || v === "") return 3;
-    const n = parseInt(String(v), 10);
-    return Number.isNaN(n) ? 3 : n;
-  })();
-  const people = questionnaireData?.approximate_people_label ?? "26-50";
-  return { name, propertyType, floors, people };
-}
-
-export function BookingFlow({ onBack, onConfirm, professionalId, serviceId, sessionId, bookingProfessional, initialPricing, initialPricingError, questionnaireData, selectedService, isCustomQuote, customQuoteRequestData, serviceIdForQuote }: BookingFlowProps) {
+export function BookingFlow({ onBack, onConfirm, professionalId, serviceId, sessionId, bookingProfessional, initialPricing, initialPricingError, questionnaireData, selectedService, isCustomQuote, customQuoteRequestData, serviceIdForQuote, serviceNameHint }: BookingFlowProps) {
   const [currentStep, setCurrentStep] = useState<BookingStep>("appointment");
   
   // Default professional data (fallback)
@@ -138,7 +139,13 @@ export function BookingFlow({ onBack, onConfirm, professionalId, serviceId, sess
   };
 
   const [bookingData, setBookingData] = useState<BookingData>({
-    service: getInitialService(questionnaireData, selectedService),
+    service: getInitialService(questionnaireData, {
+      selectedService,
+      serviceId,
+      serviceNameHint,
+      isCustomQuote,
+      customQuoteRequestData,
+    }),
     professional: getInitialProfessional(),
     professionalId: professionalId || null,
     selectedDate: "",
@@ -181,13 +188,23 @@ export function BookingFlow({ onBack, onConfirm, professionalId, serviceId, sess
 
   // Sync service details when questionnaire data becomes available (e.g. after restore from sessionStorage)
   useEffect(() => {
-    if (!questionnaireData) return;
-    const next = getInitialService(questionnaireData, selectedService);
-    setBookingData(prev => {
-      if (prev.service.propertyType === next.propertyType && prev.service.floors === next.floors && prev.service.people === next.people && prev.service.name === next.name) return prev;
+    const next = getInitialService(questionnaireData, {
+      selectedService,
+      serviceId,
+      serviceNameHint,
+      isCustomQuote,
+      customQuoteRequestData,
+    });
+    setBookingData((prev) => {
+      if (
+        prev.service.name === next.name &&
+        JSON.stringify(prev.service.details) === JSON.stringify(next.details)
+      ) {
+        return prev;
+      }
       return { ...prev, service: next };
     });
-  }, [questionnaireData, selectedService]);
+  }, [questionnaireData, selectedService, serviceId, serviceNameHint, isCustomQuote, customQuoteRequestData]);
 
   const handleAppointmentSelected = (date: string, time: string) => {
     setBookingData(prev => ({ ...prev, selectedDate: date, selectedTime: time }));

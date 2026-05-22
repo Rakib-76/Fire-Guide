@@ -60,58 +60,26 @@ export function ServiceCard({
     >
       {/* Card Header — admin: stack actions below title on mobile for touch targets */}
       <CardHeader className="p-3 pb-3 md:p-4 md:pb-3">
-        {isAdmin && showActions ? (
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-3">
-            <div className="flex gap-3 items-start min-w-0 flex-1">
-              {service.iconComponent && (
-                <div
-                  className={`w-12 h-12 md:w-14 md:h-14 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${
-                    service.color && colorClasses[service.color as keyof typeof colorClasses]
-                      ? colorClasses[service.color as keyof typeof colorClasses]
-                      : "bg-red-100 text-red-600 group-hover:bg-red-600 group-hover:text-white"
-                  }`}
-                >
-                  <service.iconComponent className="w-6 h-6 md:w-7 md:h-7" />
-                </div>
-              )}
-              {service.icon && !service.iconComponent && (
-                <span className="text-3xl leading-none flex-shrink-0">{service.icon}</span>
-              )}
-              <div className="min-w-0 flex-1">
-                <CardTitle className="text-base font-semibold leading-snug text-[#0A1A2F] break-words">
-                  {service.name}
-                </CardTitle>
+        {isAdmin ? (
+          <div className="flex gap-3 items-start min-w-0">
+            {service.iconComponent && (
+              <div
+                className={`w-12 h-12 md:w-14 md:h-14 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${
+                  service.color && colorClasses[service.color as keyof typeof colorClasses]
+                    ? colorClasses[service.color as keyof typeof colorClasses]
+                    : "bg-red-100 text-red-600 group-hover:bg-red-600 group-hover:text-white"
+                }`}
+              >
+                <service.iconComponent className="w-6 h-6 md:w-7 md:h-7" />
               </div>
-            </div>
-            <div className="flex gap-2 w-full md:w-auto md:flex-shrink-0 md:justify-end">
-              {onEdit && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEdit(service.id);
-                  }}
-                  className="flex-1 md:flex-initial min-h-11 md:min-h-8 px-3 text-sm md:text-xs bg-white border-gray-300 hover:bg-gray-50 hover:border-gray-400 shadow-sm"
-                >
-                  <Edit className="w-4 h-4 md:w-3 md:h-3 mr-2 md:mr-1" />
-                  Edit
-                </Button>
-              )}
-              {onDelete && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(service.id);
-                  }}
-                  className="flex-1 md:flex-initial min-h-11 md:min-h-8 px-3 text-sm md:text-xs bg-white border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400 shadow-sm"
-                >
-                  <Trash2 className="w-4 h-4 md:w-3 md:h-3 mr-2 md:mr-1" />
-                  Delete
-                </Button>
-              )}
+            )}
+            {service.icon && !service.iconComponent && (
+              <span className="text-3xl leading-none flex-shrink-0">{service.icon}</span>
+            )}
+            <div className="min-w-0 flex-1">
+              <CardTitle className="text-base font-semibold leading-snug text-[#0A1A2F] break-words">
+                {service.name}
+              </CardTitle>
             </div>
           </div>
         ) : (
@@ -170,9 +138,9 @@ export function ServiceCard({
             {service.description}
           </p>
 
-          {/* Price Section - 12px spacing above */}
-          <div className="flex items-end justify-between pt-1">
-            <div>
+          {/* Price row — admin: edit/delete on the right of the price */}
+          <div className="flex items-end justify-between gap-3 pt-1">
+            <div className="min-w-0">
               <p className="text-xs text-gray-500 mb-1">Starting from</p>
               <p className={`text-base font-bold leading-none ${
                 service.active === false ? "text-gray-400" : "text-red-600"
@@ -181,12 +149,42 @@ export function ServiceCard({
               </p>
             </div>
 
-            {/* Category Badge (if exists) */}
-            {service.category && (
-              <Badge variant="outline" className="text-xs px-2 py-1 rounded-lg h-6">
+            {isAdmin && showActions && (onEdit || onDelete) ? (
+              <div className="flex gap-2 shrink-0 items-center">
+                {onEdit && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(service.id);
+                    }}
+                    className="h-9 px-3 text-xs bg-white border-gray-300 hover:bg-gray-50 hover:border-gray-400 shadow-sm"
+                  >
+                    <Edit className="w-4 h-4 mr-1" />
+                    Edit
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(service.id);
+                    }}
+                    className="h-9 px-3 text-xs bg-white border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400 shadow-sm"
+                  >
+                    <Trash2 className="w-4 h-4 mr-1" />
+                    Delete
+                  </Button>
+                )}
+              </div>
+            ) : service.category ? (
+              <Badge variant="outline" className="text-xs px-2 py-1 rounded-lg h-6 shrink-0">
                 {service.category}
               </Badge>
-            )}
+            ) : null}
           </div>
         </div>
       </CardContent>

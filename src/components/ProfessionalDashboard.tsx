@@ -1019,7 +1019,7 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
         </div>
       </header>
 
-      <div className="flex pt-14">
+      <div className="flex pt-14 w-full min-w-0 overflow-x-hidden">
         {/* Sidebar - Fixed below header, never scrolls */}
         <aside
           className={`fixed top-[56px] left-0 h-[calc(100vh-56px)] w-64 bg-white border-r shadow-lg lg:shadow-none transition-all duration-300 ease-in-out z-40 ${
@@ -1065,11 +1065,9 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
         {/* Spacer for fixed sidebar on large screens */}
         <div className="hidden lg:block w-64 flex-shrink-0"></div>
 
-        {/* Main Content - Original layout, centered */}
-        <main className="flex-1 p-4 md:p-6 lg:p-8 w-full min-w-0">
-          <div className="max-w-7xl mx-auto">
-            {renderContent()}
-          </div>
+        {/* Main Content — full width beside sidebar */}
+        <main className="flex-1 p-4 md:p-6 lg:p-8 w-full min-w-0 overflow-x-hidden">
+          {renderContent()}
         </main>
       </div>
 

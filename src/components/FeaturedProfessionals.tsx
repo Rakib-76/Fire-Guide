@@ -89,13 +89,22 @@ function mergeApiWithTemplates(api: ProfessionalsGetItem[]): FeaturedCardDisplay
   });
 }
 
+const INITIAL_VISIBLE_COUNT = 4;
+
 export function FeaturedProfessionals({ onViewProfile }: FeaturedProfessionalsProps) {
   const navigate = useNavigate();
   const [apiList, setApiList] = useState<ProfessionalsGetItem[] | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const openProfessional = (professionalId: number | null) => {
     if (professionalId != null && Number.isFinite(professionalId) && professionalId > 0) {
-      navigate(`/professionals/${professionalId}`);
+      navigate(`/professionals/${professionalId}`, {
+        state: {
+          returnTo: "/",
+          backLabel: "Back",
+          fromFeatured: true,
+        },
+      });
       return;
     }
     onViewProfile();
@@ -111,20 +120,37 @@ export function FeaturedProfessionals({ onViewProfile }: FeaturedProfessionalsPr
     };
   }, []);
 
-  const apiFeaturedSlice = useMemo(() => {
-    if (apiList !== null && apiList.length > 0) return apiList.slice(0, 4);
-    return null;
+  const allProfessionals = useMemo(() => {
+    if (apiList !== null && apiList.length > 0) {
+      return mergeApiWithTemplates(apiList);
+    }
+    return STATIC_FALLBACK_PROFESSIONALS;
   }, [apiList]);
 
   const professionals = useMemo(() => {
-    if (apiFeaturedSlice && apiFeaturedSlice.length > 0) {
-      return mergeApiWithTemplates(apiFeaturedSlice);
+    if (showAll || allProfessionals.length <= INITIAL_VISIBLE_COUNT) {
+      return allProfessionals;
     }
-    return STATIC_FALLBACK_PROFESSIONALS;
-  }, [apiFeaturedSlice]);
+    return allProfessionals.slice(0, INITIAL_VISIBLE_COUNT);
+  }, [allProfessionals, showAll]);
+
+  const totalCount = allProfessionals.length;
+  const hasMoreToShow = totalCount > INITIAL_VISIBLE_COUNT;
+
+  const handleBrowseAll = () => {
+    if (showAll) {
+      setShowAll(false);
+      document.getElementById("featured-professionals")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    setShowAll(true);
+  };
 
   return (
-    <section className="py-24 px-6 bg-gradient-to-br from-blue-50 via-white to-red-50">
+    <section
+      id="featured-professionals"
+      className="py-24 px-6 bg-gradient-to-br from-blue-50 via-white to-red-50"
+    >
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-16">
           <h2 className="text-[28px] md:text-[42px] font-[800] leading-[130%] tracking-[-0.01em] mt-3 mb-2">
@@ -138,7 +164,7 @@ export function FeaturedProfessionals({ onViewProfile }: FeaturedProfessionalsPr
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
           {professionals.map((professional, index) => (
             <div
-              key={professional.professionalId ?? (apiFeaturedSlice ? apiFeaturedSlice[index]?.id : index)}
+              key={professional.professionalId ?? `featured-${index}`}
               className="group grid h-full min-h-0 w-full cursor-pointer grid-rows-[auto_minmax(0,1fr)] transition-all"
               onClick={() => openProfessional(professional.professionalId)}
             >
@@ -214,15 +240,25 @@ export function FeaturedProfessionals({ onViewProfile }: FeaturedProfessionalsPr
           ))}
         </div>
 
-        <div className="text-center mt-8">
-          <Button
-            onClick={onViewProfile}
-            variant="outline"
-            className="border-2 border-red-600 text-red-600 hover:bg-red-600 hover:text-white px-8 py-6 text-lg"
-          >
-            Browse All Professionals <ArrowRight className="w-5 h-5 ml-2" />
-          </Button>
-        </div>
+        {allProfessionals.length > 0 && (
+          <div className="mt-12 text-center">
+            <Button
+              type="button"
+              onClick={handleBrowseAll}
+              variant="outline"
+              className="group h-auto rounded-md border border-red-600 bg-white px-8 py-2.5 text-lg font-normal text-red-600 shadow-none transition-colors hover:border-red-600 hover:bg-red-600 hover:text-white"
+            >
+              {showAll && hasMoreToShow ? (
+                "Show Less"
+              ) : (
+                <>
+                  Browse All Professionals
+                  <ArrowRight className="ml-2 h-5 w-5 text-red-600 transition-colors group-hover:text-white" />
+                </>
+              )}
+            </Button>
+          </div>
+        )}
       </div>
     </section>
   );

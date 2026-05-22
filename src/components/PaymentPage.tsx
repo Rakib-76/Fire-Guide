@@ -247,7 +247,7 @@ export function PaymentPage({
                       <div>
                         <p className="text-sm text-gray-600 mb-1">Service</p>
                         <p className="font-semibold text-gray-900">{service.name}</p>
-                        <p className="text-sm text-gray-600">{service.propertyType}</p>
+                        <p className="text-sm text-gray-600">{service.summaryLine || service.propertyType}</p>
                       </div>
 
                       {/* Professional */}

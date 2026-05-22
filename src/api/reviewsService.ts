@@ -130,6 +130,8 @@ export const fetchProfessionalProfileReviews = async (
 export interface CreateReviewRequest {
   api_token: string;
   name: string;
+  /** Reviewer email — API field name is `email`. */
+  email: string;
   rating: string;
   feedback: string;
   professional_id: number;
@@ -143,6 +145,48 @@ export interface CreateReviewResponse {
   success?: boolean;
   error?: string;
 }
+
+/** POST /reviews/show — body: { id } (review id only). */
+export interface ShowReviewResponse {
+  success?: boolean;
+  status?: string | boolean;
+  message?: string;
+  data?: ReviewResponse | Record<string, unknown>;
+}
+
+/**
+ * Fetch a single review by id.
+ * POST /reviews/show
+ */
+export const showReview = async (id: number): Promise<ShowReviewResponse> => {
+  try {
+    const response = await apiClient.post<ShowReviewResponse>('/reviews/show', { id });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching review:', error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          success: false,
+          message: error.response.data?.message || 'Failed to fetch review',
+          error: error.response.data?.error || error.message,
+          status: error.response.status,
+        };
+      } else if (error.request) {
+        throw {
+          success: false,
+          message: 'No response from server. Please check your connection.',
+          error: 'Network error',
+        };
+      }
+    }
+    throw {
+      success: false,
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
 
 /**
  * Create a new review
@@ -158,6 +202,7 @@ export const createReview = async (
       {
         api_token: data.api_token,
         name: data.name,
+        email: data.email,
         rating: data.rating,
         feedback: data.feedback,
         professional_id: data.professional_id

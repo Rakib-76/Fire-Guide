@@ -108,12 +108,14 @@ export function DialogContent({ children, className = "", style, showCloseButton
   const hasMaxWidth = className.includes('max-w-') || className.includes('booking-details-modal');
   const defaultMaxWidth = hasMaxWidth ? '' : 'max-w-lg';
   const defaultWidth = hasMaxWidth ? '' : 'w-full';
-  
+  const hasZeroPadding = /\bp-0\b/.test(className);
+  const defaultPadding = hasZeroPadding ? '' : 'px-6 pb-6';
+
   // Merge inline styles with any existing styles
   const mergedStyle = style || {};
   
   return (
-    <div className={`relative bg-white rounded-xl shadow-2xl px-6 pb-6 ${defaultMaxWidth} ${defaultWidth} mx-4 ${className}`} style={mergedStyle}>
+    <div className={`relative bg-white rounded-xl shadow-2xl ${defaultPadding} ${defaultMaxWidth} ${defaultWidth} mx-4 ${className}`} style={mergedStyle}>
       {showX && (
         <button
           type="button"

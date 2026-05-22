@@ -6,7 +6,7 @@ import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { createReview, CreateReviewRequest } from "../api/reviewsService";
-import { getApiToken, getProfessionalId } from "../lib/auth";
+import { getApiToken, getProfessionalId, getUserEmail } from "../lib/auth";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Star } from "lucide-react";
 
@@ -14,6 +14,7 @@ export function AddReview() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     name: "",
+    email: getUserEmail() || "",
     rating: "",
     feedback: "",
     professional_id: ""
@@ -33,6 +34,11 @@ export function AddReview() {
 
     if (!formData.name.trim()) {
       toast.error("Please enter a name");
+      return;
+    }
+
+    if (!formData.email.trim()) {
+      toast.error("Please enter your email");
       return;
     }
 
@@ -62,6 +68,7 @@ export function AddReview() {
       const requestData: CreateReviewRequest = {
         api_token: token,
         name: formData.name.trim(),
+        email: formData.email.trim(),
         rating: formData.rating,
         feedback: formData.feedback.trim(),
         professional_id: parseInt(formData.professional_id)
@@ -130,6 +137,21 @@ export function AddReview() {
                 required
               />
               <p className="text-xs text-gray-500">Enter the reviewer's name</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="email">
+                Email <span className="text-red-600">*</span>
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="h-11"
+                placeholder="e.g., john.doe@example.com"
+                required
+              />
             </div>
 
             <div className="space-y-2">

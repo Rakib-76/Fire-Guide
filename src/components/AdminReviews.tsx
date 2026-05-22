@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { getApiToken } from "../lib/auth";
 import {
@@ -6,10 +6,12 @@ import {
   createContactCustomerMessage,
   createContactProfessionalMessage,
   getAdminReviewsList,
+  getAdminReviewsSummary,
   rejectAdminReview,
   type AdminReviewListItem,
 } from "../api/adminService";
-import { Search, Star, CheckCircle, XCircle, Eye, Flag, AlertTriangle, MessageSquare, Mail, User } from "lucide-react";
+import { showReview, type ReviewResponse } from "../api/reviewsService";
+import { Search, Star, CheckCircle, XCircle, Eye, Flag, AlertTriangle, MessageSquare, Mail, User, Loader2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card, CardContent } from "./ui/card";
@@ -28,142 +30,292 @@ import { Textarea } from "./ui/textarea";
 import { Separator } from "./ui/separator";
 import { toast } from "sonner";
 
+type ReviewDisplay = {
+  id: number;
+  professionalId: number | null;
+  customer: string;
+  customerEmail: string;
+  professional: string;
+  professionalEmail: string;
+  rating: number;
+  date: string;
+  bookingRef: string;
+  service: string;
+  text: string;
+  status: string;
+  flagged: boolean;
+  flagReason?: string;
+  rejectionReason?: string;
+  professionalResponse: string | null;
+};
+
+const isApiSuccess = (res: { success?: boolean; status?: string | boolean; message?: string }) => {
+  if (res.success === true) return true;
+  if (res.status === true || res.status === "success") return true;
+  const msg = typeof res.message === "string" ? res.message.toLowerCase() : "";
+  return msg.includes("success");
+};
+
+const normalizeReviewsList = (
+  res: { data?: AdminReviewListItem[] | { reviews?: AdminReviewListItem[] } }
+): AdminReviewListItem[] => {
+  if (Array.isArray(res.data)) return res.data;
+  const nested = res.data as { reviews?: AdminReviewListItem[] } | undefined;
+  if (nested && Array.isArray(nested.reviews)) return nested.reviews;
+  return [];
+};
+
+const coerceProfessionalId = (item: AdminReviewListItem | ReviewResponse | Record<string, unknown>): number | null => {
+  const tryNum = (raw: unknown): number | null => {
+    if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+    if (typeof raw === "string") {
+      const n = parseInt(raw, 10);
+      if (!Number.isNaN(n) && n > 0) return n;
+    }
+    return null;
+  };
+  const rec = item as Record<string, unknown>;
+  const prof = rec.professional as { id?: number } | undefined;
+  return (
+    tryNum(rec.professional_id) ??
+    tryNum(rec.professional_user_id) ??
+    tryNum(prof?.id) ??
+    tryNum((item as ReviewResponse).professional?.id)
+  );
+};
+
+const formatReviewDate = (iso: string) => {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  } catch {
+    return iso;
+  }
+};
+
+const REVIEW_STATUS_FILTER_LABELS: Record<string, string> = {
+  all: "All Status",
+  pending: "Pending",
+  approved: "Approved",
+  rejected: "Rejected",
+};
+
+function formatReviewStatusLabel(status: string): string {
+  const s = String(status ?? "").trim().toLowerCase();
+  if (!s) return "—";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function getReviewStatusBadgeClass(status: string): string {
+  const base =
+    "inline-flex shrink-0 items-center rounded-full border px-3 py-1 text-sm font-medium whitespace-nowrap";
+  switch (String(status ?? "").trim().toLowerCase()) {
+    case "approved":
+      return `${base} bg-green-100 text-green-700 border-green-200`;
+    case "pending":
+      return `${base} bg-yellow-100 text-yellow-700 border-yellow-200`;
+    case "rejected":
+      return `${base} bg-red-100 text-red-700 border-red-200`;
+    default:
+      return `${base} bg-gray-100 text-gray-700 border-gray-200`;
+  }
+}
+
+const mapListItemToDisplay = (item: AdminReviewListItem): ReviewDisplay => ({
+  id: item.id,
+  professionalId: coerceProfessionalId(item),
+  customer: item.reviewer_name || "",
+  customerEmail: item.reviewer_email || "",
+  professional: item.professional_name || "",
+  professionalEmail: item.professional_email || "",
+  rating: parseInt(String(item.rating), 10) || 0,
+  date: formatReviewDate(item.created_at),
+  bookingRef: item.ref_code || item.booking_ref || `FG-${item.id}`,
+  service: Array.isArray(item.services) ? item.services[0] || "—" : "—",
+  text: item.feedback || "",
+  status: (item.status || "").toLowerCase(),
+  flagged: false,
+  professionalResponse: null,
+});
+
+const mapShowDataToDisplay = (base: ReviewDisplay, raw: ReviewResponse | Record<string, unknown>): ReviewDisplay => {
+  const rec = raw as Record<string, unknown>;
+  const prof = rec.professional as { name?: string | null; id?: number } | undefined;
+  const creator = rec.creator as { full_name?: string; email?: string } | undefined;
+  const services = rec.services;
+  const serviceLabel = Array.isArray(services)
+    ? String(services[0] ?? base.service)
+  : typeof services === "string"
+    ? services
+    : base.service;
+
+  return {
+    ...base,
+    professionalId: coerceProfessionalId(raw) ?? base.professionalId,
+    customer: String(rec.name ?? rec.reviewer_name ?? creator?.full_name ?? base.customer),
+    customerEmail: String(rec.reviewer_email ?? creator?.email ?? base.customerEmail),
+    professional: String(rec.professional_name ?? prof?.name ?? base.professional),
+    professionalEmail: String(rec.professional_email ?? base.professionalEmail),
+    rating: parseInt(String(rec.rating ?? base.rating), 10) || base.rating,
+    date: rec.created_at ? formatReviewDate(String(rec.created_at)) : base.date,
+    bookingRef: String(rec.ref_code ?? rec.booking_ref ?? base.bookingRef),
+    service: serviceLabel,
+    text: String(rec.feedback ?? base.text),
+    status: String(rec.status ?? base.status).toLowerCase(),
+    professionalResponse:
+      typeof rec.professional_response === "string"
+        ? rec.professional_response
+        : base.professionalResponse,
+  };
+};
+
 export function AdminReviews() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchPlaceholder, setSearchPlaceholder] = useState("Search reviews...");
+  const [compactLayout, setCompactLayout] = useState(false);
+  /** Stack action buttons vertically on small phones only (≤767px). Medium+ matches large desktop. */
+  const [mobileButtons, setMobileButtons] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [responseModalOpen, setResponseModalOpen] = useState(false);
   const [customerContactModalOpen, setCustomerContactModalOpen] = useState(false);
-  const [selectedReview, setSelectedReview] = useState<any>(null);
+  const [selectedReview, setSelectedReview] = useState<ReviewDisplay | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [adminResponse, setAdminResponse] = useState("");
   const [customerContactMessage, setCustomerContactMessage] = useState("");
 
-  type ReviewDisplay = {
-    id: number;
-    /** From list API `professional_id` — used by POST /contact-professional/create */
-    professionalId: number | null;
-    customer: string;
-    customerEmail: string;
-    professional: string;
-    professionalEmail: string;
-    rating: number;
-    date: string;
-    bookingRef: string;
-    service: string;
-    text: string;
-    status: string;
-    flagged: boolean;
-    flagReason?: string;
-    rejectionReason?: string;
-    professionalResponse: string | null;
-  };
-
   const [reviews, setReviews] = useState<ReviewDisplay[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [approvingReviewId, setApprovingReviewId] = useState<number | null>(null);
   const [rejectingReviewId, setRejectingReviewId] = useState<number | null>(null);
   const [sendingContactMessage, setSendingContactMessage] = useState(false);
   const [sendingCustomerContactMessage, setSendingCustomerContactMessage] = useState(false);
 
-  const coerceProfessionalId = (item: AdminReviewListItem): number | null => {
-    const tryNum = (raw: unknown): number | null => {
-      if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
-      if (typeof raw === "string") {
-        const n = parseInt(raw, 10);
-        if (!Number.isNaN(n) && n > 0) return n;
-      }
-      return null;
-    };
-    return (
-      tryNum(item.professional_id) ??
-      tryNum(item.professional_user_id) ??
-      tryNum(item.professional?.id)
-    );
-  };
-
-  const formatReviewDate = (iso: string) => {
-    try {
-      const d = new Date(iso);
-      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    } catch {
-      return iso;
-    }
-  };
-
-  useEffect(() => {
-    const token = getApiToken();
-    if (!token) return;
-    getAdminReviewsList({ api_token: token })
-      .then((res) => {
-        if (res.success && Array.isArray(res.data)) {
-          const mapped: ReviewDisplay[] = res.data.map((item) => ({
-            id: item.id,
-            professionalId: coerceProfessionalId(item),
-            customer: item.reviewer_name || "",
-            customerEmail: item.reviewer_email || "",
-            professional: item.professional_name || "",
-            professionalEmail: item.professional_email || "",
-            rating: parseInt(String(item.rating), 10) || 0,
-            date: formatReviewDate(item.created_at),
-            bookingRef: `FG-${item.id}`,
-            service: Array.isArray(item.services) ? item.services[0] || "—" : "—",
-            text: item.feedback || "",
-            status: item.status || "",
-            flagged: false,
-            professionalResponse: null
-          }));
-          setReviews(mapped);
-          setStats({
-            total: res.data.length,
-            pending: res.data.filter((r) => r.status === "pending").length,
-            approved: res.data.filter((r) => r.status === "approved").length,
-            rejected: res.data.filter((r) => r.status === "rejected").length
-          });
-        }
-      })
-      .catch(() => { });
-  }, []);
-
-  const filteredReviews = reviews.filter((review) => {
-    const matchesSearch = review.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      review.professional.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      review.text.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = filterStatus === "all" || review.status === filterStatus;
-    return matchesSearch && matchesFilter;
-  });
-
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
     approved: 0,
-    rejected: 0
+    rejected: 0,
   });
 
+  const loadReviewsSummary = useCallback(async () => {
+    const token = getApiToken();
+    if (!token) {
+      setStatsLoading(false);
+      return;
+    }
+    setStatsLoading(true);
+    try {
+      const summary = await getAdminReviewsSummary({ api_token: token });
+      if (summary) {
+        setStats({
+          total: summary.total_review,
+          pending: summary.pending_review,
+          approved: summary.approved_review,
+          rejected: summary.rejected_review,
+        });
+      }
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e) && e.response?.data) {
+        const d = e.response.data as { message?: string };
+        toast.error(d.message || "Failed to load review summary.");
+      }
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
 
-  const renderStars = (rating: number) => {
+  const loadReviewsList = useCallback(async () => {
+    const token = getApiToken();
+    if (!token) {
+      setReviews([]);
+      setListLoading(false);
+      return;
+    }
+    setListLoading(true);
+    try {
+      const res = await getAdminReviewsList({ api_token: token });
+      const rows = normalizeReviewsList(res);
+      if (isApiSuccess(res) || res.data !== undefined) {
+        setReviews(rows.map(mapListItemToDisplay));
+      } else {
+        setReviews([]);
+        toast.error((res as { message?: string }).message || "Failed to load reviews.");
+      }
+    } catch (e: unknown) {
+      setReviews([]);
+      if (axios.isAxiosError(e) && e.response?.data) {
+        const d = e.response.data as { message?: string };
+        toast.error(d.message || "Failed to load reviews.");
+      } else {
+        toast.error(e instanceof Error ? e.message : "Failed to load reviews.");
+      }
+    } finally {
+      setListLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadReviewsSummary();
+    void loadReviewsList();
+  }, [loadReviewsSummary, loadReviewsList]);
+
+  useEffect(() => {
+    const mqCompact = window.matchMedia("(max-width: 1023px)");
+    const mqMobileButtons = window.matchMedia("(max-width: 767px)");
+    const updateLayout = () => {
+      const narrow = mqCompact.matches;
+      setCompactLayout(narrow);
+      setMobileButtons(mqMobileButtons.matches);
+      setSearchPlaceholder(
+        narrow ? "Search" : "Search reviews by customer, professional, or content..."
+      );
+    };
+    updateLayout();
+    mqCompact.addEventListener("change", updateLayout);
+    mqMobileButtons.addEventListener("change", updateLayout);
+    return () => {
+      mqCompact.removeEventListener("change", updateLayout);
+      mqMobileButtons.removeEventListener("change", updateLayout);
+    };
+  }, []);
+
+  const filteredReviews = reviews.filter((review) => {
+    const q = searchTerm.toLowerCase();
+    const matchesSearch =
+      review.customer.toLowerCase().includes(q) ||
+      review.professional.toLowerCase().includes(q) ||
+      review.text.toLowerCase().includes(q) ||
+      review.bookingRef.toLowerCase().includes(q);
+    const matchesFilter =
+      filterStatus === "all" || review.status.toLowerCase() === filterStatus.toLowerCase();
+    return matchesSearch && matchesFilter;
+  });
+
+  const renderStars = (rating: number, size: "sm" | "md" = "md") => {
+    const starClass = size === "sm" ? "h-4 w-4" : "h-5 w-5";
     return (
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-0.5">
         {[1, 2, 3, 4, 5].map((star) => (
           <Star
             key={star}
-            className={`w-5 h-5 ${star <= rating
-              ? "fill-yellow-400 text-yellow-400"
-              : "text-gray-300"
-              }`}
+            className={`${starClass} ${
+              star <= rating ? "fill-yellow-400 text-yellow-400" : "text-gray-300"
+            }`}
           />
         ))}
       </div>
     );
   };
 
-  const isReviewModerationSuccess = (res: { success?: boolean; status?: string | boolean; message?: string }) => {
-    if (res.success === true) return true;
-    if (res.status === true || res.status === "success") return true;
-    const msg = typeof res.message === "string" ? res.message.toLowerCase() : "";
-    if (msg.includes("success") || msg.includes("approved") || msg.includes("reject")) return true;
-    return false;
-  };
+  const isReviewModerationSuccess = isApiSuccess;
+
+  const refreshAfterModeration = useCallback(async () => {
+    await Promise.all([loadReviewsSummary(), loadReviewsList()]);
+  }, [loadReviewsSummary, loadReviewsList]);
 
   const handleApprove = async (review: ReviewDisplay) => {
     const token = getApiToken();
@@ -175,19 +327,15 @@ export function AdminReviews() {
     try {
       const res = await approveAdminReview({ api_token: token, id: review.id });
       if (isReviewModerationSuccess(res)) {
-        if (review.status === "pending") {
-          setStats((s) => ({
-            total: s.total,
-            pending: Math.max(0, s.pending - 1),
-            approved: s.approved + 1,
-            rejected: s.rejected,
-          }));
-        }
         setReviews((prev) =>
           prev.map((r) => (r.id === review.id ? { ...r, status: "approved" } : r))
         );
+        if (selectedReview?.id === review.id) {
+          setSelectedReview({ ...review, status: "approved" });
+        }
         toast.success(res.message || `Review from ${review.customer} has been approved.`);
         setViewModalOpen(false);
+        await refreshAfterModeration();
       } else {
         toast.error(res.message || "Could not approve this review.");
       }
@@ -215,20 +363,16 @@ export function AdminReviews() {
     try {
       const res = await rejectAdminReview({ api_token: token, id: review.id });
       if (isReviewModerationSuccess(res)) {
-        if (review.status === "pending") {
-          setStats((s) => ({
-            total: s.total,
-            pending: Math.max(0, s.pending - 1),
-            approved: s.approved,
-            rejected: s.rejected + 1,
-          }));
-        }
         setReviews((prev) =>
           prev.map((r) => (r.id === review.id ? { ...r, status: "rejected" } : r))
         );
+        if (selectedReview?.id === review.id) {
+          setSelectedReview({ ...review, status: "rejected" });
+        }
         toast.success(res.message || `Review from ${review.customer} has been rejected.`);
         setViewModalOpen(false);
         setRejectModalOpen(false);
+        await refreshAfterModeration();
       } else {
         toast.error(res.message || "Could not reject this review.");
       }
@@ -246,19 +390,39 @@ export function AdminReviews() {
     }
   };
 
-  const handleViewDetails = (review: any) => {
+  const handleViewDetails = async (review: ReviewDisplay) => {
     setSelectedReview(review);
     setViewModalOpen(true);
+    setDetailLoading(true);
+    try {
+      const res = await showReview(review.id);
+      if (isApiSuccess(res) && res.data && typeof res.data === "object") {
+        const detailed = mapShowDataToDisplay(review, res.data as ReviewResponse | Record<string, unknown>);
+        setSelectedReview(detailed);
+        setReviews((prev) => prev.map((r) => (r.id === review.id ? detailed : r)));
+      } else if (!isApiSuccess(res)) {
+        toast.error(res.message || "Could not load review details.");
+      }
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e) && e.response?.data) {
+        const d = e.response.data as { message?: string };
+        toast.error(d.message || "Could not load review details.");
+      } else {
+        toast.error(e instanceof Error ? e.message : "Could not load review details.");
+      }
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
-  const handleAddResponse = (review: any) => {
+  const handleAddResponse = (review: ReviewDisplay) => {
     setSelectedReview(review);
     setAdminResponse("");
     setCustomerContactModalOpen(false);
     setResponseModalOpen(true);
   };
 
-  const handleContactCustomer = (review: any) => {
+  const handleContactCustomer = (review: ReviewDisplay) => {
     setSelectedReview(review);
     setCustomerContactMessage("");
     setResponseModalOpen(false);
@@ -381,50 +545,66 @@ export function AdminReviews() {
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-gray-600">Total Reviews</p>
-            <p className="text-2xl text-[#0A1A2F] mt-1">{stats.total}</p>
+            <p className="text-2xl text-[#0A1A2F] mt-1">
+              {statsLoading ? "—" : stats.total}
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-gray-600">Pending</p>
-            <p className="text-2xl text-yellow-600 mt-1">{stats.pending}</p>
+            <p className="text-2xl text-yellow-600 mt-1">
+              {statsLoading ? "—" : stats.pending}
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-gray-600">Approved</p>
-            <p className="text-2xl text-green-600 mt-1">{stats.approved}</p>
+            <p className="text-2xl text-green-600 mt-1">
+              {statsLoading ? "—" : stats.approved}
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-gray-600">Rejected</p>
-            <p className="text-2xl text-red-600 mt-1">{stats.rejected}</p>
+            <p className="text-2xl text-red-600 mt-1">
+              {statsLoading ? "—" : stats.rejected}
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filters */}
+      {/* Search & status filter */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex w-full items-center gap-4">
-
-            {/* 🔍 Search */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <div
+            className={
+              compactLayout
+                ? "flex w-full flex-col gap-3"
+                : "flex w-full items-center gap-4"
+            }
+          >
+            <div className={compactLayout ? "relative w-full" : "relative min-w-0 flex-1"}>
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-gray-400"
+                aria-hidden
+              />
               <Input
-                placeholder="Search reviews by customer , professioal or content..."
+                placeholder={searchPlaceholder}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 w-full h-11"
+                className="h-11 w-full pl-10"
               />
             </div>
-
-            {/* 🔽 Filter */}
-            <div className="w-[180px]">
+            <div className={compactLayout ? "w-full shrink-0" : "w-[180px] shrink-0"}>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-full h-11 px-4">
-                  <SelectValue placeholder="All" />
+                <SelectTrigger className="h-11 w-full px-4">
+                  <SelectValue
+                    placeholder="All Status"
+                    label={REVIEW_STATUS_FILTER_LABELS[filterStatus] ?? "All Status"}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
@@ -434,48 +614,63 @@ export function AdminReviews() {
                 </SelectContent>
               </Select>
             </div>
-
           </div>
         </CardContent>
       </Card>
 
       {/* Reviews List */}
+      {listLoading ? (
+        <Card>
+          <CardContent className="p-12 flex flex-col items-center justify-center gap-3 text-gray-500">
+            <Loader2 className="h-8 w-8 animate-spin text-red-600" />
+            <p>Loading reviews…</p>
+          </CardContent>
+        </Card>
+      ) : (
       <div className="space-y-4">
         {filteredReviews.map((review) => (
-          <Card key={review.id} className={review.flagged ? "border-orange-300 border-2" : ""}>
-            <CardContent className="p-6">
+          <Card
+            key={review.id}
+            className={review.flagged ? "border-2 border-orange-300" : "border border-gray-200"}
+          >
+            <CardContent className="p-4 sm:p-5">
               <div className="space-y-4">
-                {/* Header */}
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      {renderStars(review.rating)}
-                      <Badge
-                        className={
-                          review.status === "approved"
-                            ? "bg-green-100 text-green-700"
-                            : review.status === "pending"
-                              ? "bg-yellow-100 text-yellow-700"
-                              : "bg-red-100 text-red-700"
-                        }
-                      >
-                        {review.status}
+                <div
+                  className={
+                    compactLayout
+                      ? "flex flex-col gap-2"
+                      : "flex flex-wrap items-start justify-between gap-3"
+                  }
+                >
+                  <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
+                    {renderStars(review.rating, compactLayout ? "sm" : "md")}
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      <Badge variant="custom" className={getReviewStatusBadgeClass(review.status)}>
+                        {formatReviewStatusLabel(review.status)}
                       </Badge>
                       {review.flagged && (
-                        <Badge className="bg-orange-100 text-orange-700">
-                          <Flag className="w-3 h-3 mr-1" />
+                        <Badge
+                          variant="custom"
+                          className="inline-flex items-center rounded-full border border-orange-200 bg-orange-100 px-3 py-1 text-sm font-medium text-orange-700"
+                        >
+                          <Flag className="mr-1 h-3 w-3" />
                           Flagged
                         </Badge>
                       )}
                     </div>
-                    <p className="text-sm text-gray-600">
-                      {review.date} • Booking: {review.bookingRef}
-                    </p>
                   </div>
+                  <p className="text-sm text-gray-600">
+                    {review.date} • Booking: {review.bookingRef}
+                  </p>
                 </div>
 
-                {/* Customer and Professional Info */}
-                <div className="grid md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                <div
+                  className={
+                    compactLayout
+                      ? "flex flex-col gap-4 rounded-lg bg-gray-50 p-4"
+                      : "grid grid-cols-1 gap-4 rounded-lg bg-gray-50 p-4 md:grid-cols-2"
+                  }
+                >
                   <div>
                     <p className="text-sm text-gray-600">Customer</p>
                     <p className="font-medium text-gray-900">{review.customer}</p>
@@ -520,35 +715,57 @@ export function AdminReviews() {
                   </div>
                 )}
 
-                {/* Actions */}
-                <div className="flex flex-wrap gap-2 pt-2">
+                <div
+                  className={
+                    mobileButtons
+                      ? "flex flex-col gap-2 border-t border-gray-100 pt-3"
+                      : "-mx-4 flex min-w-0 items-center gap-2 overflow-x-auto border-t border-gray-100 px-4 pb-2 pt-3"
+                  }
+                  style={
+                    mobileButtons
+                      ? undefined
+                      : { WebkitOverflowScrolling: "touch", paddingRight: "0.5rem" }
+                  }
+                >
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => handleViewDetails(review)}
+                    className={mobileButtons ? "h-10 w-full" : "h-9 shrink-0 whitespace-nowrap"}
+                    style={mobileButtons ? undefined : { minWidth: "max-content" }}
+                    onClick={() => void handleViewDetails(review)}
                   >
-                    <Eye className="w-4 h-4 mr-2" />
-                    View Full Details
+                    <Eye className="mr-2 h-4 w-4 shrink-0" />
+                    View Details
                   </Button>
                   {review.status === "pending" && (
                     <>
                       <Button
                         size="sm"
-                        className="bg-green-600 hover:bg-green-700"
+                        className={
+                          mobileButtons
+                            ? "h-10 w-full bg-green-600 hover:bg-green-700"
+                            : "h-9 shrink-0 whitespace-nowrap bg-green-600 hover:bg-green-700"
+                        }
+                        style={mobileButtons ? undefined : { minWidth: "max-content" }}
                         disabled={approvingReviewId === review.id || rejectingReviewId === review.id}
                         onClick={() => void handleApprove(review)}
                       >
-                        <CheckCircle className="w-4 h-4 mr-2" />
+                        <CheckCircle className="mr-2 h-4 w-4 shrink-0" />
                         {approvingReviewId === review.id ? "Approving…" : "Approve"}
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
-                        className="text-red-600 border-red-600 hover:bg-red-50"
+                        className={
+                          mobileButtons
+                            ? "h-10 w-full border-red-600 text-red-600 hover:bg-red-50"
+                            : "h-9 shrink-0 whitespace-nowrap border-red-600 text-red-600 hover:bg-red-50"
+                        }
+                        style={mobileButtons ? undefined : { minWidth: "max-content" }}
                         disabled={rejectingReviewId === review.id || approvingReviewId === review.id}
                         onClick={() => void handleReject(review)}
                       >
-                        <XCircle className="w-4 h-4 mr-2" />
+                        <XCircle className="mr-2 h-4 w-4 shrink-0" />
                         {rejectingReviewId === review.id ? "Rejecting…" : "Reject"}
                       </Button>
                     </>
@@ -556,60 +773,87 @@ export function AdminReviews() {
                   <Button
                     variant="outline"
                     size="sm"
+                    className={mobileButtons ? "h-10 w-full" : "h-9 shrink-0 whitespace-nowrap"}
+                    style={mobileButtons ? undefined : { minWidth: "max-content" }}
                     onClick={() => handleAddResponse(review)}
+                    title="Contact Professional"
                   >
-                    <MessageSquare className="w-4 h-4 mr-2" />
-                    Contact Professional
+                    <MessageSquare className="mr-2 h-4 w-4 shrink-0" />
+                    {mobileButtons ? "Contact Professional" : compactLayout ? "Contact Pro" : "Contact Professional"}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleContactCustomer(review)}>
-                    <Mail className="w-4 h-4 mr-2" />
-                    Contact Customer
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={mobileButtons ? "h-10 w-full" : "h-9 shrink-0 whitespace-nowrap"}
+                    style={mobileButtons ? undefined : { minWidth: "max-content" }}
+                    onClick={() => handleContactCustomer(review)}
+                    title="Contact Customer"
+                  >
+                    <Mail className="mr-2 h-4 w-4 shrink-0" />
+                    {mobileButtons ? "Contact Customer" : compactLayout ? "Contact Cust." : "Contact Customer"}
                   </Button>
+                  {!mobileButtons ? (
+                    <span className="inline-block h-1 w-6 shrink-0" aria-hidden />
+                  ) : null}
                 </div>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
+      )}
 
-      {filteredReviews.length === 0 && (
+      {!listLoading && filteredReviews.length === 0 && (
         <Card>
           <CardContent className="p-12 text-center">
-            <p className="text-gray-500">No reviews found matching your criteria</p>
+            <p className="text-gray-500">
+              {searchTerm.trim() || filterStatus !== "all"
+                ? "No reviews match your search or filter"
+                : "No reviews found"}
+            </p>
           </CardContent>
         </Card>
       )}
 
       {/* View Details Modal */}
       <Dialog open={viewModalOpen} onOpenChange={setViewModalOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl text-[#0A1A2F]">Review Details</DialogTitle>
             <DialogDescription>Complete review information</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            {detailLoading && (
+              <div className="flex items-center justify-center gap-2 py-8 text-gray-500">
+                <Loader2 className="h-6 w-6 animate-spin text-red-600" />
+                <span>Loading review details…</span>
+              </div>
+            )}
+            <div
+              className={`flex flex-wrap items-center justify-between gap-3 rounded-lg bg-gray-50 p-4 ${
+                detailLoading ? "pointer-events-none opacity-50" : ""
+              }`}
+            >
               <div>
-                <p className="text-sm text-gray-600 mb-2">Rating</p>
+                <p className="mb-2 text-sm text-gray-600">Rating</p>
                 {renderStars(selectedReview?.rating || 0)}
               </div>
               <Badge
-                className={
-                  selectedReview?.status === "approved"
-                    ? "bg-green-100 text-green-700"
-                    : selectedReview?.status === "pending"
-                      ? "bg-yellow-100 text-yellow-700"
-                      : "bg-red-100 text-red-700"
-                }
+                variant="custom"
+                className={getReviewStatusBadgeClass(selectedReview?.status ?? "")}
               >
-                {selectedReview?.status}
+                {formatReviewStatusLabel(selectedReview?.status ?? "")}
               </Badge>
             </div>
 
             <Separator />
 
-            <div className="grid md:grid-cols-2 gap-4">
+            <div
+              className={
+                compactLayout ? "flex flex-col gap-4" : "grid grid-cols-1 gap-4 md:grid-cols-2"
+              }
+            >
               <div>
                 <Label className="text-sm text-gray-600">Customer</Label>
                 <p className="font-medium text-gray-900 mt-1">{selectedReview?.customer}</p>
@@ -651,15 +895,29 @@ export function AdminReviews() {
             {selectedReview?.status === "pending" && (
               <>
                 <Button
+                  variant="outline"
+                  className="text-red-600 border-red-600 hover:bg-red-50"
+                  disabled={
+                    detailLoading ||
+                    !!selectedReview &&
+                    (approvingReviewId === selectedReview.id || rejectingReviewId === selectedReview.id)
+                  }
+                  onClick={() => selectedReview && void handleReject(selectedReview)}
+                >
+                  <XCircle className="w-4 h-4 mr-2" />
+                  {selectedReview && rejectingReviewId === selectedReview.id ? "Rejecting…" : "Reject"}
+                </Button>
+                <Button
                   className="bg-green-600 hover:bg-green-700"
                   disabled={
+                    detailLoading ||
                     !!selectedReview &&
                     (approvingReviewId === selectedReview.id || rejectingReviewId === selectedReview.id)
                   }
                   onClick={() => selectedReview && void handleApprove(selectedReview)}
                 >
                   <CheckCircle className="w-4 h-4 mr-2" />
-                  {selectedReview && approvingReviewId === selectedReview.id ? "Approving…" : "Approve Review"}
+                  {selectedReview && approvingReviewId === selectedReview.id ? "Approving…" : "Approve"}
                 </Button>
               </>
             )}
@@ -727,10 +985,10 @@ export function AdminReviews() {
 
       {/* Admin Response Modal */}
       <Dialog open={responseModalOpen} onOpenChange={setResponseModalOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl text-[#0A1A2F] flex items-center gap-2">
-              <MessageSquare className="w-6 h-6 text-blue-600" />
+              <MessageSquare className="h-6 w-6 text-blue-600" />
               Contact Professional
             </DialogTitle>
             <DialogDescription>
@@ -787,7 +1045,7 @@ export function AdminReviews() {
               disabled={sendingContactMessage || !selectedReview?.professionalId}
               onClick={() => void submitResponse()}
             >
-              <Mail className="w-4 h-4 mr-2" />
+              <Mail className="mr-2 h-4 w-4" />
               {sendingContactMessage ? "Sending…" : "Send Message"}
             </Button>
           </DialogFooter>
@@ -796,10 +1054,10 @@ export function AdminReviews() {
 
       {/* Contact Customer Modal */}
       <Dialog open={customerContactModalOpen} onOpenChange={setCustomerContactModalOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-2xl text-[#0A1A2F] flex items-center gap-2">
-              <User className="w-6 h-6 text-blue-600" />
+            <DialogTitle className="flex items-center gap-2 text-2xl text-[#0A1A2F]">
+              <User className="h-6 w-6 text-blue-600" />
               Contact Customer
             </DialogTitle>
             <DialogDescription>
@@ -852,7 +1110,7 @@ export function AdminReviews() {
               disabled={sendingCustomerContactMessage || !(selectedReview?.customerEmail ?? "").trim()}
               onClick={() => void submitCustomerContact()}
             >
-              <Mail className="w-4 h-4 mr-2" />
+              <Mail className="mr-2 h-4 w-4" />
               {sendingCustomerContactMessage ? "Sending…" : "Send Message"}
             </Button>
           </DialogFooter>

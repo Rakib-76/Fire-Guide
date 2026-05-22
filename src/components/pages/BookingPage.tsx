@@ -215,6 +215,11 @@ export default function BookingPage() {
       isCustomQuote={questionnaireData?.isCustomQuote}
       customQuoteRequestData={questionnaireData?.request_data}
       serviceIdForQuote={questionnaireData?.service_id}
+      serviceNameHint={
+        typeof questionnaireData?.service_name === "string"
+          ? questionnaireData.service_name
+          : undefined
+      }
     />
   );
 }

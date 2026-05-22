@@ -1253,7 +1253,7 @@ export function ProfessionalProfileContent() {
     completionPercentage < 100 || !hasProfilePhotoForPreview;
 
   return (
-    <div>
+    <div className="min-w-0 w-full max-w-full">
       <Dialog open={completeProfileIntroModalOpen} onOpenChange={setCompleteProfileIntroModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -1306,7 +1306,7 @@ export function ProfessionalProfileContent() {
       )}
 
       {/* Page Header */}
-      <div className="mb-6 sm:mb-8">
+      <div className="mb-6 sm:mb-8 min-w-0">
         <h1 className="text-2xl sm:text-3xl lg:text-4xl text-[#0A1A2F] mb-2">
           Complete Your Profile
         </h1>
@@ -1316,8 +1316,8 @@ export function ProfessionalProfileContent() {
       </div>
 
       {/* Profile Completion Progress */}
-      <Card className="mb-4 sm:mb-6 border-0 shadow-md bg-gradient-to-r from-blue-50 to-indigo-50">
-        <CardContent className="p-4 sm:p-6">
+      <Card className="mb-4 sm:mb-6 border-0 shadow-md bg-gradient-to-r from-blue-50 to-indigo-50 min-w-0 overflow-hidden">
+        <CardContent className="p-4 sm:p-6 min-w-0">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-gray-900">Profile Completion</h3>
             <span className="text-sm font-semibold text-blue-600">{completionPercentage.toFixed(0)}%</span>
@@ -1328,15 +1328,15 @@ export function ProfessionalProfileContent() {
               style={{ width: `${completionPercentage}%` }}
             ></div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 min-w-0">
             {completionSteps.map((step) => (
-              <div key={step.id} className="flex items-center gap-2 text-sm">
+              <div key={step.id} className="flex items-center gap-2 text-sm min-w-0">
                 {step.completed ? (
-                  <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
                 ) : (
-                  <Circle className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <Circle className="w-4 h-4 text-gray-400 shrink-0" />
                 )}
-                <span className={step.completed ? "text-gray-900" : "text-gray-500"}>
+                <span className={`min-w-0 break-words ${step.completed ? "text-gray-900" : "text-gray-500"}`}>
                   {step.title}
                 </span>
               </div>
@@ -1345,45 +1345,48 @@ export function ProfessionalProfileContent() {
         </CardContent>
       </Card>
 
-      <div className="grid lg:grid-cols-3 gap-4 sm:gap-6">
+      <div className="grid lg:grid-cols-3 gap-4 sm:gap-6 min-w-0">
         {/* Main Form - Takes 2 columns on desktop */}
-        <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+        <div className="lg:col-span-2 space-y-4 sm:space-y-6 min-w-0">
           {/* Basic Information */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md min-w-0 overflow-hidden">
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                <User className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0" />
+                <User className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 shrink-0" />
                 Basic Information
               </CardTitle>
               <CardDescription className="text-xs sm:text-sm mt-1">
                 Your personal and business details visible to customers
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 sm:space-y-4 p-4 sm:p-6 pt-0">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
+            <CardContent className="space-y-3 sm:space-y-4 p-4 sm:p-6 pt-0 min-w-0 [&_input]:min-w-0 [&_input]:max-w-full [&_textarea]:min-w-0 [&_textarea]:max-w-full">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
+                <div className="min-w-0">
                   <Label htmlFor="name">Full Name *</Label>
                   <Input 
                     id="name" 
+                    className="w-full min-w-0 max-w-full"
                     value={formData.name}
                     onChange={(e) => setFormData({...formData, name: e.target.value})}
                   />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <Label htmlFor="businessName">Business Name *</Label>
                   <Input 
                     id="businessName" 
+                    className="w-full min-w-0 max-w-full"
                     value={formData.businessName}
                     onChange={(e) => setFormData({...formData, businessName: e.target.value})}
                   />
                 </div>
               </div>
 
-              <div>
+              <div className="min-w-0">
                 <Label htmlFor="bio">Professional Bio *</Label>
                 <Textarea 
                   id="bio"
                   rows={4}
+                  className="w-full min-w-0 max-w-full"
                   placeholder="Describe your experience, qualifications, and what makes your service unique..."
                   value={formData.bio}
                   onChange={(e) => setFormData({...formData, bio: e.target.value})}
@@ -1396,69 +1399,72 @@ export function ProfessionalProfileContent() {
           </Card>
 
           {/* Contact Information */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md min-w-0 overflow-hidden">
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0" />
+                <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 shrink-0" />
                 Contact Information
               </CardTitle>
               <CardDescription className="text-xs sm:text-sm mt-1">
                 How customers and Fire Guide can reach you
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 sm:space-y-4 p-4 sm:p-6 pt-0">
-              <div>
+            <CardContent className="space-y-3 sm:space-y-4 p-4 sm:p-6 pt-0 min-w-0 [&_input]:min-w-0 [&_input]:max-w-full">
+              <div className="min-w-0">
                 <Label htmlFor="email" className="flex items-center gap-2">
-                  <Mail className="w-4 h-4" />
+                  <Mail className="w-4 h-4 shrink-0" />
                   Email Address *
                 </Label>
                 <Input 
                   id="email" 
                   type="email"
+                  className="w-full min-w-0 max-w-full"
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <Label htmlFor="phone" className="flex items-center gap-2">
-                  <Phone className="w-4 h-4" />
+                  <Phone className="w-4 h-4 shrink-0" />
                   Phone Number *
                 </Label>
                 <Input 
                   id="phone" 
                   type="tel"
+                  className="w-full min-w-0 max-w-full"
                   value={formData.phone}
                   onChange={(e) => setFormData({...formData, phone: e.target.value})}
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <Label htmlFor="address" className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4" />
+                  <MapPin className="w-4 h-4 shrink-0" />
                   Business Address *
                 </Label>
                 <Input 
                   id="address" 
+                  className="w-full min-w-0 max-w-full"
                   value={formData.address}
                   onChange={(e) => setFormData({...formData, address: e.target.value})}
                 />
               </div>
-              <div>
+              <div className="min-w-0 max-w-full sm:max-w-xs">
                 <Label htmlFor="postcode">Postcode *</Label>
                 <Input 
                   id="postcode" 
+                  className="w-full min-w-0 max-w-full"
                   value={formData.postcode}
                   onChange={(e) => setFormData({...formData, postcode: e.target.value})}
-                  className="max-w-xs"
                 />
               </div>
             </CardContent>
           </Card>
 
           {/* Services Offered */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md min-w-0 overflow-hidden">
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0" />
+                <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 shrink-0" />
                 Services Offered
               </CardTitle>
               <CardDescription className="text-xs sm:text-sm mt-1">
@@ -1521,7 +1527,7 @@ export function ProfessionalProfileContent() {
           </Card>
 
           {/* Service Area */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md min-w-0 overflow-hidden">
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-base sm:text-lg flex items-center gap-2">
                 <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0" />
@@ -1573,7 +1579,7 @@ export function ProfessionalProfileContent() {
           </Card>
 
           {/* Certifications */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md min-w-0 overflow-hidden">
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-base sm:text-lg flex items-center gap-2">
                 <Award className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0" />
@@ -1593,14 +1599,14 @@ export function ProfessionalProfileContent() {
                 certifications.map((cert) => (
                 <div 
                   key={cert.id} 
-                    className={`p-3 sm:p-4 border rounded-lg ${
+                    className={`p-3 sm:p-4 border rounded-lg min-w-0 overflow-hidden ${
                     cert.status === 'verified' ? 'bg-green-50 border-green-200' :
                     cert.status === 'pending' ? 'bg-amber-50 border-amber-200' :
                     'bg-red-50 border-red-200'
                   }`}
                 >
                   {/* Header with title and status */}
-                    <div className="flex items-start justify-between mb-2 sm:mb-3 gap-2 sm:gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-2 sm:mb-3 min-w-0">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1 sm:mb-2 flex-wrap">
                           {/* Prominent Checkmark for Verified Certifications */}
@@ -1622,14 +1628,16 @@ export function ProfessionalProfileContent() {
                         )}
                       
                       {/* Evidence Info Row */}
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <p className="text-xs sm:text-sm text-gray-600 break-words">
-                            Evidence: <span className="text-gray-700">{cert.evidence}</span> (1 file)
-                        </p>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between min-w-0 w-full">
+                          <p className="text-xs sm:text-sm text-gray-600 min-w-0 flex-1">
+                            <span className="font-medium text-gray-700">Evidence</span>
+                            <span className="text-gray-500"> (1 file)</span>
+                            <span className="mt-1 block text-gray-700 break-all">{cert.evidence}</span>
+                          </p>
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                            className="h-7 text-xs sm:text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 flex-shrink-0 -mr-1 sm:-mr-2"
+                            className="h-7 shrink-0 self-start text-xs sm:text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                             onClick={() => {
                               setSelectedCertification(cert);
                               setIsCertificationModalOpen(true);
@@ -1642,21 +1650,21 @@ export function ProfessionalProfileContent() {
                     </div>
 
                     {/* Status Badge */}
-                      <div className="ml-2 sm:ml-3 flex-shrink-0">
+                      <div className="shrink-0 self-start">
                       {cert.status === 'verified' && (
-                        <Badge className="bg-green-600 text-white">
+                        <Badge className="bg-green-600 text-white whitespace-normal">
                           <CheckCircle2 className="w-3 h-3 mr-1" />
                           Verified
                         </Badge>
                       )}
                       {cert.status === 'pending' && (
-                        <Badge className="bg-amber-500 text-white">
+                        <Badge className="bg-amber-500 text-white whitespace-normal text-xs">
                           <Clock className="w-3 h-3 mr-1" />
                           Pending verification
                         </Badge>
                       )}
                       {cert.status === 'rejected' && (
-                        <Badge className="bg-red-600 text-white">
+                        <Badge className="bg-red-600 text-white whitespace-normal">
                           <XCircle className="w-3 h-3 mr-1" />
                           Rejected
                         </Badge>
@@ -1797,7 +1805,7 @@ export function ProfessionalProfileContent() {
           </Card>
 
           {/* Experience */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md min-w-0 overflow-hidden">
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-base sm:text-lg flex items-center gap-2">
                 <Award className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0" />
@@ -1817,14 +1825,14 @@ export function ProfessionalProfileContent() {
                 experiences.map((exp) => (
                 <div 
                   key={exp.id} 
-                    className={`p-3 sm:p-4 border rounded-lg ${
+                    className={`p-3 sm:p-4 border rounded-lg min-w-0 overflow-hidden ${
                     exp.status === 'verified' ? 'bg-green-50 border-green-200' :
                     exp.status === 'pending' ? 'bg-amber-50 border-amber-200' :
                     'bg-red-50 border-red-200'
                   }`}
                 >
                   {/* Header with title and status */}
-                    <div className="flex items-start justify-between mb-2 sm:mb-3 gap-2 sm:gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-2 sm:mb-3 min-w-0">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1 sm:mb-2 flex-wrap">
                           {/* Prominent Checkmark for Verified Experiences */}
@@ -1846,14 +1854,16 @@ export function ProfessionalProfileContent() {
                         )}
                       
                       {/* Evidence Info Row */}
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <p className="text-xs sm:text-sm text-gray-600 break-words">
-                            Evidence: <span className="text-gray-700">{exp.evidence}</span> (1 file)
-                        </p>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between min-w-0 w-full">
+                          <p className="text-xs sm:text-sm text-gray-600 min-w-0 flex-1">
+                            <span className="font-medium text-gray-700">Evidence</span>
+                            <span className="text-gray-500"> (1 file)</span>
+                            <span className="mt-1 block text-gray-700 break-all">{exp.evidence}</span>
+                          </p>
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                            className="h-7 text-xs sm:text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 flex-shrink-0 -mr-1 sm:-mr-2"
+                            className="h-7 shrink-0 self-start text-xs sm:text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                             onClick={() => {
                               setSelectedExperience(exp);
                               setIsExperienceModalOpen(true);
@@ -1866,21 +1876,21 @@ export function ProfessionalProfileContent() {
                     </div>
 
                     {/* Status Badge */}
-                      <div className="ml-2 sm:ml-3 flex-shrink-0">
+                      <div className="shrink-0 self-start">
                       {exp.status === 'verified' && (
-                        <Badge className="bg-green-600 text-white">
+                        <Badge className="bg-green-600 text-white whitespace-normal">
                           <CheckCircle2 className="w-3 h-3 mr-1" />
                           Verified
                         </Badge>
                       )}
                       {exp.status === 'pending' && (
-                        <Badge className="bg-amber-500 text-white">
+                        <Badge className="bg-amber-500 text-white whitespace-normal text-xs">
                           <Clock className="w-3 h-3 mr-1" />
                           Pending verification
                         </Badge>
                       )}
                       {exp.status === 'rejected' && (
-                        <Badge className="bg-red-600 text-white">
+                        <Badge className="bg-red-600 text-white whitespace-normal">
                           <XCircle className="w-3 h-3 mr-1" />
                           Rejected
                         </Badge>
@@ -2043,9 +2053,9 @@ export function ProfessionalProfileContent() {
         </div>
 
         {/* Sidebar - Takes 1 column on desktop */}
-        <div className="space-y-6">
+        <div className="space-y-6 min-w-0">
           {/* Profile Preview */}
-          <Card className="border-0 shadow-md sticky top-4 sm:top-6">
+          <Card className="border-0 shadow-md sticky top-4 sm:top-6 min-w-0 overflow-hidden lg:static">
             <CardHeader className="p-4 sm:p-6 pb-3 sm:pb-4">
               <CardTitle className="text-sm sm:text-base">Profile Preview</CardTitle>
             </CardHeader>
@@ -2157,7 +2167,7 @@ export function ProfessionalProfileContent() {
           </Card>
 
           {/* Help Card */}
-          <Card className="border-0 shadow-md bg-blue-50">
+          <Card className="border-0 shadow-md bg-blue-50 min-w-0 overflow-hidden">
             <CardContent className="p-3 sm:p-4">
               <div className="flex gap-2 sm:gap-3">
                 <Info className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 flex-shrink-0 mt-0.5" />
@@ -2176,9 +2186,9 @@ export function ProfessionalProfileContent() {
         </div>
       </div>
 
-      {/* Save Button - Fixed at bottom on mobile, inline on desktop */}
-      <div className="sticky bottom-0 left-0 right-0 bg-white border-t shadow-lg mt-6 p-4 lg:static lg:border-0 lg:shadow-none lg:mt-6">
-        <div className="flex flex-col md:flex-row gap-3 max-w-7xl mx-auto">
+      {/* Save Button - sticky on mobile within content width */}
+      <div className="sticky bottom-0 z-10 mt-6 border-t bg-white p-4 shadow-lg min-w-0 w-full lg:static lg:z-auto lg:shadow-none lg:border-0">
+        <div className="flex flex-col md:flex-row gap-3 w-full min-w-0">
           <Button 
             className="flex-1 bg-red-600 hover:bg-red-700 h-12"
             onClick={handleSaveProfile}
@@ -2249,7 +2259,7 @@ export function ProfessionalProfileContent() {
                 </Label>
                 <div className="flex items-center gap-2 bg-gray-50 p-2 sm:p-3 rounded-md border border-gray-200 flex-wrap">
                   <FileText className="w-4 h-4 text-gray-600 flex-shrink-0" />
-                  <p className="text-xs sm:text-sm text-gray-700 flex-1 min-w-0 break-words">{selectedCertification.evidence}</p>
+                  <p className="text-xs sm:text-sm text-gray-700 flex-1 min-w-0 break-all">{selectedCertification.evidence}</p>
                   <Badge variant="outline" className="text-xs flex-shrink-0">
                     1 file
                   </Badge>
@@ -2390,7 +2400,7 @@ export function ProfessionalProfileContent() {
                 </Label>
                 <div className="flex items-center gap-2 bg-gray-50 p-2 sm:p-3 rounded-md border border-gray-200 flex-wrap">
                   <FileText className="w-4 h-4 text-gray-600 flex-shrink-0" />
-                  <p className="text-xs sm:text-sm text-gray-700 flex-1 min-w-0 break-words">{selectedExperience.evidence}</p>
+                  <p className="text-xs sm:text-sm text-gray-700 flex-1 min-w-0 break-all">{selectedExperience.evidence}</p>
                   <Badge variant="outline" className="text-xs flex-shrink-0">
                     1 file
                   </Badge>

@@ -99,6 +99,7 @@ export function ProfessionalCustomQuoteContent() {
 
   const requests: ProfessionalQuoteRequestItem[] = data?.requests ?? [];
   const professionalName = data?.professional?.full_name ?? "—";
+  const detailsOpen = detailsRecord !== null;
 
   const fetchData = async () => {
     const token = getApiToken();
@@ -139,6 +140,12 @@ export function ProfessionalCustomQuoteContent() {
     return matchesSearch && matchesFilter;
   });
 
+  const acceptBadgeStyle: CSSProperties = {
+    backgroundColor: "#dbeafe",
+    color: "#1d4ed8",
+    border: "1px solid #93c5fd",
+  };
+
   const statusStyle = (status: string): CSSProperties => {
     switch (status?.toLowerCase()) {
       case "pending":
@@ -149,15 +156,59 @@ export function ProfessionalCustomQuoteContent() {
         return { backgroundColor: "#d1fae5", color: "#047857", border: "1px solid #6ee7b7" };
       case "assigned":
         return { backgroundColor: "#ede9fe", color: "#5b21b6", border: "1px solid #c4b5fd" };
+      case "accept":
+      case "accepted":
+        return acceptBadgeStyle;
       case "completed":
-        return { backgroundColor: "#dcfce7", color: "#166534", border: "1px solid #86efac" };
+        return {
+          backgroundColor: "#dcfce7",
+          color: "#166534",
+          border: "1px solid #22c55e",
+        };
       default:
         return { backgroundColor: "#f1f5f9", color: "#334155", border: "1px solid #e2e8f0" };
     }
   };
 
-  const formatStatus = (status: string) =>
-    status ? status.charAt(0).toUpperCase() + status.slice(1).toLowerCase() : "";
+  const formatStatus = (status: string) => {
+    const lower = String(status ?? "").trim().toLowerCase();
+    if (lower === "accept" || lower === "accepted") return "Accepted";
+    if (!status) return "";
+    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+  };
+
+  const renderQuoteActions = (record: ProfessionalQuoteRequestItem, layout: "table" | "card") => {
+    if (layout === "card") {
+      return (
+        <div className="pt-2 border-t border-gray-100">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10 w-full"
+            onClick={() => setDetailsRecord(record)}
+          >
+            <Eye className="w-4 h-4 mr-1.5 shrink-0" />
+            View Details
+          </Button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center justify-end">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" aria-label="More actions">
+              <MoreVertical className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[10rem]">
+            <DropdownMenuItem onClick={() => setDetailsRecord(record)}>View Details</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    );
+  };
 
   const handleMarkQuoteCompleted = async (record: ProfessionalQuoteRequestItem) => {
     const token = getApiToken();
@@ -204,7 +255,7 @@ export function ProfessionalCustomQuoteContent() {
         <p className="text-gray-600 mt-1">Manage custom quote requests from customers.</p>
       </div>
 
-      <Card className="border border-gray-200 shadow-sm">
+      <Card className="border border-gray-200 shadow-sm min-w-0 overflow-hidden">
         <CardHeader>
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <CardTitle className="text-[#0A1A2F]">Custom Quote Requests</CardTitle>
@@ -224,7 +275,7 @@ export function ProfessionalCustomQuoteContent() {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="min-w-0">
           <div className="mb-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -251,83 +302,123 @@ export function ProfessionalCustomQuoteContent() {
               <p className="text-gray-600">No quote requests found.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-gray-200">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="text-left p-4 text-sm font-medium text-gray-700">ID</th>
-                    <th className="text-left p-4 text-sm font-medium text-gray-700">Customer</th>
-                    <th className="text-left p-4 text-sm font-medium text-gray-700">Service</th>
-                    <th className="text-left p-4 text-sm font-medium text-gray-700">Status</th>
-                    <th className="text-left p-4 text-sm font-medium text-gray-700">Preferred Date</th>
-                    <th className="text-left p-4 text-sm font-medium text-gray-700">Professional</th>
-                    <th className="text-right p-4 text-sm font-medium text-gray-700 min-w-[7rem]">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {filteredRecords.map((record) => {
-                    return (
-                      <tr key={record.id} className="hover:bg-gray-50">
-                        <td className="p-4">
+            <>
+              {/* Phone: cards with actions */}
+              <div
+                className={`md:hidden space-y-3 min-w-0 ${detailsOpen ? "invisible" : ""}`}
+                aria-hidden={detailsOpen}
+              >
+                {filteredRecords.map((record) => (
+                  <div
+                    key={record.id}
+                    className="rounded-lg border border-gray-200 bg-white p-4 space-y-3 min-w-0"
+                  >
+                    <div className="flex items-start justify-between gap-3 min-w-0">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-gray-900">#{record.id}</p>
+                        <p className="text-sm text-gray-900 font-medium break-words">
+                          {record.service?.service_name ?? "—"}
+                        </p>
+                      </div>
+                      <Badge variant="custom" className="shrink-0" style={statusStyle(record.status)}>
+                        {formatStatus(record.status)}
+                      </Badge>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-900">{record.customer_name}</p>
+                      <p className="text-xs text-gray-500 break-all">{record.customer_email}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-xs text-gray-500">Preferred date</p>
+                        <p className="text-gray-900">
+                          {formatPreferredDate(getQuoteRequestPreferredDate(record))}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Professional</p>
+                        <p className="text-gray-900">{professionalName}</p>
+                      </div>
+                    </div>
+                    {renderQuoteActions(record, "card")}
+                  </div>
+                ))}
+              </div>
+
+              {/* Tablet/desktop: scrollable table; sticky Actions on md–lg only */}
+              <div
+                className={`hidden md:block min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-lg border border-gray-200 ${
+                  detailsOpen ? "invisible" : ""
+                }`}
+                aria-hidden={detailsOpen}
+              >
+                <table className="w-full min-w-[44rem] table-auto">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left p-3 md:p-4 text-sm font-medium text-gray-700 whitespace-nowrap">
+                        ID
+                      </th>
+                      <th className="text-left p-3 md:p-4 text-sm font-medium text-gray-700 min-w-[8rem]">
+                        Customer
+                      </th>
+                      <th className="text-left p-3 md:p-4 text-sm font-medium text-gray-700 min-w-[7rem]">
+                        Service
+                      </th>
+                      <th className="text-left p-3 md:p-4 text-sm font-medium text-gray-700 whitespace-nowrap">
+                        Status
+                      </th>
+                      <th className="text-left p-3 md:p-4 text-sm font-medium text-gray-700 whitespace-nowrap">
+                        Preferred Date
+                      </th>
+                      <th className="hidden lg:table-cell text-left p-4 text-sm font-medium text-gray-700">
+                        Professional
+                      </th>
+                      <th className="text-right p-3 md:p-4 text-sm font-medium text-gray-700 w-14 md:sticky md:right-0 md:z-[1] md:bg-gray-50 lg:static lg:z-auto lg:w-px lg:whitespace-nowrap shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.08)] md:shadow-[-6px_0_8px_-2px_rgba(0,0,0,0.06)] lg:shadow-none">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {filteredRecords.map((record) => (
+                      <tr key={record.id} className="group hover:bg-gray-50">
+                        <td className="p-3 md:p-4 whitespace-nowrap">
                           <p className="font-medium text-gray-900">#{record.id}</p>
                         </td>
-                        <td className="p-4">
-                          <div>
+                        <td className="p-3 md:p-4">
+                          <div className="min-w-0">
                             <p className="font-medium text-gray-900">{record.customer_name}</p>
-                            <p className="text-xs text-gray-500">{record.customer_email}</p>
+                            <p className="text-xs text-gray-500 break-all hidden lg:block">
+                              {record.customer_email}
+                            </p>
                           </div>
                         </td>
-                        <td className="p-4">
-                          <p className="text-sm text-gray-700">
+                        <td className="p-3 md:p-4">
+                          <p className="text-sm text-gray-700 line-clamp-2">
                             {record.service?.service_name ?? "—"}
                           </p>
                         </td>
-                        <td className="p-4">
+                        <td className="p-3 md:p-4 whitespace-nowrap">
                           <Badge variant="custom" style={statusStyle(record.status)}>
                             {formatStatus(record.status)}
                           </Badge>
                         </td>
-                        <td className="p-4">
+                        <td className="p-3 md:p-4 whitespace-nowrap">
                           <p className="text-sm text-gray-700">
                             {formatPreferredDate(getQuoteRequestPreferredDate(record))}
                           </p>
                         </td>
-                        <td className="p-4">
+                        <td className="hidden lg:table-cell p-4">
                           <p className="text-sm text-gray-700">{professionalName}</p>
                         </td>
-                        <td className="p-4 text-right">
-                          <div className="flex items-center justify-end gap-1 group/actions">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-9 opacity-0 group-hover/actions:opacity-100 transition-opacity duration-200 ease-out"
-                              onClick={() => setDetailsRecord(record)}
-                            >
-                              <Eye className="w-4 h-4 mr-1.5" />
-                              View Details
-                            </Button>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0">
-                                  <MoreVertical className="w-4 h-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="min-w-[10rem]">
-                                <DropdownMenuItem
-                                  onClick={() => setDetailsRecord(record)}
-                                >
-                                  View Details
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
+                        <td className="p-3 md:p-4 text-right md:sticky md:right-0 md:z-[1] md:bg-white lg:static lg:z-auto group-hover:bg-gray-50 w-14 shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.08)] md:shadow-[-6px_0_8px_-2px_rgba(0,0,0,0.06)] lg:shadow-none lg:w-px lg:whitespace-nowrap">
+                          {renderQuoteActions(record, "table")}
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -339,7 +430,10 @@ export function ProfessionalCustomQuoteContent() {
           if (!open) setDetailsRecord(null);
         }}
       >
-        <DialogContent className="max-w-3xl w-[95vw] max-h-[70vh] overflow-hidden flex flex-col rounded-xl transition-all duration-300 ease-out">
+        <DialogContent
+          className="!mx-0 !w-[min(92vw,80rem)] !max-w-[min(92vw,80rem)] max-h-[85vh] overflow-hidden flex flex-col rounded-xl transition-all duration-300 ease-out"
+          style={{ width: "min(92vw, 80rem)", maxWidth: "min(92vw, 80rem)" }}
+        >
           <DialogHeader className="border-b border-gray-100 pb-4 flex-shrink-0">
             <div>
               <DialogTitle className="text-xl font-bold text-[#0A1A2F]">

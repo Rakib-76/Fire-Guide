@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Bell, Users, DollarSign, AlertCircle, CheckCircle, Info, Trash2, Send, Loader2 } from "lucide-react";
 import { getApiToken } from "../lib/auth";
 import {
@@ -45,6 +45,18 @@ const ADMIN_NOTIFICATION_TAB_PATH: Record<string, string> = {
   system: "/admin/notifications/system",
 };
 
+const NOTIFICATION_FILTER_TABS = [
+  { value: "all", label: "All" },
+  { value: "unread", label: "Unread" },
+  { value: "user", label: "Users" },
+  { value: "professional", label: "Professionals" },
+  { value: "payment", label: "Payments" },
+  { value: "system", label: "System" },
+] as const;
+
+const notificationTabTriggerClass =
+  "flex shrink-0 items-center justify-center gap-1.5 min-w-[72px] whitespace-nowrap rounded-md px-3 text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm";
+
 function categoryToType(category: string): "user" | "professional" | "payment" | "system" | "alert" {
   const c = (category || "").toLowerCase();
   if (c.includes("payment")) return "payment";
@@ -63,6 +75,16 @@ export function AdminNotifications() {
   const [pendingBulk, setPendingBulk] = useState<null | "mark_all" | "clear_all">(null);
   const [pendingRow, setPendingRow] = useState<null | { id: number; action: "read" | "delete" }>(null);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
+  const notificationTabsScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(min-width: 768px)").matches) return;
+    const container = notificationTabsScrollRef.current;
+    if (!container) return;
+    const activeEl = container.querySelector<HTMLElement>('[data-state="active"]');
+    activeEl?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }, [activeTab]);
 
   /** Summary stat cards (separate from per-tab list APIs). */
   useEffect(() => {
@@ -266,12 +288,6 @@ export function AdminNotifications() {
   const unreadTabCount =
     notificationCards?.unread != null ? notificationCards.unread : unreadCount;
   const displayUnreadCount = unreadTabCount;
-  const allTabCount =
-    notificationCards?.total_notifications != null
-      ? notificationCards.total_notifications
-      : activeTab === "all"
-        ? notifications.length
-        : 0;
 
   const stats = {
     total:
@@ -291,9 +307,8 @@ export function AdminNotifications() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* ROOT MOBILE FRAME: 375×812, 16px L/R padding, 16px top, 24px bottom */}
-      <div className="w-full max-w-[375px] mx-auto px-4 pt-4 pb-6 md:max-w-none md:px-0 md:pt-6">
+    <div className="space-y-6 min-w-0">
+      <div className="w-full max-w-[375px] mx-auto px-4 pt-4 pb-6 md:max-w-none md:px-0 md:pt-0">
         
         {/* VERTICAL AUTO LAYOUT - 14px spacing between major sections */}
         <div className="flex flex-col gap-3.5">
@@ -461,57 +476,33 @@ export function AdminNotifications() {
             </Card>
           </div>
 
-          {/* 4. TABS - Horizontal scroll, 44px height, 72px min width per tab */}
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <div className="w-full overflow-x-auto -mx-4 px-4 scrollbar-hide md:mx-0 md:px-0">
-              <TabsList className="inline-flex h-11 gap-1 bg-gray-100 p-1 rounded-lg md:grid md:w-full md:grid-cols-6">
-                <TabsTrigger 
-                  value="all" 
-                  className="flex items-center justify-center gap-1.5 min-w-[72px] px-3 text-sm whitespace-nowrap rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
-                >
-                  All
-                  {allTabCount > 0 && (
-                    <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-gray-300 text-gray-700 rounded-full text-[10px] font-medium">
-                      {allTabCount}
-                    </span>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="unread" 
-                  className="flex items-center justify-center gap-1.5 min-w-[72px] px-3 text-sm whitespace-nowrap rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
-                >
-                  Unread
-                  {displayUnreadCount > 0 && (
-                    <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-red-100 text-red-700 rounded-full text-[10px] font-medium">
-                      {displayUnreadCount}
-                    </span>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="user" 
-                  className="flex items-center justify-center min-w-[72px] px-3 text-sm whitespace-nowrap rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
-                >
-                  Users
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="professional" 
-                  className="flex items-center justify-center min-w-[72px] px-3 text-sm whitespace-nowrap rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
-                >
-                  Professionals
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="payment" 
-                  className="flex items-center justify-center min-w-[72px] px-3 text-sm whitespace-nowrap rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
-                >
-                  Payments
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="system" 
-                  className="flex items-center justify-center min-w-[72px] px-3 text-sm whitespace-nowrap rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm"
-                >
-                  System
-                </TabsTrigger>
-              </TabsList>
+          {/* 4. TABS — slider on mobile only; md+ full row (single TabsList) */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full min-w-0">
+            <div className="relative -mx-4 mb-3 min-w-0 px-4 md:mx-0 md:px-0">
+              <div
+                ref={notificationTabsScrollRef}
+                className="overflow-x-auto md:overflow-visible"
+                style={{ WebkitOverflowScrolling: "touch" }}
+                aria-label="Notification filters"
+              >
+                <TabsList className="inline-flex h-11 w-max min-w-0 flex-nowrap gap-1 rounded-lg bg-gray-100 p-1 md:grid md:h-11 md:w-full md:grid-cols-6">
+                  {NOTIFICATION_FILTER_TABS.map(({ value, label }) => (
+                    <TabsTrigger key={value} value={value} className={notificationTabTriggerClass}>
+                      {label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+              <div
+                className="pointer-events-none absolute left-0 top-0 bottom-0 z-10 w-10 md:hidden"
+                style={{ background: "linear-gradient(to right, #fff 20%, transparent)" }}
+                aria-hidden
+              />
+              <div
+                className="pointer-events-none absolute right-0 top-0 bottom-0 z-10 w-10 md:hidden"
+                style={{ background: "linear-gradient(to left, #fff 20%, transparent)" }}
+                aria-hidden
+              />
             </div>
 
             {/* 5. NOTIFICATION ALERT CARDS - Vertical layout, 16px padding */}

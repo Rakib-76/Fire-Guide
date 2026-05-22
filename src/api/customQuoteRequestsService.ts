@@ -65,6 +65,10 @@ export interface MyQuoteRequestItem {
   updated_at: string;
   /** From POST /custom-quote-requests/my-requests when assigned (e.g. "420.00"). */
   quoted_price?: string | number | null;
+  price?: string | number | null;
+  quoted_amount?: string | number | null;
+  total_price?: string | number | null;
+  amount?: string | number | null;
   professional_booking_id?: number | string | null;
   booking_id?: number | string | null;
   professional_booking?: { id?: number } | null;
@@ -325,12 +329,17 @@ export const updateQuoteRequestStatus = async (
   status: string
 ): Promise<AdminQuoteRequestSingleResponse> => {
   try {
-    const response = await apiClient.post<AdminQuoteRequestSingleResponse>(
+    const response = await apiClient.post<AdminQuoteRequestSingleResponse & { status?: boolean | string }>(
       '/custom-quote-requests/update-status',
       { api_token: apiToken, id: quoteRequestId, status }
     );
     const data = response.data;
-    if (!data?.status) {
+    const ok =
+      data?.status === true ||
+      data?.status === "success" ||
+      data?.status === "Success" ||
+      Boolean(data?.data);
+    if (!ok) {
       throw new Error((data as { message?: string })?.message || 'Update failed');
     }
     return data;

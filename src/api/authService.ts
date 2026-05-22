@@ -1454,6 +1454,10 @@ export interface CustomerAllBookingItem {
   is_paid?: boolean | number | string | null;
   /** Some payloads use payment_status instead of is_paid. */
   payment_status?: string | null;
+  has_review?: boolean | number | string | null;
+  is_reviewed?: boolean | number | string | null;
+  review_id?: number | string | null;
+  review?: { id?: number } | null;
   created_at: string;
   updated_at: string;
   professional: {
@@ -1474,6 +1478,11 @@ export interface CustomerAllBookingItem {
     id: number;
     service_name: string;
     price: string;
+  } | null;
+  /** Questionnaire selections stored at booking time (e.g. alarm detector counts). */
+  selected_service?: {
+    type?: string;
+    data?: Record<string, { id?: number; value?: string } | string | number | null>;
   } | null;
   user: {
     id: number;

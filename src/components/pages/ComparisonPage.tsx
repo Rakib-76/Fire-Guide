@@ -29,7 +29,15 @@ function getIsCustomQuote() {
 
 export default function ComparisonPage() {
   const navigate = useNavigate();
-  const { setSelectedProfessional, setBookingProfessional, setSelectedProfessionalId, questionnaireData, locationSearchData } = useApp();
+  const {
+    setSelectedProfessional,
+    setBookingProfessional,
+    setSelectedProfessionalId,
+    questionnaireData,
+    locationSearchData,
+    selectedServiceId,
+    selectedService,
+  } = useApp();
   const isCustomQuote = Boolean(questionnaireData?.isCustomQuote) || getIsCustomQuote();
 
   return (
@@ -264,7 +272,19 @@ export default function ComparisonPage() {
       }}
       onBack={() => {
         startTransition(() => {
-          navigate(-1);
+          const serviceId =
+            locationSearchData?.service_id ??
+            selectedServiceId ??
+            (questionnaireData as { service_id?: number } | null)?.service_id;
+          if (serviceId != null && Number(serviceId) > 0) {
+            navigate(`/services/${serviceId}/location`);
+            return;
+          }
+          if (selectedService) {
+            navigate(`/services/${selectedService}/location`);
+            return;
+          }
+          navigate("/services");
         });
       }}
     />

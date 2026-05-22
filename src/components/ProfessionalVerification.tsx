@@ -744,19 +744,23 @@ export function ProfessionalVerification() {
 
       {/* Overall Status */}
       <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
-        <CardContent className="p-6">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
-                <Shield className="w-8 h-8 text-white" />
+        <CardContent className="p-4 sm:p-6">
+          <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-start md:justify-between md:gap-4">
+            <div className="flex items-start gap-3 min-w-0 flex-1">
+              <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+                <Shield className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
               </div>
-              <div>
-                <h2 className="text-2xl font-bold mb-1">{verificationSummary?.title || "Fully Verified Professional"}</h2>
-                <p className="text-green-100">{verificationSummary?.subtitle || "All verification requirements completed"}</p>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl sm:text-2xl font-bold mb-1 break-words">
+                  {verificationSummary?.title || "Fully Verified Professional"}
+                </h2>
+                <p className="text-sm sm:text-base text-green-100">
+                  {verificationSummary?.subtitle || "All verification requirements completed"}
+                </p>
               </div>
             </div>
-            <Badge className="bg-white text-green-600 text-lg px-4 py-2">
-              <CheckCircle className="w-5 h-5 mr-2" />
+            <Badge className="bg-white text-green-600 text-sm sm:text-lg px-3 py-1.5 sm:px-4 sm:py-2 w-fit shrink-0 self-start md:self-start">
+              <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2" />
               {verificationSummary?.active_status || "Active"}
             </Badge>
           </div>

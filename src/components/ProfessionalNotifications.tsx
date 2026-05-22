@@ -401,37 +401,39 @@ export function ProfessionalNotifications() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 md:grid-cols-5 gap-1">
-          <TabsTrigger value="all" className="relative text-xs md:text-sm">
-            All
-            {allNotifications.length > 0 && (
-              <Badge variant="secondary" className="ml-1 md:ml-2 px-1.5 py-0.5 text-xs">
-                {allNotifications.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="unread" className="relative text-xs md:text-sm">
-            Unread
-            {unreadCount > 0 && (
-              <Badge variant="destructive" className="ml-1 md:ml-2 px-1.5 py-0.5 text-xs">
-                {unreadCount}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="booking" className="text-xs md:text-sm">
-            Bookings
-          </TabsTrigger>
-          <TabsTrigger value="payment" className="text-xs md:text-sm">
-            Payments
-          </TabsTrigger>
-          {/* <TabsTrigger value="review" className="text-xs md:text-sm">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full min-w-0">
+        <div className="min-w-0 w-full overflow-x-auto overscroll-x-contain scroll-smooth [-webkit-overflow-scrolling:touch] md:overflow-visible">
+          <TabsList className="inline-flex h-auto w-max min-w-full flex-nowrap justify-start gap-1 p-1 md:grid md:w-full md:grid-cols-5 md:overflow-visible">
+            <TabsTrigger value="all" className="relative shrink-0 text-xs md:text-sm">
+              All
+              {allNotifications.length > 0 && (
+                <Badge variant="secondary" className="ml-1 md:ml-2 px-1.5 py-0.5 text-xs">
+                  {allNotifications.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="unread" className="relative shrink-0 text-xs md:text-sm">
+              Unread
+              {unreadCount > 0 && (
+                <Badge variant="destructive" className="ml-1 md:ml-2 px-1.5 py-0.5 text-xs">
+                  {unreadCount}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="booking" className="shrink-0 text-xs md:text-sm">
+              Bookings
+            </TabsTrigger>
+            <TabsTrigger value="payment" className="shrink-0 text-xs md:text-sm">
+              Payments
+            </TabsTrigger>
+            {/* <TabsTrigger value="review" className="shrink-0 text-xs md:text-sm">
             Reviews
           </TabsTrigger> */}
-          <TabsTrigger value="system" className="text-xs md:text-sm">
-            System
-          </TabsTrigger>
-        </TabsList>
+            <TabsTrigger value="system" className="shrink-0 text-xs md:text-sm">
+              System
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value={activeTab} className="mt-6 w-full">
           {filteredNotifications.length === 0 ? (

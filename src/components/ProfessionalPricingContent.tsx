@@ -132,6 +132,7 @@ function writeFraPricingPersisted(data: FraPricingPersisted) {
 export function ProfessionalPricingContent() {
   const [activeTab, setActiveTab] = useState<string>(TAB_IDS.FRA_SERVICE);
   const [loading, setLoading] = useState(false);
+  const pricingTabsScrollRef = useRef<HTMLDivElement>(null);
 
   // Fetched options (dynamically from GET APIs based on selected service)
   const [propertyTypes, setPropertyTypes] = useState<PropertyTypeResponse[]>([]);
@@ -1663,8 +1664,24 @@ export function ProfessionalPricingContent() {
     }
   };
 
+  // Keep the active category tab visible inside the mobile horizontal scroller
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(min-width: 768px)").matches) return;
+    const container = pricingTabsScrollRef.current;
+    if (!container) return;
+    const activeEl = container.querySelector<HTMLElement>(
+      `[data-state="active"]`
+    );
+    activeEl?.scrollIntoView({
+      inline: "center",
+      block: "nearest",
+      behavior: "smooth",
+    });
+  }, [activeTab]);
+
   return (
-    <div className="min-w-0 overflow-x-hidden">
+    <div className="min-w-0 w-full max-w-full">
       {/* Page Header — compact on mobile, unchanged on desktop (md+) */}
       <div className="mb-4 md:mb-8">
         <h1 className="text-xl md:text-2xl font-bold text-[#0A1A2F] mb-1 md:mb-2">
@@ -1675,32 +1692,44 @@ export function ProfessionalPricingContent() {
         </p>
       </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v)}>
-        <TabsList className="w-full flex flex-wrap h-auto gap-1.5 p-1.5 md:gap-1 md:p-1 bg-gray-100 rounded-lg mb-4 md:mb-6">
-          {(Object.entries(TAB_LABELS) as [string, string][]).map(
-            ([id, label]) => {
-              const isActive = activeTab === id;
-              const isDisabled = id !== TAB_IDS.FRA_SERVICE && id !== TAB_IDS.FIRE_ALARM && id !== TAB_IDS.EXTINGUISHERS && id !== TAB_IDS.EMERGENCY_LIGHTING && id !== TAB_IDS.TRAINING && id !== TAB_IDS.CONSULTANCY;
-              return (
-                <TabsTrigger
-                  key={id}
-                  value={id}
-                  disabled={isDisabled}
-                  className={`
-                    flex-1 min-w-0 md:min-w-[120px] py-2.5 md:py-3 px-3 md:px-4 text-sm md:text-base rounded-md font-medium transition-all
-                    ${isActive ? "bg-white shadow-sm text-red-600" : ""}
-                    ${isDisabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-gray-200"}
-                  `}
-                >
-                  {label}
-                </TabsTrigger>
-              );
-            }
-          )}
-        </TabsList>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v)} className="min-w-0 w-full">
+        <div
+          ref={pricingTabsScrollRef}
+          className="mb-4 md:mb-6 min-w-0 w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] md:overflow-visible"
+          aria-label="Service categories"
+        >
+          <TabsList className="!flex h-auto w-max min-w-full flex-nowrap justify-start gap-1.5 p-1.5 md:w-full md:justify-between md:gap-0 md:p-1 bg-gray-100 rounded-lg">
+            {(Object.entries(TAB_LABELS) as [string, string][]).map(
+              ([id, label]) => {
+                const isActive = activeTab === id;
+                const isDisabled =
+                  id !== TAB_IDS.FRA_SERVICE &&
+                  id !== TAB_IDS.FIRE_ALARM &&
+                  id !== TAB_IDS.EXTINGUISHERS &&
+                  id !== TAB_IDS.EMERGENCY_LIGHTING &&
+                  id !== TAB_IDS.TRAINING &&
+                  id !== TAB_IDS.CONSULTANCY;
+                return (
+                  <TabsTrigger
+                    key={id}
+                    value={id}
+                    disabled={isDisabled}
+                    className={`
+                      shrink-0 whitespace-nowrap py-2.5 md:py-3 px-3 md:px-4 text-sm md:text-base rounded-md font-medium transition-all
+                      ${isActive ? "bg-white shadow-sm text-red-600" : ""}
+                      ${isDisabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-gray-200"}
+                    `}
+                  >
+                    {label}
+                  </TabsTrigger>
+                );
+              }
+            )}
+          </TabsList>
+        </div>
 
-        <TabsContent value={TAB_IDS.FRA_SERVICE} className="mt-0">
-          <Card className="border-0 shadow-lg overflow-hidden">
+        <TabsContent value={TAB_IDS.FRA_SERVICE} className="mt-0 w-full">
+          <Card className="w-full border-0 shadow-lg overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-red-50 to-orange-50 border-b">
               <CardTitle className="text-lg text-[#0A1A2F]">
                 Fire Risk Assessment Pricing
@@ -1716,7 +1745,7 @@ export function ProfessionalPricingContent() {
                   <p className="text-gray-500">Loading options...</p>
                 </div>
               ) : (
-              <div className="space-y-4 md:space-y-6 w-full max-w-4xl">
+              <div className="space-y-4 md:space-y-6 w-full">
                 {/* Row 1: Property Type (left, Select + Price) | Base Price (right, smaller) */}
                 <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-stretch md:items-end">
                   <div className="space-y-2 flex-1 min-w-0">
@@ -1990,8 +2019,8 @@ export function ProfessionalPricingContent() {
           </Card>
         </TabsContent>
 
-        <TabsContent value={TAB_IDS.FIRE_ALARM} className="mt-0">
-          <Card className="border-0 shadow-lg overflow-hidden">
+        <TabsContent value={TAB_IDS.FIRE_ALARM} className="mt-0 w-full">
+          <Card className="w-full border-0 shadow-lg overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-red-50 to-orange-50 border-b">
               <CardTitle className="text-lg text-[#0A1A2F]">
                 Fire Alarm Pricing
@@ -2001,7 +2030,7 @@ export function ProfessionalPricingContent() {
               </p>
             </CardHeader>
             <CardContent className="p-4 md:p-8">
-              <div className="space-y-4 md:space-y-6 w-full max-w-4xl">
+              <div className="space-y-4 md:space-y-6 w-full">
                 {/* Row 1: Fire Alarm - Base Price */}
                 <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-stretch md:items-end">
                   <div className="space-y-2 flex-1 min-w-0">
@@ -2397,8 +2426,8 @@ export function ProfessionalPricingContent() {
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value={TAB_IDS.EXTINGUISHERS} className="mt-0">
-          <Card className="border-0 shadow-lg overflow-hidden">
+        <TabsContent value={TAB_IDS.EXTINGUISHERS} className="mt-0 w-full">
+          <Card className="w-full border-0 shadow-lg overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-red-50 to-orange-50 border-b">
               <CardTitle className="text-lg text-[#0A1A2F]">
                 Fire Extinguisher Pricing
@@ -2408,7 +2437,7 @@ export function ProfessionalPricingContent() {
               </p>
             </CardHeader>
             <CardContent className="p-4 md:p-8">
-              <div className="space-y-4 md:space-y-6 w-full max-w-4xl">
+              <div className="space-y-4 md:space-y-6 w-full">
                 {/* Row 1: Fire Extinguisher Service – Base price */}
                 <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-stretch md:items-end">
                   <div className="space-y-2 flex-1 min-w-0">
@@ -2856,8 +2885,8 @@ export function ProfessionalPricingContent() {
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value={TAB_IDS.EMERGENCY_LIGHTING} className="mt-0">
-          <Card className="border-0 shadow-lg overflow-hidden">
+        <TabsContent value={TAB_IDS.EMERGENCY_LIGHTING} className="mt-0 w-full">
+          <Card className="w-full border-0 shadow-lg overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-red-50 to-orange-50 border-b">
               <CardTitle className="text-lg text-[#0A1A2F]">
                 Emergency Lighting Pricing
@@ -2867,7 +2896,7 @@ export function ProfessionalPricingContent() {
               </p>
             </CardHeader>
             <CardContent className="p-4 md:p-8">
-              <div className="space-y-4 md:space-y-6 w-full max-w-4xl">
+              <div className="space-y-4 md:space-y-6 w-full">
                 {/* Row 1: Emergency Light Service – Base price */}
                 <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-stretch md:items-end">
                   <div className="space-y-2 flex-1 min-w-0">
@@ -3277,8 +3306,8 @@ export function ProfessionalPricingContent() {
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value={TAB_IDS.TRAINING} className="mt-0">
-          <Card className="border-0 shadow-lg overflow-hidden">
+        <TabsContent value={TAB_IDS.TRAINING} className="mt-0 w-full">
+          <Card className="w-full border-0 shadow-lg overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-red-50 to-orange-50 border-b">
               <CardTitle className="text-lg text-[#0A1A2F]">
                 Training Pricing
@@ -3288,7 +3317,7 @@ export function ProfessionalPricingContent() {
               </p>
             </CardHeader>
             <CardContent className="p-4 md:p-8">
-              <div className="space-y-4 md:space-y-6 w-full max-w-4xl">
+              <div className="space-y-4 md:space-y-6 w-full">
                 {/* Row 1: Professional marshal – Base price */}
                 <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-stretch md:items-end">
                   <div className="space-y-2 flex-1 min-w-0">
@@ -3705,8 +3734,8 @@ export function ProfessionalPricingContent() {
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value={TAB_IDS.CONSULTANCY} className="mt-0">
-          <Card className="border-0 shadow-lg overflow-hidden">
+        <TabsContent value={TAB_IDS.CONSULTANCY} className="mt-0 w-full">
+          <Card className="w-full border-0 shadow-lg overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-red-50 to-orange-50 border-b">
               <div>
                 <CardTitle className="text-lg text-[#0A1A2F]">
@@ -3718,7 +3747,7 @@ export function ProfessionalPricingContent() {
               </div>
             </CardHeader>
             <CardContent className="p-4 md:p-8">
-              <div className="space-y-4 md:space-y-6 w-full max-w-4xl">
+              <div className="space-y-4 md:space-y-6 w-full">
                 {/* Row 1: Consultation – Base price */}
                 <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-stretch md:items-end">
                   <div className="space-y-2 flex-1 min-w-0">

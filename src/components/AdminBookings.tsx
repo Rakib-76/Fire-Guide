@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { Search, Calendar, MoreVertical, Eye, XCircle, CheckCircle, Clock, AlertCircle, MapPin, User, Briefcase, Mail, Phone, FileText, RefreshCw } from "lucide-react";
+import { Search, Calendar, MoreVertical, Eye, XCircle, CheckCircle, Clock, AlertCircle, MapPin, User, Briefcase, Mail, Phone, FileText, RefreshCw, Loader2 } from "lucide-react";
 import { getApiToken } from "../lib/auth";
-import { getAdminBookings, AdminBookingListItem, getAdminBookingsSummary } from "../api/adminService";
+import {
+  getAdminBookings,
+  AdminBookingListItem,
+  getAdminBookingsSummary,
+  cancelAdminBooking,
+} from "../api/adminService";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card, CardContent } from "./ui/card";
@@ -73,8 +78,20 @@ function formatLocation(addr: string, city: string, postCode: string): string {
   return parts.length ? parts.join(", ") : "—";
 }
 
+const BOOKING_FILTER_LABELS: Record<string, string> = {
+  all: "All Status",
+  confirmed: "Confirmed",
+  pending: "Pending",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
 export function AdminBookings() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchPlaceholder, setSearchPlaceholder] = useState(
+    "Search reference, customer, or professional..."
+  );
+  const [compactLayout, setCompactLayout] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
@@ -94,51 +111,65 @@ export function AdminBookings() {
     cancelled: number;
   } | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [cancellingBookingId, setCancellingBookingId] = useState<number | null>(null);
 
-  useEffect(() => {
+  const loadBookings = async () => {
     const token = getApiToken();
     if (!token) return;
-    let cancelled = false;
     setBookingsLoading(true);
-    getAdminBookings({ api_token: token })
-      .then((res) => {
-        if (!cancelled && res.success && Array.isArray(res.data)) setBookingsList(res.data);
-        else if (!cancelled) setBookingsList([]);
-      })
-      .catch(() => {
-        if (!cancelled) setBookingsList([]);
-      })
-      .finally(() => {
-        if (!cancelled) setBookingsLoading(false);
-      });
-    return () => { cancelled = true; };
+    try {
+      const res = await getAdminBookings({ api_token: token });
+      if (res.success && Array.isArray(res.data)) setBookingsList(res.data);
+      else setBookingsList([]);
+    } catch {
+      setBookingsList([]);
+    } finally {
+      setBookingsLoading(false);
+    }
+  };
+
+  const loadBookingsSummary = async () => {
+    const token = getApiToken();
+    if (!token) return;
+    setSummaryLoading(true);
+    try {
+      const res = await getAdminBookingsSummary({ api_token: token });
+      if (res.success && res.data?.data) {
+        const d = res.data.data;
+        setBookingsSummary({
+          total: d.total_booking ?? 0,
+          confirmed: d.confirmed_booking ?? 0,
+          pending: d.pending_booking ?? 0,
+          completed: d.completed_booking ?? 0,
+          cancelled: d.cancel_booking ?? 0,
+        });
+      } else {
+        setBookingsSummary(null);
+      }
+    } catch {
+      setBookingsSummary(null);
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)");
+    const updateLayout = () => {
+      const narrow = mq.matches;
+      setCompactLayout(narrow);
+      setSearchPlaceholder(
+        narrow ? "Search" : "Search reference, customer, or professional..."
+      );
+    };
+    updateLayout();
+    mq.addEventListener("change", updateLayout);
+    return () => mq.removeEventListener("change", updateLayout);
   }, []);
 
   useEffect(() => {
-    const token = getApiToken();
-    if (!token) return;
-    let cancelled = false;
-    setSummaryLoading(true);
-    getAdminBookingsSummary({ api_token: token })
-      .then((res) => {
-        if (!cancelled && res.success && res.data?.data) {
-          const d = res.data.data;
-          setBookingsSummary({
-            total: d.total_booking ?? 0,
-            confirmed: d.confirmed_booking ?? 0,
-            pending: d.pending_booking ?? 0,
-            completed: d.completed_booking ?? 0,
-            cancelled: d.cancel_booking ?? 0,
-          });
-        } else if (!cancelled) setBookingsSummary(null);
-      })
-      .catch(() => {
-        if (!cancelled) setBookingsSummary(null);
-      })
-      .finally(() => {
-        if (!cancelled) setSummaryLoading(false);
-      });
-    return () => { cancelled = true; };
+    void loadBookings();
+    void loadBookingsSummary();
   }, []);
 
   const mapApiToDisplay = (b: AdminBookingListItem): BookingDisplay => {
@@ -201,18 +232,20 @@ export function AdminBookings() {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
+  const getStatusBadgeClass = (status: string) => {
+    const base =
+      "inline-flex shrink-0 items-center rounded-full border px-3 py-1 text-sm font-medium";
+    switch (String(status ?? "").trim().toLowerCase()) {
       case "confirmed":
-        return "bg-green-100 text-green-700";
+        return `${base} bg-green-100 text-green-700 border-green-200`;
       case "pending":
-        return "bg-yellow-100 text-yellow-700";
+        return `${base} bg-yellow-100 text-yellow-700 border-yellow-200`;
       case "completed":
-        return "bg-blue-100 text-blue-700";
+        return `${base} bg-blue-100 text-blue-700 border-blue-200`;
       case "cancelled":
-        return "bg-red-100 text-red-700";
+        return `${base} bg-red-100 text-red-700 border-red-200`;
       default:
-        return "bg-gray-100 text-gray-700";
+        return `${base} bg-gray-100 text-gray-700 border-gray-200`;
     }
   };
 
@@ -221,29 +254,91 @@ export function AdminBookings() {
     setDetailsModalOpen(true);
   };
 
-  const handleConfirmBooking = (booking: any) => {
-    toast.success(`Booking ${booking.reference} confirmed! Both parties have been notified.`);
-  };
+  const canCancelBooking = (status: string) =>
+    status === "pending" || status === "confirmed";
 
-  const handleCancelBooking = (booking: any) => {
+  const handleCancelBooking = (booking: BookingDisplay) => {
     setSelectedBooking(booking);
     setCancelModalOpen(true);
   };
+
+  const renderCompactBookingActions = (booking: BookingDisplay) => (
+    <div className="space-y-2">
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-10 w-full"
+        onClick={() => handleViewDetails(booking)}
+      >
+        <Eye className="mr-2 h-4 w-4 shrink-0" />
+        View Details
+      </Button>
+      {canCancelBooking(booking.status) && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-10 w-full border-red-600 text-red-600 hover:bg-red-50"
+          disabled={cancellingBookingId === booking.id}
+          onClick={() => handleCancelBooking(booking)}
+        >
+          {cancellingBookingId === booking.id ? (
+            <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
+          ) : (
+            <XCircle className="mr-2 h-4 w-4 shrink-0" />
+          )}
+          Cancel Booking
+        </Button>
+      )}
+    </div>
+  );
 
   const handleReschedule = (booking: any) => {
     setSelectedBooking(booking);
     setRescheduleModalOpen(true);
   };
 
-  const confirmCancellation = () => {
+  const confirmCancellation = async () => {
     if (!cancellationReason) {
       toast.error("Please select a cancellation reason");
       return;
     }
-    toast.success(`Booking ${selectedBooking?.reference} cancelled. Refund processed and parties notified.`);
-    setCancelModalOpen(false);
-    setCancellationReason("");
-    setCancellationNote("");
+    const token = getApiToken();
+    if (!token || !selectedBooking) {
+      toast.error("Not authenticated");
+      return;
+    }
+
+    setCancellingBookingId(selectedBooking.id);
+    try {
+      const response = await cancelAdminBooking({
+        api_token: token,
+        booking_id: selectedBooking.id,
+        cancellation_reason: cancellationReason,
+        cancellation_note: cancellationNote,
+      });
+      const ok =
+        response.success === true ||
+        response.status === "success" ||
+        response.status === true;
+      if (!ok) {
+        toast.error(response.message || "Failed to cancel booking");
+        return;
+      }
+      toast.success(
+        response.message ||
+          `Booking ${selectedBooking.reference} cancelled. Refund processed and parties notified.`
+      );
+      setCancelModalOpen(false);
+      setCancellationReason("");
+      setCancellationNote("");
+      setDetailsModalOpen(false);
+      await Promise.all([loadBookings(), loadBookingsSummary()]);
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      toast.error(e?.message || "Failed to cancel booking");
+    } finally {
+      setCancellingBookingId(null);
+    }
   };
 
   const confirmReschedule = () => {
@@ -301,24 +396,33 @@ export function AdminBookings() {
       {/* Filters */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex w-full items-center gap-4">
-
-            {/* 🔍 Search */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <div
+            className={
+              compactLayout
+                ? "flex w-full flex-col gap-3"
+                : "flex w-full items-center gap-4"
+            }
+          >
+            <div className={compactLayout ? "relative w-full" : "relative min-w-0 flex-1"}>
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-gray-400"
+                aria-hidden
+              />
               <Input
-                placeholder="Search reference, customer, or professional...."
+                placeholder={searchPlaceholder}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 w-full h-11"
+                className="h-11 w-full pl-10"
               />
             </div>
 
-            {/* 🔽 Filter */}
-            <div className="w-[180px]">
+            <div className={compactLayout ? "w-full shrink-0" : "w-[180px] shrink-0"}>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-full h-11 px-4">
-                  <SelectValue placeholder="All" />
+                <SelectTrigger className="h-11 w-full px-4">
+                  <SelectValue
+                    placeholder="All Status"
+                    label={BOOKING_FILTER_LABELS[filterStatus] ?? "All Status"}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
@@ -345,14 +449,25 @@ export function AdminBookings() {
         ) : (
           filteredBookings.map((booking) => (
             <Card key={booking.id}>
-              <CardContent className="p-6">
+              <CardContent className="p-4 lg:p-6">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="mb-3 flex items-start justify-between gap-3 lg:hidden">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-lg text-[#0A1A2F] break-words">{booking.reference}</h3>
+                        <p className="mt-1 text-sm text-gray-600">Created {booking.createdAt}</p>
+                      </div>
+                      <Badge variant="custom" className={getStatusBadgeClass(booking.status)}>
+                        {getStatusIcon(booking.status)}
+                        <span className="ml-1">{booking.status}</span>
+                      </Badge>
+                    </div>
+
+                    <div className="mb-3 hidden lg:block">
                       <div>
-                        <div className="flex items-center gap-3 mb-2">
+                        <div className="mb-2 flex items-center gap-3">
                           <h3 className="text-lg text-[#0A1A2F]">{booking.reference}</h3>
-                          <Badge className={getStatusColor(booking.status)}>
+                          <Badge variant="custom" className={getStatusBadgeClass(booking.status)}>
                             {getStatusIcon(booking.status)}
                             <span className="ml-1">{booking.status}</span>
                           </Badge>
@@ -361,79 +476,83 @@ export function AdminBookings() {
                       </div>
                     </div>
 
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <div>
-                          <p className="text-sm text-gray-600">Customer</p>
-                          <p className="font-medium text-gray-900">{booking.customer}</p>
-                          <p className="text-sm text-gray-500">{booking.customerEmail}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Professional</p>
-                          <p className="font-medium text-gray-900">{booking.professional}</p>
-                        </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-sm text-gray-600">Customer</p>
+                        <p className="font-medium text-gray-900">{booking.customer}</p>
+                        <p className="text-sm text-gray-500 break-all">{booking.customerEmail}</p>
                       </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Professional</p>
+                        <p className="font-medium text-gray-900">{booking.professional}</p>
+                      </div>
+                    </div>
 
-                      <div className="space-y-2">
-                        <div>
-                          <p className="text-sm text-gray-600">Service</p>
-                          <p className="font-medium text-gray-900">{booking.service}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Appointment</p>
-                          <p className="font-medium text-gray-900 flex items-center gap-2">
-                            <Calendar className="w-4 h-4" />
-                            {booking.date} at {booking.time}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Location</p>
-                          <p className="text-sm text-gray-900">{booking.location}</p>
-                        </div>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-sm text-gray-600">Service</p>
+                        <p className="font-medium text-gray-900">{booking.service}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Appointment</p>
+                        <p className="flex items-center gap-2 font-medium text-gray-900">
+                          <Calendar className="h-4 w-4 shrink-0" />
+                          {booking.date} at {booking.time}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Location</p>
+                        <p className="text-sm text-gray-900">{booking.location}</p>
                       </div>
                     </div>
                   </div>
-
-                  <div className="flex lg:flex-col items-center lg:items-end gap-4">
-                    <div className="text-center lg:text-right">
-                      <p className="text-sm text-gray-600">Amount</p>
-                      <p className="text-2xl text-[#0A1A2F] font-semibold">£{booking.amount}</p>
-                    </div>
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm">
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleViewDetails(booking)}>
-                          <Eye className="w-4 h-4 mr-2" />
-                          View Full Details
-                        </DropdownMenuItem>
-                        {/* Hidden: confirm / reschedule / cancel from card menu (restore if needed)
-                      {booking.status === "pending" && (
-                        <DropdownMenuItem className="text-green-600" onClick={() => handleConfirmBooking(booking)}>
-                          <CheckCircle className="w-4 h-4 mr-2" />
-                          Confirm Booking
-                        </DropdownMenuItem>
-                      )}
-                      {(booking.status === "confirmed" || booking.status === "pending") && (
-                        <>
-                          <DropdownMenuItem onClick={() => handleReschedule(booking)}>
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Reschedule
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-red-600" onClick={() => handleCancelBooking(booking)}>
-                            <XCircle className="w-4 h-4 mr-2" />
-                            Cancel Booking
-                          </DropdownMenuItem>
-                        </>
-                      )}
-                      */}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
                   </div>
+
+                  {compactLayout ? (
+                    <div className="w-full border-t border-gray-100 pt-3">
+                      <div className="mb-3 flex items-center justify-between">
+                        <p className="text-sm text-gray-600">Amount</p>
+                        <p className="text-2xl font-semibold text-[#0A1A2F]">£{booking.amount}</p>
+                      </div>
+                      {renderCompactBookingActions(booking)}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-4 lg:items-end">
+                      <div className="text-center lg:text-right">
+                        <p className="text-sm text-gray-600">Amount</p>
+                        <p className="text-2xl font-semibold text-[#0A1A2F]">£{booking.amount}</p>
+                      </div>
+
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm">
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          hideBackdrop
+                          sideOffset={12}
+                          alignOffset={10}
+                        >
+                          <DropdownMenuItem onClick={() => handleViewDetails(booking)}>
+                            <Eye className="w-4 h-4 mr-2" />
+                            View Details
+                          </DropdownMenuItem>
+                          {canCancelBooking(booking.status) && (
+                            <DropdownMenuItem
+                              className="text-red-600"
+                              onClick={() => handleCancelBooking(booking)}
+                            >
+                              <XCircle className="w-4 h-4 mr-2" />
+                              Cancel Booking
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -464,7 +583,7 @@ export function AdminBookings() {
                 <h3 className="text-xl text-[#0A1A2F] mb-1">{selectedBooking?.reference}</h3>
                 <p className="text-sm text-gray-600">Created on {selectedBooking?.createdAt}</p>
               </div>
-              <Badge className={getStatusColor(selectedBooking?.status)}>
+              <Badge variant="custom" className={getStatusBadgeClass(selectedBooking?.status ?? "")}>
                 {getStatusIcon(selectedBooking?.status)}
                 <span className="ml-1">{selectedBooking?.status}</span>
               </Badge>
@@ -676,9 +795,15 @@ export function AdminBookings() {
             <Button variant="outline" onClick={() => setCancelModalOpen(false)}>
               Cancel
             </Button>
-            <Button className="bg-red-600 hover:bg-red-700" onClick={confirmCancellation}>
+            <Button
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => void confirmCancellation()}
+              disabled={cancellingBookingId === selectedBooking?.id}
+            >
               <XCircle className="w-4 h-4 mr-2" />
-              Cancel Booking & Refund
+              {cancellingBookingId === selectedBooking?.id
+                ? "Cancelling..."
+                : "Cancel Booking & Refund"}
             </Button>
           </DialogFooter>
         </DialogContent>

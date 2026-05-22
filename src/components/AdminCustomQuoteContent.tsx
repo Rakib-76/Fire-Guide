@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef, type CSSProperties } from "react";
+import { useState, useEffect, type CSSProperties } from "react";
 import { Search, Loader2, FileText, MoreVertical, Eye, Pencil, UserPlus, User, Calendar, FileCheck, Mail, Phone } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
@@ -22,7 +22,16 @@ import { fetchProfessionals, ProfessionalResponse } from "../api/professionalsSe
 import { getApiToken } from "../lib/auth";
 import { toast } from "sonner";
 import { Label } from "./ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { CustomQuoteRequestDetailsPanel, customQuoteRequestListSubtitle } from "./CustomQuoteRequestDetailsPanel";
+
+const QUOTE_FILTER_LABELS: Record<string, string> = {
+  all: "All status",
+  pending: "Pending",
+  reviewed: "Reviewed",
+  quoted: "Quoted",
+  assigned: "Assigned",
+};
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-GB", {
@@ -53,28 +62,25 @@ export function AdminCustomQuoteContent() {
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>("");
   const [assignQuotedPrice, setAssignQuotedPrice] = useState<string>("");
   const [assignLoading, setAssignLoading] = useState(false);
-  const [hoverRecordId, setHoverRecordId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const HOVER_CLOSE_DELAY_MS = 400;
+  const [compactLayout, setCompactLayout] = useState(false);
+  const [searchPlaceholder, setSearchPlaceholder] = useState(
+    "Search by customer, email, service, or ID..."
+  );
   const ITEMS_PER_PAGE = 10;
 
-  const scheduleClose = useCallback(() => {
-    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
-    closeTimeoutRef.current = setTimeout(() => setHoverRecordId(null), HOVER_CLOSE_DELAY_MS);
-  }, []);
-
-  const cancelClose = useCallback(() => {
-    if (closeTimeoutRef.current) {
-      clearTimeout(closeTimeoutRef.current);
-      closeTimeoutRef.current = null;
-    }
-  }, []);
-
   useEffect(() => {
-    return () => {
-      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    const mq = window.matchMedia("(max-width: 1023px)");
+    const updateLayout = () => {
+      const narrow = mq.matches;
+      setCompactLayout(narrow);
+      setSearchPlaceholder(
+        narrow ? "Search" : "Search by customer, email, service, or ID..."
+      );
     };
+    updateLayout();
+    mq.addEventListener("change", updateLayout);
+    return () => mq.removeEventListener("change", updateLayout);
   }, []);
 
   const fetchRecords = async () => {
@@ -138,6 +144,12 @@ export function AdminCustomQuoteContent() {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [totalPages, currentPage]);
 
+  const acceptBadgeStyle: CSSProperties = {
+    backgroundColor: "#dbeafe",
+    color: "#1d4ed8",
+    border: "1px solid #93c5fd",
+  };
+
   const statusStyle = (status: string): CSSProperties => {
     switch (status?.toLowerCase()) {
       case "pending":
@@ -150,7 +162,13 @@ export function AdminCustomQuoteContent() {
         return { backgroundColor: "#ede9fe", color: "#5b21b6", border: "1px solid #c4b5fd" };
       case "accept":
       case "accepted":
-        return { backgroundColor: "#dcfce7", color: "#166534", border: "1px solid #22c55e" };
+        return acceptBadgeStyle;
+      case "completed":
+        return {
+          backgroundColor: "#dcfce7",
+          color: "#166534",
+          border: "1px solid #22c55e",
+        };
       default:
         return { backgroundColor: "#f1f5f9", color: "#334155", border: "1px solid #e2e8f0" };
     }
@@ -160,7 +178,6 @@ export function AdminCustomQuoteContent() {
     status ? status.charAt(0).toUpperCase() + status.slice(1).toLowerCase() : "";
 
   const handleViewDetails = async (record: AdminQuoteRequestItem) => {
-    setHoverRecordId(null);
     setDetailsRecordId(record.id);
     setDetailsRecord(null);
     setDetailsError(null);
@@ -187,7 +204,6 @@ export function AdminCustomQuoteContent() {
   };
 
   const handleUpdate = (record: AdminQuoteRequestItem) => {
-    setHoverRecordId(null);
     setUpdateRecord(record);
     setSelectedStatus(record.status || "");
   };
@@ -216,7 +232,6 @@ export function AdminCustomQuoteContent() {
   };
 
   const handleAssignProfessional = (record: AdminQuoteRequestItem) => {
-    setHoverRecordId(null);
     setAssignRecord(record);
     setSelectedProfessionalId("");
   };
@@ -267,6 +282,65 @@ export function AdminCustomQuoteContent() {
     }
   };
 
+  const formatQuotedPrice = (value: unknown) => {
+    if (value == null || value === "") return "—";
+    return `£${Number(value).toLocaleString("en-GB", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  };
+
+  const renderTableActions = (record: AdminQuoteRequestItem) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Actions">
+          <MoreVertical className="w-4 h-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" hideBackdrop className="min-w-[10rem]">
+        <DropdownMenuItem onClick={() => handleViewDetails(record)}>
+          <Eye className="w-4 h-4 mr-2" />
+          View Details
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleUpdate(record)}>
+          <Pencil className="w-4 h-4 mr-2" />
+          Update
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleAssignProfessional(record)}>
+          <UserPlus className="w-4 h-4 mr-2" />
+          Assign Professional
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderCardQuoteActions = (record: AdminQuoteRequestItem) => (
+    <div className="grid grid-cols-1 gap-2 border-t border-gray-100 pt-3 md:grid-cols-3 md:gap-3 md:pt-4">
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-10 w-full"
+        onClick={() => handleViewDetails(record)}
+      >
+        <Eye className="mr-2 h-4 w-4 shrink-0" />
+        View Details
+      </Button>
+      <Button variant="outline" size="sm" className="h-10 w-full" onClick={() => handleUpdate(record)}>
+        <Pencil className="mr-2 h-4 w-4 shrink-0" />
+        Update
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-10 w-full"
+        onClick={() => handleAssignProfessional(record)}
+      >
+        <UserPlus className="mr-2 h-4 w-4 shrink-0" />
+        Assign
+      </Button>
+    </div>
+  );
+
   return (
     <div className="space-y-6 pb-20 md:pb-6">
       <div>
@@ -274,68 +348,77 @@ export function AdminCustomQuoteContent() {
         <p className="text-sm text-gray-500">Manage custom quote requests from customers.</p>
       </div>
 
-      <Card className="border border-gray-200 shadow-sm">
-        <CardHeader>
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <CardTitle className="text-[#0A1A2F]">Custom Quote Requests</CardTitle>
-            <div className="flex items-center gap-2">
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="rounded-md border border-gray-200 px-3 py-2 text-sm"
-              >
-                <option value="all">All status</option>
-                <option value="pending">Pending</option>
-                <option value="reviewed">Reviewed</option>
-                <option value="quoted">Quoted</option>
-                <option value="assigned">Assigned</option>
-              </select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+      {/* Filters — match AdminBookings / AdminCustomers */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex w-full items-center gap-2 md:gap-4">
+            <div className="relative min-w-0 flex-1">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-gray-400"
+                aria-hidden
+              />
               <Input
-                placeholder="Search by customer, email, service, or ID..."
+                placeholder={searchPlaceholder}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="h-11 w-full pl-10"
               />
             </div>
+            <div className="w-auto shrink-0 [&>div]:w-auto">
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="h-11 w-auto min-w-[8.5rem] justify-start gap-1 border-gray-200 px-4 [&>svg]:shrink-0 [&>svg]:text-[#0A1A2F] [&>svg]:opacity-90">
+                  <SelectValue
+                    compact
+                    placeholder="All status"
+                    label={QUOTE_FILTER_LABELS[filterStatus] ?? "All status"}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All status</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="reviewed">Reviewed</SelectItem>
+                  <SelectItem value="quoted">Quoted</SelectItem>
+                  <SelectItem value="assigned">Assigned</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
+        </CardContent>
+      </Card>
 
+      {/* Quote requests — cards below lg (phone + tablet), table on lg+ (like AdminPayments) */}
+      <Card>
+        <CardContent className="p-0">
           {isLoading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="w-10 h-10 text-gray-400 animate-spin" />
             </div>
           ) : error ? (
-            <div className="text-center py-12">
+            <div className="py-12 text-center">
               <p className="text-red-600">{error}</p>
             </div>
           ) : filteredRecords.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <div className="py-12 text-center">
+              <FileText className="mx-auto mb-3 h-12 w-12 text-gray-300" />
               <p className="text-gray-600">No quote requests found.</p>
             </div>
           ) : (
             <>
-              <div className="hidden md:block overflow-x-auto rounded-lg border border-gray-200">
-                <table className="w-full">
+              <div className="hidden min-w-0 max-w-full overflow-x-auto lg:block">
+                <table className="w-full min-w-[44rem] table-auto">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="text-left p-4 text-sm font-medium text-gray-700">ID</th>
-                      <th className="text-left p-4 text-sm font-medium text-gray-700">Customer</th>
-                      <th className="text-left p-4 text-sm font-medium text-gray-700">Service</th>
-                      <th className="text-left p-4 text-sm font-medium text-gray-700">Status</th>
-                      <th className="text-left p-4 text-sm font-medium text-gray-700">Date</th>
-                      <th className="text-left p-4 text-sm font-medium text-gray-700">Professional</th>
-                      <th className="text-left p-4 text-sm font-medium text-gray-700">Quoted Price</th>
-                      <th className="text-right p-4 text-sm font-medium text-gray-700 w-12">Actions</th>
+                      <th className="whitespace-nowrap p-4 text-left text-sm font-medium text-gray-700">ID</th>
+                      <th className="min-w-[8rem] p-4 text-left text-sm font-medium text-gray-700">Customer</th>
+                      <th className="min-w-[7rem] p-4 text-left text-sm font-medium text-gray-700">Service</th>
+                      <th className="whitespace-nowrap p-4 text-left text-sm font-medium text-gray-700">Status</th>
+                      <th className="whitespace-nowrap p-4 text-left text-sm font-medium text-gray-700">Date</th>
+                      <th className="p-4 text-left text-sm font-medium text-gray-700">Professional</th>
+                      <th className="whitespace-nowrap p-4 text-left text-sm font-medium text-gray-700">Quoted Price</th>
+                      <th className="whitespace-nowrap p-4 text-left text-sm font-medium text-gray-700">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-gray-100 bg-white">
                     {paginatedRecords.map((record) => {
                       const listSubtitle = customQuoteRequestListSubtitle(record.request_data);
                       return (
@@ -344,85 +427,36 @@ export function AdminCustomQuoteContent() {
                             <p className="font-medium text-gray-900">#{record.id}</p>
                           </td>
                           <td className="p-4">
-                            <div>
+                            <div className="min-w-0">
                               <p className="font-medium text-gray-900">{record.customer_name}</p>
-                              <p className="text-xs text-gray-500">{record.customer_email}</p>
+                              <p className="text-xs text-gray-500 break-all">{record.customer_email}</p>
                             </div>
                           </td>
                           <td className="p-4">
-                            <p className="text-sm text-gray-700">
+                            <p className="text-sm text-gray-700 line-clamp-2">
                               {record.service?.service_name ?? "—"}
                             </p>
                             {listSubtitle && (
-                              <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
-                                {listSubtitle}
-                              </p>
+                              <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{listSubtitle}</p>
                             )}
                           </td>
                           <td className="p-4">
                             <Badge variant="custom" style={statusStyle(record.status)}>{formatStatus(record.status)}</Badge>
                           </td>
                           <td className="p-4">
-                            <p className="text-sm text-gray-700">{formatDate(record.created_at)}</p>
+                            <p className="text-sm text-gray-700 whitespace-nowrap">{formatDate(record.created_at)}</p>
                           </td>
                           <td className="p-4">
-                            <p className="text-sm text-gray-700">
+                            <p className="text-sm text-gray-700 break-words">
                               {record.professional?.name ?? "—"}
                             </p>
                           </td>
                           <td className="p-4">
-                            <p className="text-sm text-gray-700 font-medium">
-                              {record.quoted_price != null && record.quoted_price !== ""
-                                ? `£${Number(record.quoted_price).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                : "—"}
+                            <p className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                              {formatQuotedPrice(record.quoted_price)}
                             </p>
                           </td>
-                          <td className="p-4 text-right">
-                            <div
-                              className="relative inline-block"
-                              onMouseEnter={() => {
-                                cancelClose();
-                                setHoverRecordId(record.id);
-                              }}
-                              onMouseLeave={scheduleClose}
-                            >
-                              <DropdownMenu
-                                open={hoverRecordId === record.id}
-                                onOpenChange={(open) => !open && setHoverRecordId(null)}
-                              >
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-9 w-9"
-                                    onClick={(e) => e.preventDefault()}
-                                  >
-                                    <MoreVertical className="w-4 h-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent
-                                  align="end"
-                                  hideBackdrop
-                                  className="min-w-[10rem]"
-                                  onMouseEnter={cancelClose}
-                                  onMouseLeave={scheduleClose}
-                                >
-                                  <DropdownMenuItem onClick={() => handleViewDetails(record)}>
-                                    <Eye className="w-4 h-4 mr-2" />
-                                    View Details
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleUpdate(record)}>
-                                    <Pencil className="w-4 h-4 mr-2" />
-                                    Update
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleAssignProfessional(record)}>
-                                    <UserPlus className="w-4 h-4 mr-2" />
-                                    Assign Professional
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </td>
+                          <td className="p-4">{renderTableActions(record)}</td>
                         </tr>
                       );
                     })}
@@ -430,90 +464,61 @@ export function AdminCustomQuoteContent() {
                 </table>
               </div>
 
-              <div className="md:hidden space-y-4">
+              <div className="divide-y lg:hidden">
                 {paginatedRecords.map((record) => {
                   const listSubtitle = customQuoteRequestListSubtitle(record.request_data);
                   return (
-                    <div
-                      key={record.id}
-                      className="border rounded-lg p-4 space-y-2"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="font-medium text-gray-900">#{record.id} • {record.customer_name}</p>
-                          <p className="text-sm text-gray-500">{record.service?.service_name ?? "—"}</p>
+                    <div key={record.id} className="space-y-3 p-4 md:space-y-4 md:p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="font-medium text-gray-900 md:text-lg">
+                            #{record.id} · {record.customer_name}
+                          </h3>
+                          <p className="mt-1 text-sm text-gray-500 break-words">
+                            {record.service?.service_name ?? "—"}
+                          </p>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="custom" style={statusStyle(record.status)}>{formatStatus(record.status)}</Badge>
-                          <div
-                            className="relative inline-block"
-                            onMouseEnter={() => {
-                              cancelClose();
-                              setHoverRecordId(record.id);
-                            }}
-                            onMouseLeave={scheduleClose}
-                          >
-                            <DropdownMenu
-                              open={hoverRecordId === record.id}
-                              onOpenChange={(open) => !open && setHoverRecordId(null)}
-                            >
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={(e) => e.preventDefault()}
-                                >
-                                  <MoreVertical className="w-4 h-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="end"
-                                hideBackdrop
-                                className="min-w-[10rem]"
-                                onMouseEnter={cancelClose}
-                                onMouseLeave={scheduleClose}
-                              >
-                                <DropdownMenuItem onClick={() => handleViewDetails(record)}>
-                                  <Eye className="w-4 h-4 mr-2" />
-                                  View Details
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleUpdate(record)}>
-                                  <Pencil className="w-4 h-4 mr-2" />
-                                  Update
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleAssignProfessional(record)}>
-                                  <UserPlus className="w-4 h-4 mr-2" />
-                                  Assign Professional
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
+                        <Badge variant="custom" className="shrink-0" style={statusStyle(record.status)}>
+                          {formatStatus(record.status)}
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
+                        <div className="flex items-start gap-2 md:col-span-2">
+                          <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                          <p className="break-all text-sm text-gray-600">{record.customer_email}</p>
+                        </div>
+
+                        {listSubtitle && (
+                          <p className="line-clamp-2 text-xs text-gray-600 md:col-span-2">{listSubtitle}</p>
+                        )}
+
+                        <div>
+                          <p className="text-xs text-gray-500">Date</p>
+                          <p className="text-sm text-gray-900">{formatDate(record.created_at)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Quoted price</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {formatQuotedPrice(record.quoted_price)}
+                          </p>
+                        </div>
+                        <div className="md:col-span-2">
+                          <p className="text-xs text-gray-500">Professional</p>
+                          <p className="text-sm text-gray-900 break-words">
+                            {record.professional?.name ?? "—"}
+                          </p>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500">{record.customer_email}</p>
-                      {listSubtitle && (
-                        <p className="text-xs text-gray-600 line-clamp-2">
-                          {listSubtitle}
-                        </p>
-                      )}
-                      <p className="text-xs text-gray-500">{formatDate(record.created_at)}</p>
-                      {record.professional?.name && (
-                        <p className="text-xs text-gray-600">Professional: {record.professional.name}</p>
-                      )}
-                      {record.quoted_price != null && record.quoted_price !== "" && (
-                        <p className="text-xs text-gray-600 font-medium">
-                          Quoted price: £{Number(record.quoted_price).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                      )}
+
+                      {renderCardQuoteActions(record)}
                     </div>
                   );
                 })}
               </div>
 
-              {/* Pagination */}
               {filteredRecords.length > ITEMS_PER_PAGE && (
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 mt-4 border-t border-gray-200">
+                <div className="flex flex-col items-center justify-between gap-3 border-t border-gray-200 p-4 sm:flex-row">
                   <p className="text-sm text-gray-600">
                     Showing {startItem}–{endItem} of {filteredRecords.length}
                   </p>

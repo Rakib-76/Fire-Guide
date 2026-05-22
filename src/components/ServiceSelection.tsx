@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Header } from "./Header";
 import { fetchServices, ServiceResponse } from "../api/servicesService";
 import { getLucideIconForService } from "../lib/serviceIcons";
+import "../styles/serviceSelection.css";
 
 interface ServiceSelectionProps {
   onSelectService: (serviceId: string, serviceName?: string) => void;
@@ -97,8 +98,7 @@ export function ServiceSelection({
   };
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header - EXACT CLONE OF PUBLIC WEBSITE HEADER */}
+    <div className="service-selection-page min-h-screen relative overflow-hidden">
       <Header
         onGetStarted={onNavigateServices || (() => {})}
         onProfessionalLogin={onNavigateProfessionals || (() => {})}
@@ -112,10 +112,10 @@ export function ServiceSelection({
         onNavigateToDashboard={onNavigateToDashboard}
       />
 
-      <main className="py-12 px-4 md:px-6 ">
+      <main className="relative py-12 px-4 md:px-6">
         <div className="max-w-5xl mx-auto mt-12">
           <div className="text-center mb-12 mt-12">
-            <h1 className="text-[#0A1A2F] md:text-md lg:text-md py-3 ">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-[#0A1A2F] tracking-tight py-3">
               Select Your Service
             </h1>
             <p className="md:text-lg lg:text-lg text-gray-600 md:text-base py-2">
@@ -170,21 +170,26 @@ export function ServiceSelection({
                         goToQuestionnaire(serviceId, service.service_name);
                       }
                     }}
-                    className="group cursor-pointer transition-all hover:shadow-lg border-2 border-transparent hover:border-red-300"
+                    className="service-glass-card group cursor-pointer rounded-xl"
                   >
                     <CardHeader className="pb-4">
                       <div className="flex items-start gap-4">
-                        <div className="w-16 h-16 rounded-lg flex items-center justify-center flex-shrink-0 bg-red-100 transition-colors group-hover:bg-red-600">
-                          <ServiceIcon className="w-8 h-8 text-red-600 transition-colors group-hover:text-white" />
+                        <div className="service-glass-icon w-16 h-16 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <ServiceIcon className="w-8 h-8" />
                         </div>
-                        <div className="flex-1">
-                          <CardTitle className="mb-2">{service.service_name}</CardTitle>
+                        <div className="flex-1 min-w-0 pr-10">
+                          <CardTitle className="mb-2 text-base sm:text-lg md:text-xl font-semibold text-[#0A1A2F] leading-snug">
+                            {service.service_name}
+                          </CardTitle>
                           <CardDescription className="text-base">
                             {serviceDescriptionMap[service.service_name] || service.description || "Professional fire safety support tailored to your needs."}
                           </CardDescription>
                         </div>
                       </div>
                     </CardHeader>
+                    <span className="service-card-arrow" aria-hidden>
+                      <ArrowRight className="w-4 h-4" strokeWidth={2.25} />
+                    </span>
                   </Card>
                 );
               })}

@@ -54,6 +54,30 @@ interface AdminDashboardProps {
   onLogout: () => void;
 }
 
+function formatBookingStatusLabel(status: string): string {
+  const s = String(status ?? "").trim();
+  if (!s) return "—";
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+/** Recent bookings + overview status pills (aligned with Admin Bookings semantics). */
+function getBookingStatusBadgeClass(status: string): string {
+  const base =
+    "inline-flex items-center mt-1 px-2.5 py-0.5 rounded-md text-xs font-medium border capitalize";
+  switch (String(status ?? "").trim().toLowerCase()) {
+    case "confirmed":
+      return `${base} bg-green-50 text-green-800 border-green-200`;
+    case "pending":
+      return `${base} bg-yellow-100 text-yellow-700 border-yellow-300`;
+    case "completed":
+      return `${base} bg-blue-50 text-blue-800 border-blue-200`;
+    case "cancelled":
+      return `${base} bg-red-50 text-red-800 border-red-200`;
+    default:
+      return `${base} bg-gray-50 text-gray-700 border-gray-200`;
+  }
+}
+
 type AdminView = "dashboard" | "customers" | "professionals" | "bookings" | "payments" | "payout" | "reviews" | "services" | "fra-base-price" | "notice-period" | "custom-quote" | "notifications" | "settings";
 
 export function AdminDashboard({ onLogout }: AdminDashboardProps) {
@@ -309,15 +333,8 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
                       </div>
                       <div className="text-right ml-4">
                         <p className="text-sm text-gray-900">{amount}</p>
-                        <span
-                          className={`inline-block mt-1 px-2 py-0.5 rounded text-xs ${
-                            booking.status === "confirmed" ? "bg-green-100 text-green-700" :
-                            booking.status === "pending" ? "bg-yellow-100 text-yellow-700" :
-                            booking.status === "completed" ? "bg-blue-100 text-blue-700" :
-                            "bg-gray-100 text-gray-700"
-                          }`}
-                        >
-                          {booking.status}
+                        <span className={getBookingStatusBadgeClass(booking.status)}>
+                          {formatBookingStatusLabel(booking.status)}
                         </span>
                       </div>
                     </div>

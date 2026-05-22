@@ -241,15 +241,15 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
   const getStatusColor = (status: Payment["status"]) => {
     switch (status) {
       case "paid":
-        return "border-transparent bg-green-100 text-green-800";
+        return "bg-green-100 text-green-800 border border-green-200";
       case "unpaid":
-        return "border-transparent bg-red-600 text-white";
+        return "bg-red-600 text-white border border-red-700";
       case "pending":
-        return "border-transparent bg-yellow-100 text-yellow-800";
+        return "bg-yellow-100 text-yellow-800 border border-yellow-200";
       case "refunded":
-        return "border-transparent bg-gray-100 text-gray-800";
+        return "bg-gray-100 text-gray-800 border border-gray-200";
       default:
-        return "border-transparent bg-gray-100 text-gray-800";
+        return "bg-gray-100 text-gray-800 border border-gray-200";
     }
   };
 
@@ -686,7 +686,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
                         <h3 className="text-[#0A1A2F] mb-1">{payment.service}</h3>
                         <p className="text-sm text-gray-600">Invoice: {payment.invoiceNumber}</p>
                       </div>
-                      <Badge variant="secondary" className={getStatusColor(payment.status)}>
+                      <Badge variant="custom" className={getStatusColor(payment.status)}>
                         {paymentStatusLabel(payment.status)}
                       </Badge>
                     </div>

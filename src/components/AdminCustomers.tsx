@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Search, Filter, MoreVertical, Mail, Phone, MapPin, Calendar, Eye, Ban, CheckCircle, XCircle, FileText, Circle } from "lucide-react";
+import { Search, Filter, MoreVertical, Mail, Phone, MapPin, Calendar, Eye, Ban, CheckCircle, XCircle, FileText, Circle, Loader2 } from "lucide-react";
 import { getApiToken } from "../lib/auth";
 import { getAdminCustomerSummary, AdminCustomerSummaryData, getAdminCustomers, AdminCustomerItem, adminCustomerTakeAction, AdminCustomerStatus } from "../api/adminService";
 import { Button } from "./ui/button";
@@ -24,8 +24,38 @@ import {
 import { Label } from "./ui/label";
 import { toast } from "sonner";
 
+function formatCustomerStatusLabel(status: string): string {
+  const s = String(status ?? "").trim().toLowerCase();
+  if (s === "suspend") return "Suspended";
+  if (!s) return "—";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+const CUSTOMER_FILTER_LABELS: Record<string, string> = {
+  all: "All Status",
+  active: "Active",
+  inactive: "Inactive",
+  suspend: "Suspended",
+};
+
+function getCustomerStatusBadgeClass(status: string): string {
+  const base =
+    "inline-flex shrink-0 items-center rounded-full border px-3 py-1 text-sm font-medium leading-none";
+  switch (String(status ?? "").trim().toLowerCase()) {
+    case "active":
+      return `${base} bg-green-100 text-green-800 border-green-200`;
+    case "suspend":
+      return `${base} bg-red-50 text-red-800 border-red-200`;
+    case "inactive":
+      return `${base} bg-gray-100 text-gray-700 border-gray-200`;
+    default:
+      return `${base} bg-gray-50 text-gray-700 border-gray-200`;
+  }
+}
+
 export function AdminCustomers() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchPlaceholder, setSearchPlaceholder] = useState("Search customers by name or email...");
   const [filterStatus, setFilterStatus] = useState("all");
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
@@ -33,7 +63,20 @@ export function AdminCustomers() {
   const [customerSummaryLoading, setCustomerSummaryLoading] = useState(false);
   const [customersList, setCustomersList] = useState<AdminCustomerItem[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
-  const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null);
+  const [statusPending, setStatusPending] = useState<{
+    customerId: number;
+    status: AdminCustomerStatus;
+  } | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const updatePlaceholder = () => {
+      setSearchPlaceholder(mq.matches ? "Search" : "Search customers by name or email...");
+    };
+    updatePlaceholder();
+    mq.addEventListener("change", updatePlaceholder);
+    return () => mq.removeEventListener("change", updatePlaceholder);
+  }, []);
 
   useEffect(() => {
     const token = getApiToken();
@@ -72,9 +115,11 @@ export function AdminCustomers() {
     return () => { cancelled = true; };
   }, []);
 
-  const formatJoinDate = (iso: string) => {
+  const formatDisplayDate = (iso: string | null | undefined) => {
+    if (!iso?.trim()) return "—";
     try {
       const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return "—";
       return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     } catch {
       return "—";
@@ -103,9 +148,9 @@ export function AdminCustomers() {
     location: c.property_address ?? "—",
     totalBookings: c.total_bookings ?? 0,
     totalSpent: Number(c.total_price) ?? 0,
-    joinDate: formatJoinDate(c.created_at),
-    status: c.soft_delete ?? "active",
-    lastBooking: "—",
+    joinDate: formatDisplayDate(c.created_at),
+    status: String(c.soft_delete ?? "active").trim().toLowerCase(),
+    lastBooking: formatDisplayDate(c.last_booking),
     raw: c,
   }));
 
@@ -128,7 +173,7 @@ export function AdminCustomers() {
       toast.error("Authentication required.");
       return;
     }
-    setStatusUpdatingId(customer.id);
+    setStatusPending({ customerId: customer.id, status });
     try {
       const res = await adminCustomerTakeAction({
         api_token: token,
@@ -148,7 +193,7 @@ export function AdminCustomers() {
       const e = err as { message?: string };
       toast.error(e?.message || "Failed to update customer status.");
     } finally {
-      setStatusUpdatingId(null);
+      setStatusPending(null);
     }
   };
 
@@ -162,6 +207,123 @@ export function AdminCustomers() {
 
   const handleSetInactive = (customer: any) => {
     handleUpdateCustomerStatus(customer, "inactive");
+  };
+
+  const mobileStatusBtnClass =
+    "inline-flex h-10 w-full items-center justify-center gap-2 rounded-md text-sm font-medium shadow-sm transition-all duration-200 disabled:cursor-not-allowed";
+
+  const renderMobileCustomerActions = (customer: CustomerDisplay) => {
+    const status = customer.status;
+    const isActive = status === "active";
+    const isInactive = status === "inactive";
+    const isSuspended = status === "suspend";
+    const isPending = (target: AdminCustomerStatus) =>
+      statusPending?.customerId === customer.id && statusPending.status === target;
+    const isOtherPending = (target: AdminCustomerStatus) =>
+      statusPending?.customerId === customer.id && statusPending.status !== target;
+
+    const statusBtnClass = (target: AdminCustomerStatus, extra?: string) =>
+      [
+        mobileStatusBtnClass,
+        isOtherPending(target) ? "pointer-events-none" : "",
+        isPending(target) ? "opacity-90" : "",
+        extra ?? "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+    return (
+      <div className="pt-3 border-t border-gray-100 space-y-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full h-10"
+          onClick={() => handleViewDetails(customer)}
+        >
+          <Eye className="w-4 h-4 mr-2 shrink-0" />
+          View Details
+        </Button>
+        <p className="text-xs font-medium text-gray-500 pt-0.5">Change account status</p>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            className={`${statusBtnClass("active")} ${isActive ? "cursor-not-allowed" : ""}`}
+            style={{
+              backgroundColor: "#16a34a",
+              border: "1px solid #16a34a",
+              color: "#ffffff",
+              opacity: isPending("active") ? 0.85 : isActive ? 0.55 : 1,
+              cursor: isActive || isPending("active") ? "not-allowed" : "pointer",
+              boxShadow: isActive ? "inset 0 0 0 2px rgba(22, 101, 52, 0.4)" : undefined,
+            }}
+            disabled={isActive || isPending("active")}
+            aria-disabled={isActive || isPending("active")}
+            tabIndex={isActive ? -1 : 0}
+            onClick={() => {
+              if (isActive || isPending("active")) return;
+              handleSetActive(customer);
+            }}
+          >
+            {isPending("active") ? (
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+            ) : (
+              <CheckCircle className="w-4 h-4 mr-1.5 shrink-0" />
+            )}
+            {isPending("active") ? "Updating…" : "Active"}
+          </button>
+          <button
+            type="button"
+            className={`${statusBtnClass("inactive")} ${isInactive ? "cursor-not-allowed" : ""}`}
+            style={{
+              backgroundColor: isInactive ? "#e5e7eb" : "#6b7280",
+              border: `1px solid ${isInactive ? "#d1d5db" : "#6b7280"}`,
+              color: isInactive ? "#6b7280" : "#ffffff",
+              opacity: isPending("inactive") ? 0.85 : isInactive ? 0.55 : 1,
+              cursor: isInactive || isPending("inactive") ? "not-allowed" : "pointer",
+            }}
+            disabled={isInactive || isPending("inactive")}
+            aria-disabled={isInactive || isPending("inactive")}
+            tabIndex={isInactive ? -1 : 0}
+            onClick={() => {
+              if (isInactive || isPending("inactive")) return;
+              handleSetInactive(customer);
+            }}
+          >
+            {isPending("inactive") ? (
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+            ) : (
+              <Circle className="w-4 h-4 mr-1.5 shrink-0" />
+            )}
+            {isPending("inactive") ? "Updating…" : "Inactive"}
+          </button>
+        </div>
+        <button
+          type="button"
+          className={`${statusBtnClass("suspend")} ${isSuspended ? "cursor-not-allowed" : ""}`}
+          style={{
+            backgroundColor: "#fef2f2",
+            border: "1px solid #fecaca",
+            color: "#b91c1c",
+            opacity: isPending("suspend") ? 0.85 : isSuspended ? 0.55 : 1,
+            cursor: isSuspended || isPending("suspend") ? "not-allowed" : "pointer",
+          }}
+          disabled={isSuspended || isPending("suspend")}
+          aria-disabled={isSuspended || isPending("suspend")}
+          tabIndex={isSuspended ? -1 : 0}
+          onClick={() => {
+            if (isSuspended || isPending("suspend")) return;
+            handleSuspendAccount(customer);
+          }}
+        >
+          {isPending("suspend") ? (
+            <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+          ) : (
+            <Ban className="w-4 h-4 mr-1.5 shrink-0" />
+          )}
+          {isPending("suspend") ? "Updating…" : "Suspend account"}
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -207,27 +369,30 @@ export function AdminCustomers() {
         </Card>
       </div>
 
-      {/* Filters */}
+      {/* Filters — match AdminBookings; only use utilities present in index.css */}
       <Card>
         <CardContent className="p-4">
           <div className="flex w-full items-center gap-4">
-
-            {/* 🔍 Search */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <div className="relative min-w-0 flex-1">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-gray-400"
+                aria-hidden
+              />
               <Input
-                placeholder="Search customers by name or email..."
+                placeholder={searchPlaceholder}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 w-full h-11"
+                className="h-11 w-full pl-10"
               />
             </div>
 
-            {/* 🔽 Filter */}
-            <div className="w-[180px]">
+            <div className="w-[180px] shrink-0">
               <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-full h-11 px-4">
-                  <SelectValue placeholder="All" />
+                <SelectTrigger className="h-11 w-full px-4">
+                  <SelectValue
+                    placeholder="All Status"
+                    label={CUSTOMER_FILTER_LABELS[filterStatus] ?? "All Status"}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
@@ -237,7 +402,6 @@ export function AdminCustomers() {
                 </SelectContent>
               </Select>
             </div>
-
           </div>
         </CardContent>
       </Card>
@@ -307,26 +471,23 @@ export function AdminCustomers() {
                         <p className="text-sm text-gray-900">{customer.lastBooking}</p>
                       </td>
                       <td className="p-4">
-                        <Badge
-                          className={
-                            customer.status === "active"
-                              ? "bg-green-100 text-green-700"
-                              : customer.status === "suspend"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-gray-100 text-gray-700"
-                          }
-                        >
-                          {customer.status === "suspend" ? "suspended" : customer.status}
+                        <Badge variant="custom" className={getCustomerStatusBadgeClass(customer.status)}>
+                          {formatCustomerStatusLabel(customer.status)}
                         </Badge>
                       </td>
                       <td className="p-4">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-9 w-9" disabled={statusUpdatingId === customer.id}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9"
+                              disabled={statusPending?.customerId === customer.id}
+                            >
                               <MoreVertical className="w-4 h-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+                          <DropdownMenuContent align="end" hideBackdrop className="z-[110]">
                             <DropdownMenuItem onClick={() => handleViewDetails(customer)}>
                               <Eye className="w-4 h-4 mr-2" />
                               View Details
@@ -369,16 +530,8 @@ export function AdminCustomers() {
                         <span>Joined {customer.joinDate}</span>
                       </p>
                     </div>
-                    <Badge
-                      className={
-                        customer.status === "active"
-                          ? "bg-green-100 text-green-700 flex-shrink-0"
-                          : customer.status === "suspend"
-                            ? "bg-red-100 text-red-700 flex-shrink-0"
-                            : "bg-gray-100 text-gray-700 flex-shrink-0"
-                      }
-                    >
-                      {customer.status === "suspend" ? "suspended" : customer.status}
+                    <Badge variant="custom" className={getCustomerStatusBadgeClass(customer.status)}>
+                      {formatCustomerStatusLabel(customer.status)}
                     </Badge>
                   </div>
 
@@ -412,35 +565,7 @@ export function AdminCustomers() {
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="pt-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="w-full">
-                          <MoreVertical className="w-4 h-4 mr-2" />
-                          Actions
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-56">
-                        <DropdownMenuItem onClick={() => handleViewDetails(customer)}>
-                          <Eye className="w-4 h-4 mr-2" />
-                          View Details
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="text-green-600" onClick={() => handleSetActive(customer)}>
-                          <CheckCircle className="w-4 h-4 mr-2" />
-                          Active Account
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="text-gray-700" onClick={() => handleSetInactive(customer)}>
-                          <Circle className="w-4 h-4 mr-2" />
-                          Inactive Account
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="text-yellow-600" onClick={() => handleSuspendAccount(customer)}>
-                          <Ban className="w-4 h-4 mr-2" />
-                          Suspend Account
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                  {renderMobileCustomerActions(customer)}
                 </div>
               ))
             )}

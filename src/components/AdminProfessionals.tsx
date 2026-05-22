@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Search, Star, MoreVertical, Mail, Phone, MapPin, CheckCircle, Clock, XCircle, Eye, Ban, Award, FileText, Download, AlertCircle, Edit2, Image, File } from "lucide-react";
+import { Search, Star, MoreVertical, Mail, Phone, MapPin, CheckCircle, Clock, XCircle, Eye, Ban, Award, FileText, Download, AlertCircle, Edit2, Image, File, Loader2 } from "lucide-react";
 import { getApiToken } from "../lib/auth";
 import { resolveApiBaseUrl } from "../lib/apiBaseUrl";
 import { getAdminProfessionalSummary, AdminProfessionalSummaryData, getAdminProfessionals, AdminProfessionalListItem, adminProfessionalTakeAction, AdminProfessionalStatus, getAdminProfessionalSingle, AdminProfessionalSingleData, adminProfessionalChangeCertificateStatus, adminProfessionalChangeServiceStatus, adminProfessionalChangeExperienceStatus, adminApproveInsuranceCoverage, adminRejectInsuranceCoverage, adminApproveProfessionalIdentity, adminRejectProfessionalIdentity } from "../api/adminService";
@@ -29,6 +29,9 @@ import { toast } from "sonner";
 
 export function AdminProfessionals() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchPlaceholder, setSearchPlaceholder] = useState(
+    "Search professionals by name or email..."
+  );
   const [filterStatus, setFilterStatus] = useState("all");
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
   // const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
@@ -61,6 +64,18 @@ export function AdminProfessionals() {
   const [identityStatuses, setIdentityStatuses] = useState<{ [key: string]: string }>({});
   const [identityUpdatingId, setIdentityUpdatingId] = useState<string | null>(null);
   const [serviceUpdatingId, setServiceUpdatingId] = useState<number | string | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const updatePlaceholder = () => {
+      setSearchPlaceholder(
+        mq.matches ? "Search" : "Search professionals by name or email..."
+      );
+    };
+    updatePlaceholder();
+    mq.addEventListener("change", updatePlaceholder);
+    return () => mq.removeEventListener("change", updatePlaceholder);
+  }, []);
 
   useEffect(() => {
     const token = getApiToken();
@@ -162,6 +177,11 @@ export function AdminProfessionals() {
     responseTime: string;
     status: string;
     joinDate: string;
+    /** List card: certificate names from API `certificates` */
+    certificateNames: string[];
+    /** List card: experience / expertise labels from API `experience` */
+    experienceNames: string[];
+    /** Legacy: selected service names from API `services` (modals / actions still use where needed) */
     qualifications: string[];
     raw?: AdminProfessionalListItem;
   };
@@ -372,6 +392,19 @@ export function AdminProfessionals() {
       responseTime: formatResponseTime(p.response_time),
       status: (p.status === "rejected" ? "suspended" : p.status) ?? "pending",
       joinDate: formatJoinDate(p.created_at),
+      certificateNames: Array.isArray(p.certificates)
+        ? p.certificates
+            .map((c) => (typeof c?.name === "string" ? c.name.trim() : ""))
+            .filter((s) => s.length > 0)
+        : [],
+      experienceNames: Array.isArray(p.experience)
+        ? p.experience
+            .map((e) => {
+              const n = e?.experience_name;
+              return typeof n === "string" ? n.trim() : "";
+            })
+            .filter((s) => s.length > 0)
+        : [],
       qualifications: Array.isArray(p.services) ? p.services : [],
       raw: p,
     }));
@@ -494,6 +527,116 @@ export function AdminProfessionals() {
   const handleReactivate = (professional: any) => {
     handleUpdateProfessionalStatus(professional, "approved");
   };
+
+  const mobileActionBtnClass =
+    "inline-flex h-10 w-full items-center justify-center gap-2 rounded-md text-sm font-medium shadow-sm transition-all duration-200 disabled:cursor-not-allowed";
+
+  const renderMobileProfessionalActions = (professional: ProfessionalDisplay) => {
+    const isUpdating = statusUpdatingId === professional.id;
+    const status = professional.status;
+
+    return (
+      <div className="space-y-2 border-t border-gray-100 pt-3 md:hidden">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-10 w-full"
+          disabled={isUpdating}
+          onClick={() => handleViewProfile(professional)}
+        >
+          <Eye className="mr-2 h-4 w-4 shrink-0" />
+          View Full Profile
+        </Button>
+
+        {status === "pending" && (
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className={mobileActionBtnClass}
+              style={{
+                backgroundColor: "#16a34a",
+                border: "1px solid #16a34a",
+                color: "#ffffff",
+              }}
+              disabled={isUpdating}
+              onClick={() => handleApprove(professional)}
+            >
+              {isUpdating ? (
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              ) : (
+                <CheckCircle className="mr-1.5 h-4 w-4 shrink-0" />
+              )}
+              Approve
+            </button>
+            <button
+              type="button"
+              className={mobileActionBtnClass}
+              style={{
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fecaca",
+                color: "#b91c1c",
+              }}
+              disabled={isUpdating}
+              onClick={() => handleReject(professional)}
+            >
+              {isUpdating ? (
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              ) : (
+                <XCircle className="mr-1.5 h-4 w-4 shrink-0" />
+              )}
+              Reject
+            </button>
+          </div>
+        )}
+
+        {status === "approved" && (
+          <button
+            type="button"
+            className={mobileActionBtnClass}
+            style={{
+              backgroundColor: "#fffbeb",
+              border: "1px solid #fde68a",
+              color: "#b45309",
+            }}
+            disabled={isUpdating}
+            onClick={() => handleSuspend(professional)}
+          >
+            {isUpdating ? (
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+            ) : (
+              <Ban className="mr-1.5 h-4 w-4 shrink-0" />
+            )}
+            Suspend Account
+          </button>
+        )}
+
+        {status === "suspended" && (
+          <button
+            type="button"
+            className={mobileActionBtnClass}
+            style={{
+              backgroundColor: "#16a34a",
+              border: "1px solid #16a34a",
+              color: "#ffffff",
+            }}
+            disabled={isUpdating}
+            onClick={() => handleReactivate(professional)}
+          >
+            {isUpdating ? (
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+            ) : (
+              <CheckCircle className="mr-1.5 h-4 w-4 shrink-0" />
+            )}
+            Reactivate Account
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const verificationActionsClass =
+    "flex flex-col gap-2 md:flex-row md:flex-wrap md:gap-2";
+  const verificationActionBtnClass = "h-9 w-full justify-center md:w-auto";
 
   const confirmApproval = async () => {
     if (!selectedProfessional) return;
@@ -911,7 +1054,7 @@ export function AdminProfessionals() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <Input
-                  placeholder="Search professinals by name or email..."
+                  placeholder={searchPlaceholder}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10 w-full h-11"
@@ -949,7 +1092,7 @@ export function AdminProfessionals() {
         ) : (
           filteredProfessionals.map((professional) => (
             <Card key={professional.id}>
-              <CardContent className="p-6">
+              <CardContent className="p-4 md:p-6">
                 <div className="flex flex-col md:flex-row gap-6">
                   <img
                     src={professional.photo}
@@ -960,7 +1103,29 @@ export function AdminProfessionals() {
                   <div className="flex-1">
                     <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
                       <div>
-                        <div className="flex items-center gap-3 mb-2">
+                        {/* Mobile: name left, status right */}
+                        <div className="mb-2 flex items-start justify-between gap-3 md:hidden">
+                          <h3 className="min-w-0 flex-1 text-lg text-[#0A1A2F] break-words">
+                            {professional.name}
+                          </h3>
+                          <Badge
+                            variant="custom"
+                            className={`w-fit shrink-0 ${
+                              professional.status === "approved"
+                                ? "bg-green-100 text-green-700 hover:bg-green-100 hover:text-green-700"
+                                : professional.status === "pending"
+                                  ? "bg-yellow-100 text-yellow-700 hover:bg-yellow-100 hover:text-yellow-700"
+                                  : "bg-red-100 text-red-700 hover:bg-red-100 hover:text-red-700"
+                            }`}
+                          >
+                            {professional.status === "approved" && <CheckCircle className="w-3 h-3 mr-1" />}
+                            {professional.status === "pending" && <Clock className="w-3 h-3 mr-1" />}
+                            {professional.status === "suspended" && <XCircle className="w-3 h-3 mr-1" />}
+                            {professional.status}
+                          </Badge>
+                        </div>
+                        {/* Desktop: name + status inline */}
+                        <div className="mb-2 hidden items-center gap-3 md:flex">
                           <h3 className="text-xl text-[#0A1A2F]">{professional.name}</h3>
                           <Badge
                             variant="custom"
@@ -994,30 +1159,46 @@ export function AdminProfessionals() {
                           </p>
                         </div>
 
-                        {professional.qualifications.length > 0 && (
-                          <div className="flex flex-wrap gap-2">
-                            {professional.qualifications.map((qual, index) => (
-                              <Badge key={index} variant="outline" className="bg-blue-50 text-blue-700">
-                                <Award className="w-3 h-3 mr-1" />
-                                {qual}
+                        {(professional.certificateNames.length > 0 ||
+                          professional.experienceNames.length > 0) && (
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {professional.certificateNames.map((label, index) => (
+                              <Badge
+                                key={`cert-${professional.id}-${index}`}
+                                variant="outline"
+                                className="border-blue-200 bg-blue-50 text-blue-800"
+                              >
+                                <Award className="mr-1 h-3 w-3 shrink-0" />
+                                {label}
+                              </Badge>
+                            ))}
+                            {professional.experienceNames.map((label, index) => (
+                              <Badge
+                                key={`exp-${professional.id}-${index}`}
+                                variant="outline"
+                                className="border-blue-200 bg-blue-50 text-blue-800"
+                              >
+                                <Award className="mr-1 h-3 w-3 shrink-0" />
+                                {label}
                               </Badge>
                             ))}
                           </div>
                         )}
                       </div>
 
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={statusUpdatingId === professional.id}
-                            className="transition-colors hover:bg-gray-100 hover:text-gray-800"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                      <div className="hidden shrink-0 md:block">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={statusUpdatingId === professional.id}
+                              className="transition-colors hover:bg-gray-100 hover:text-gray-800"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" hideBackdrop>
                           <DropdownMenuItem onClick={() => handleViewProfile(professional)}>
                             <Eye className="w-4 h-4 mr-2" />
                             View Full Profile
@@ -1050,8 +1231,9 @@ export function AdminProfessionals() {
                               Reactivate Account
                             </DropdownMenuItem>
                           )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
 
                     {/* Stats */}
@@ -1085,6 +1267,8 @@ export function AdminProfessionals() {
                         <p className="font-semibold text-gray-900 mt-1">{professional.joinDate}</p>
                       </div>
                     </div>
+
+                    {renderMobileProfessionalActions(professional)}
                   </div>
                 </div>
               </CardContent>
@@ -1598,23 +1782,23 @@ export function AdminProfessionals() {
                                     <p className="text-xs text-gray-500 mt-1">Uploaded: {identity.uploadDate}</p>
                                   </div>
                                   <Badge
-                                    className={
+                                    className={`shrink-0 w-fit ${
                                       isApproved
                                         ? "bg-green-100 text-green-700"
                                         : isRejected
                                           ? "bg-red-100 text-red-700"
                                           : "bg-yellow-100 text-yellow-700"
-                                    }
+                                    }`}
                                   >
                                     {isApproved ? "Verified" : isRejected ? "Rejected" : "Pending verification"}
                                   </Badge>
                                 </div>
-                                <div className="flex flex-wrap gap-2">
+                                <div className={verificationActionsClass}>
                                   {identity.evidenceUrl && (
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      className="h-9"
+                                      className={verificationActionBtnClass}
                                       onClick={() =>
                                         handleViewFile({
                                           id: identity.id,
@@ -1626,20 +1810,20 @@ export function AdminProfessionals() {
                                         })
                                       }
                                     >
-                                      <Eye className="w-4 h-4 mr-2" />
+                                      <Eye className="w-4 h-4 mr-2 shrink-0" />
                                       View
                                     </Button>
                                   )}
                                   {!isApproved && (
                                     <Button
                                       size="sm"
-                                      className="bg-green-600 hover:bg-green-700 h-9"
+                                      className={`bg-green-600 hover:bg-green-700 ${verificationActionBtnClass}`}
                                       disabled={identityUpdatingId === identity.id}
                                       onClick={() => {
                                         void handleUpdateIdentityStatus(identity.id, identity.title, "approved");
                                       }}
                                     >
-                                      <CheckCircle className="w-4 h-4 mr-2" />
+                                      <CheckCircle className="w-4 h-4 mr-2 shrink-0" />
                                       Approve
                                     </Button>
                                   )}
@@ -1647,13 +1831,13 @@ export function AdminProfessionals() {
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      className="border-red-600 text-red-600 hover:bg-red-50 h-9"
+                                      className={`border-red-600 text-red-600 hover:bg-red-50 ${verificationActionBtnClass}`}
                                       disabled={identityUpdatingId === identity.id}
                                       onClick={() => {
                                         void handleUpdateIdentityStatus(identity.id, identity.title, "rejected");
                                       }}
                                     >
-                                      <XCircle className="w-4 h-4 mr-2" />
+                                      <XCircle className="w-4 h-4 mr-2 shrink-0" />
                                       Reject
                                     </Button>
                                   )}
@@ -1738,12 +1922,12 @@ export function AdminProfessionals() {
                                     {isApproved ? "Verified" : isRejected ? "Rejected" : "Pending verification"}
                                   </Badge>
                                 </div>
-                                <div className="flex flex-wrap gap-2">
+                                <div className={verificationActionsClass}>
                                   {insurance.evidenceUrl && (
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      className="h-9"
+                                      className={verificationActionBtnClass}
                                       onClick={() =>
                                         handleViewFile({
                                           id: insurance.id,
@@ -1762,13 +1946,13 @@ export function AdminProfessionals() {
                                   {!isApproved && (
                                     <Button
                                       size="sm"
-                                      className="bg-green-600 hover:bg-green-700 h-9"
+                                      className={`bg-green-600 hover:bg-green-700 ${verificationActionBtnClass}`}
                                       disabled={insuranceUpdatingId === insurance.id}
                                       onClick={() => {
                                         void handleUpdateInsuranceStatus(insurance.id, insurance.title, "approved");
                                       }}
                                     >
-                                      <CheckCircle className="w-4 h-4 mr-2" />
+                                      <CheckCircle className="w-4 h-4 mr-2 shrink-0" />
                                       Approve
                                     </Button>
                                   )}
@@ -1776,7 +1960,7 @@ export function AdminProfessionals() {
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      className="border-red-600 text-red-600 hover:bg-red-50 h-9"
+                                      className={`border-red-600 text-red-600 hover:bg-red-50 ${verificationActionBtnClass}`}
                                       disabled={insuranceUpdatingId === insurance.id}
                                       onClick={() => {
                                         void handleUpdateInsuranceStatus(insurance.id, insurance.title, "rejected");
@@ -1820,7 +2004,7 @@ export function AdminProfessionals() {
                     <>
                       <div>
                         <div className="mb-3">
-                          <h4 className="text-lg font-medium text-gray-900">Evidence Submitted</h4>
+                          <h4 className="text-lg font-medium text-gray-900">Certificate & Qualification</h4>
                           <p className="text-sm text-gray-600 mt-1">Documents uploaded by the professional for verification</p>
                         </div>
 
@@ -1898,24 +2082,24 @@ export function AdminProfessionals() {
                                 </div>
 
                                 {/* Action Buttons */}
-                                <div className="flex flex-wrap gap-2">
+                                <div className={verificationActionsClass}>
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     onClick={() => handleViewFile(evidence)}
-                                    className="h-9"
+                                    className={verificationActionBtnClass}
                                   >
-                                    <Eye className="w-4 h-4 mr-2" />
+                                    <Eye className="w-4 h-4 mr-2 shrink-0" />
                                     View
                                   </Button>
                                   {!isApproved && (
                                     <Button
                                       size="sm"
-                                      className="bg-green-600 hover:bg-green-700 h-9"
+                                      className={`bg-green-600 hover:bg-green-700 ${verificationActionBtnClass}`}
                                       disabled={certificateUpdatingId === evidence.id}
                                       onClick={() => handleApproveEvidence(evidence.id, evidence.fileName)}
                                     >
-                                      <CheckCircle className="w-4 h-4 mr-2" />
+                                      <CheckCircle className="w-4 h-4 mr-2 shrink-0" />
                                       Approve
                                     </Button>
                                   )}
@@ -1923,7 +2107,7 @@ export function AdminProfessionals() {
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      className="border-red-600 text-red-600 hover:bg-red-50 h-9"
+                                      className={`border-red-600 text-red-600 hover:bg-red-50 ${verificationActionBtnClass}`}
                                       disabled={certificateUpdatingId === evidence.id}
                                       onClick={() => handleRejectEvidence(evidence.id, evidence.fileName)}
                                     >
@@ -1977,7 +2161,7 @@ export function AdminProfessionals() {
                     <>
                       <div>
                         <div className="mb-3">
-                          <h4 className="text-lg font-medium text-gray-900">Experience Submitted</h4>
+                          <h4 className="text-lg font-medium text-gray-900">Experience</h4>
                           <p className="text-sm text-gray-600 mt-1">Experience entries uploaded by the professional</p>
                         </div>
                         <div className="space-y-3">
@@ -2018,12 +2202,12 @@ export function AdminProfessionals() {
                                 {exp.description ? (
                                   <p className="text-sm text-gray-700 break-words mb-3">{exp.description}</p>
                                 ) : null}
-                                <div className="flex flex-wrap gap-2">
+                                <div className={verificationActionsClass}>
                                   {exp.evidenceUrl && (
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      className="h-9"
+                                      className={verificationActionBtnClass}
                                       onClick={() =>
                                         handleViewFile({
                                           id: exp.id,
@@ -2046,13 +2230,13 @@ export function AdminProfessionals() {
                                   {!isApproved && (
                                     <Button
                                       size="sm"
-                                      className="bg-green-600 hover:bg-green-700 h-9"
+                                      className={`bg-green-600 hover:bg-green-700 ${verificationActionBtnClass}`}
                                       disabled={experienceUpdatingId === exp.id}
                                       onClick={() => {
                                         void handleUpdateExperienceStatus(exp.id, exp.title, "verified");
                                       }}
                                     >
-                                      <CheckCircle className="w-4 h-4 mr-2" />
+                                      <CheckCircle className="w-4 h-4 mr-2 shrink-0" />
                                       Approve
                                     </Button>
                                   )}
@@ -2060,7 +2244,7 @@ export function AdminProfessionals() {
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      className="border-red-600 text-red-600 hover:bg-red-50 h-9"
+                                      className={`border-red-600 text-red-600 hover:bg-red-50 ${verificationActionBtnClass}`}
                                       disabled={experienceUpdatingId === exp.id}
                                       onClick={() => {
                                         void handleUpdateExperienceStatus(exp.id, exp.title, "rejected");
@@ -2089,7 +2273,10 @@ export function AdminProfessionals() {
                 <div>
                   <h4 className="text-lg font-medium text-gray-900 mb-3">Certificates</h4>
                   <div className="flex flex-wrap gap-2">
-                    {(profileDetail?.services ?? selectedProfessional?.qualifications ?? []).map((qual: string | { id: number; name: string }, index: number) => (
+                    {(profileDetail
+                      ? profileDetail.certificates ?? []
+                      : selectedProfessional?.certificateNames ?? []
+                    ).map((qual: string | { id: number; name: string }, index: number) => (
                       <Badge key={index} variant="outline" className="bg-blue-50 text-blue-700 h-9 px-3 flex items-center gap-2">
                         <Award className="w-4 h-4" />
                         {typeof qual === "string" ? qual : qual.name}

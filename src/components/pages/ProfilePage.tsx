@@ -51,6 +51,24 @@ export default function ProfilePage() {
   } = useApp();
   const { professionalId } = useParams<{ professionalId: string }>();
 
+  const profileNavState = location.state as {
+    returnTo?: string;
+    backLabel?: string;
+    fromFeatured?: boolean;
+  } | null;
+  const returnTo = profileNavState?.returnTo ?? "/professionals/compare";
+  const backLabel = profileNavState?.backLabel ?? "Back to Results";
+  const fromFeatured = Boolean(profileNavState?.fromFeatured);
+
+  const handleBack = () => {
+    if (returnTo === "/" || fromFeatured) {
+      // Replace profile entry so browser/compare back does not return here.
+      navigate({ pathname: "/", hash: "#featured-professionals" }, { replace: true });
+      return;
+    }
+    navigate(returnTo, { replace: true });
+  };
+
   // Restore professional data from sessionStorage or location state on mount/reload
   useEffect(() => {
     // First, try location state (from immediate navigation)
@@ -353,7 +371,9 @@ export default function ProfilePage() {
           });
         });
       }}
-      onBack={() => navigate("/professionals/compare")}
+      onBack={handleBack}
+      backLabel={backLabel}
+      fromFeatured={fromFeatured}
     />
   );
 }

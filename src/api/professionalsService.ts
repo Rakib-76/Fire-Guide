@@ -302,6 +302,126 @@ export const fetchProfessionalProfilePricing = async (
   throw new Error(payload?.message || 'Failed to fetch pricing');
 };
 
+const WEEK_DAY_ORDER = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+] as const;
+
+function normalizeWorkingHoursDayKey(value?: string | number | null): string | null {
+  if (value == null) return null;
+  if (typeof value === 'number' && value >= 1 && value <= 7) {
+    return WEEK_DAY_ORDER[value - 1] ?? null;
+  }
+  const key = String(value).trim().toLowerCase();
+  if ((WEEK_DAY_ORDER as readonly string[]).includes(key)) return key;
+  const shortMap: Record<string, string> = {
+    mon: 'monday',
+    tue: 'tuesday',
+    wed: 'wednesday',
+    thu: 'thursday',
+    fri: 'friday',
+    sat: 'saturday',
+    sun: 'sunday',
+  };
+  return shortMap[key.slice(0, 3)] ?? null;
+}
+
+function parseWorkingHoursIsClosed(value: unknown): boolean {
+  if (value === true || value === 1 || value === '1') return true;
+  if (value === false || value === 0 || value === '0' || value == null) return false;
+  if (typeof value === 'string') return value.trim().toLowerCase() === 'true';
+  return Boolean(value);
+}
+
+function normalizeWorkingHoursRecord(raw: unknown): WorkingDayHourRecord | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const record = raw as Record<string, unknown>;
+  const day = normalizeWorkingHoursDayKey(
+    (record.day ?? record.week_day ?? record.weekday ?? record.day_name ?? record.day_of_week) as
+      | string
+      | number
+      | undefined
+  );
+  if (!day) return null;
+  return {
+    id: typeof record.id === 'number' ? record.id : undefined,
+    day,
+    week_day: day,
+    start_time: (record.start_time ?? record.startTime ?? null) as string | null,
+    end_time: (record.end_time ?? record.endTime ?? null) as string | null,
+    is_closed: parseWorkingHoursIsClosed(record.is_closed ?? record.isClosed ?? record.closed),
+  };
+}
+
+function extractWorkingHoursRecords(data: unknown): WorkingDayHourRecord[] {
+  if (!data) return [];
+
+  if (Array.isArray(data)) {
+    return data
+      .map(normalizeWorkingHoursRecord)
+      .filter((record): record is WorkingDayHourRecord => record != null);
+  }
+
+  if (typeof data !== 'object') return [];
+
+  const obj = data as Record<string, unknown>;
+  const nestedKeys = ['hours', 'working_hours', 'workingHours', 'data'];
+  for (const key of nestedKeys) {
+    if (key in obj) {
+      const nested = extractWorkingHoursRecords(obj[key]);
+      if (nested.length > 0) return nested;
+    }
+  }
+
+  const keyedRecords: WorkingDayHourRecord[] = [];
+  for (const [key, value] of Object.entries(obj)) {
+    const day = normalizeWorkingHoursDayKey(key);
+    if (!day || value == null || typeof value !== 'object' || Array.isArray(value)) continue;
+    const record = normalizeWorkingHoursRecord({ day, ...(value as Record<string, unknown>) });
+    if (record) keyedRecords.push(record);
+  }
+  return keyedRecords;
+}
+
+function extractWorkingHoursFromResponse(response: unknown): WorkingDayHourRecord[] {
+  if (!response || typeof response !== 'object') return [];
+  const root = response as Record<string, unknown>;
+  const fromData = extractWorkingHoursRecords(root.data);
+  if (fromData.length > 0) return fromData;
+  return extractWorkingHoursRecords(root);
+}
+
+function sortWorkingHoursByWeek(records: WorkingDayHourRecord[]): WorkingDayHourRecord[] {
+  return [...records].sort((a, b) => {
+    const dayA = (a.day ?? a.week_day ?? '').toLowerCase();
+    const dayB = (b.day ?? b.week_day ?? '').toLowerCase();
+    const indexA = WEEK_DAY_ORDER.indexOf(dayA as (typeof WEEK_DAY_ORDER)[number]);
+    const indexB = WEEK_DAY_ORDER.indexOf(dayB as (typeof WEEK_DAY_ORDER)[number]);
+    return (indexA === -1 ? 99 : indexA) - (indexB === -1 ? 99 : indexB);
+  });
+}
+
+/**
+ * Public working hours for a professional profile (customer view).
+ * POST /for-user/get-working-hours
+ * Body: { professional_id }
+ */
+export const fetchForUserWorkingHours = async (
+  professionalId: number
+): Promise<WorkingDayHourRecord[]> => {
+  const response = await apiClient.post<WorkingDayResponse>(
+    '/for-user/get-working-hours',
+    { professional_id: professionalId }
+  );
+  const records = extractWorkingHoursFromResponse(response.data);
+  return sortWorkingHoursByWeek(records);
+};
+
 /** POST /professional-mail — customer message to a professional (public). */
 export interface ProfessionalMailRequest {
   full_name: string;

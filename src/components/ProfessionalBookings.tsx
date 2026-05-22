@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Search, Calendar, MapPin, Clock, User, ChevronRight, Filter, X, CheckCircle, AlertCircle, Phone, Mail, Home, FileText, Navigation, Loader2, Upload, XCircle, Wallet } from "lucide-react";
+import { Search, Calendar, MapPin, Clock, User, ChevronRight, Filter, X, CheckCircle, AlertCircle, Phone, Mail, Home, FileText, Navigation, Loader2, Upload, XCircle, Wallet, RefreshCw } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -9,7 +9,7 @@ import { Separator } from "./ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
-import { getProfessionalBookings, ProfessionalBookingItem, acceptProfessionalBooking, updateProfessionalBooking, searchProfessionalBookings, getBookingSummary, changeProfessionalBookingStatus, requestProfessionalPayout } from "../api/bookingService";
+import { getProfessionalBookings, ProfessionalBookingItem, acceptProfessionalBooking, updateProfessionalBooking, searchProfessionalBookings, getBookingSummary, changeProfessionalBookingStatus, requestProfessionalPayout, requestProfessionalRenewal } from "../api/bookingService";
 import { cancelCustomerBooking } from "../api/authService";
 import { UploadCompletionReportModal, UploadReportBookingData } from "./UploadCompletionReportModal";
 import { RescheduleCalendarPicker } from "./RescheduleCalendarPicker";
@@ -19,7 +19,14 @@ import {
   markPayoutRequestedBookingId,
   bookingHasPayoutRequestFromApi,
 } from "../lib/professionalPayoutRequestLocal";
+import {
+  getRenewalRequestedBookingIds,
+  markRenewalRequestedBookingId,
+  bookingHasRenewalRequestFromApi,
+  isRenewalAlreadySentMessage,
+} from "../lib/professionalRenewalRequestLocal";
 import { toast } from "sonner";
+import { buildProfessionalBookingServiceDetails } from "../lib/bookingServiceDetails";
 
 interface ProfessionalBookingsProps {
   onViewDetails: (bookingId: number) => void;
@@ -39,10 +46,12 @@ interface Booking {
   propertySize: string;
   price: string;
   status: string;
+  isRenewal: boolean;
   notes: string;
   propertyType?: string;
   floors?: number;
   accessInstructions?: string;
+  serviceDetails: Array<{ label: string; value: string }>;
 }
 
 // Helper function to format date
@@ -110,6 +119,15 @@ const formatPrice = (price: string): string => {
   return `£${price}`;
 };
 
+const parseIsRenewal = (value: unknown): boolean => {
+  if (value === true || value === 1) return true;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "yes";
+  }
+  return false;
+};
+
 // Helper function to map API response to Booking interface
 const mapApiResponseToBooking = (apiBooking: ProfessionalBookingItem): Booking => {
   const fullName = `${apiBooking.first_name} ${apiBooking.last_name}`.trim();
@@ -122,7 +140,10 @@ const mapApiResponseToBooking = (apiBooking: ProfessionalBookingItem): Booking =
     reference: apiBooking.ref_code || `FG-${apiBooking.id}`,
     service:
       apiBooking.service?.service_name ??
-      apiBooking.selected_service?.name ??
+      apiBooking.service_name ??
+      (apiBooking.selected_service && "name" in apiBooking.selected_service
+        ? apiBooking.selected_service.name
+        : undefined) ??
       "General Service",
     customer: fullName,
     customerEmail: apiBooking.email,
@@ -134,10 +155,14 @@ const mapApiResponseToBooking = (apiBooking: ProfessionalBookingItem): Booking =
     propertySize: "Medium (6-25 people)", // Default as API doesn't provide this
     price: formatPrice(apiBooking.price),
     status: normalizeBookingStatus(apiBooking.status) || "pending",
+    isRenewal: parseIsRenewal(apiBooking.is_renewal),
     notes: apiBooking.additional_notes || "",
     propertyType: undefined, // Not available in API
     floors: undefined, // Not available in API
-    accessInstructions: undefined, // Not available in API
+    accessInstructions:
+      (typeof apiBooking.access_note === "string" && apiBooking.access_note.trim()) ||
+      undefined,
+    serviceDetails: buildProfessionalBookingServiceDetails(apiBooking),
   };
 };
 
@@ -158,8 +183,12 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
   const [completingBookingId, setCompletingBookingId] = useState<number | null>(null);
   const [rejectingBookingId, setRejectingBookingId] = useState<number | null>(null);
   const [payoutRequestBookingId, setPayoutRequestBookingId] = useState<number | null>(null);
+  const [renewalRequestBookingId, setRenewalRequestBookingId] = useState<number | null>(null);
   const [payoutRequestedIds, setPayoutRequestedIds] = useState<Set<number>>(
     () => new Set(getPayoutRequestedBookingIds())
+  );
+  const [renewalRequestedIds, setRenewalRequestedIds] = useState<Set<number>>(
+    () => new Set(getRenewalRequestedBookingIds())
   );
   const [showUploadReportModal, setShowUploadReportModal] = useState(false);
   const [uploadReportBooking, setUploadReportBooking] = useState<UploadReportBookingData | null>(null);
@@ -188,7 +217,26 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
     });
   };
 
+  const syncRenewalRequestedFromBookings = (bookings: ProfessionalBookingItem[]) => {
+    setRenewalRequestedIds((prev) => {
+      const next = new Set(prev);
+      for (const booking of bookings) {
+        if (bookingHasRenewalRequestFromApi(booking as unknown as Record<string, unknown>)) {
+          next.add(booking.id);
+          markRenewalRequestedBookingId(booking.id);
+        }
+      }
+      return next;
+    });
+  };
+
   const hasPayoutRequestBeenSent = (bookingId: number) => payoutRequestedIds.has(bookingId);
+  const hasRenewalRequestBeenSent = (bookingId: number) => renewalRequestedIds.has(bookingId);
+
+  const markRenewalRequestSent = (bookingId: number) => {
+    markRenewalRequestedBookingId(bookingId);
+    setRenewalRequestedIds((prev) => new Set(prev).add(bookingId));
+  };
 
   // Fetch booking summary (stats) from API
   const fetchBookingSummary = async () => {
@@ -275,6 +323,7 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
       const mappedBookings = bookings.map(mapApiResponseToBooking);
       setBookingsData(mappedBookings);
       syncPayoutRequestedFromBookings(bookings);
+      syncRenewalRequestedFromBookings(bookings);
       // Store raw API data for reschedule
       const map = new Map<number, ProfessionalBookingItem>();
       bookings.forEach(booking => {
@@ -487,6 +536,68 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
       toast.error(err?.message || "Failed to mark as completed. Please try again.");
     } finally {
       setCompletingBookingId(null);
+    }
+  };
+
+  const handleRenewalRequest = async (booking: Booking) => {
+    const apiToken = getApiToken();
+    if (!apiToken) {
+      toast.error("Authentication required. Please login again.");
+      return;
+    }
+
+    if (booking.status !== "completed") {
+      toast.error("Renewal requests are only available for completed bookings.");
+      return;
+    }
+
+    if (!booking.isRenewal) {
+      return;
+    }
+
+    try {
+      setRenewalRequestBookingId(booking.id);
+      const response = await requestProfessionalRenewal({
+        api_token: apiToken,
+        booking_id: booking.id,
+      });
+
+      const ok =
+        response.success === true ||
+        response.status === true ||
+        response.status === "success" ||
+        String(response.status).toLowerCase() === "success";
+
+      const message = response.message || "";
+
+      if (ok) {
+        markRenewalRequestSent(booking.id);
+        toast.success(message || "Renewal request sent successfully.");
+        return;
+      }
+
+      if (isRenewalAlreadySentMessage(message)) {
+        markRenewalRequestSent(booking.id);
+        toast.info(message);
+        return;
+      }
+
+      toast.error(message || "Failed to send renewal request.");
+    } catch (err: unknown) {
+      console.error("Error sending renewal request:", err);
+      const message =
+        err && typeof err === "object" && "message" in err && typeof (err as { message: unknown }).message === "string"
+          ? (err as { message: string }).message
+          : "Failed to send renewal request. Please try again.";
+
+      if (isRenewalAlreadySentMessage(message)) {
+        markRenewalRequestSent(booking.id);
+        toast.info(message);
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setRenewalRequestBookingId(null);
     }
   };
 
@@ -759,19 +870,32 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
       {!isLoading && !error && (
         <div className="space-y-4">
           {filteredBookings.map((booking) => (
-            <Card key={booking.id} className="hover:shadow-lg transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="flex items-center gap-3 mb-2">
+            <Card key={booking.id} className="@container hover:shadow-lg transition-shadow min-w-0 overflow-hidden">
+              <CardContent className="p-4 sm:p-6 min-w-0">
+                {/* Mobile: title → ref → status + price on their own row */}
+                <div className="mb-4 min-w-0 md:hidden space-y-2">
+                  <h3 className="text-lg text-[#0A1A2F] break-words">{booking.service}</h3>
+                  <p className="text-sm text-gray-500 break-all">Ref: {booking.reference}</p>
+                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100">
+                    <Badge className={`w-fit shrink-0 whitespace-nowrap ${getStatusColor(booking.status)}`}>
+                      {getStatusLabel(booking.status)}
+                    </Badge>
+                    <p className="text-xl font-semibold text-gray-900 shrink-0">{booking.price}</p>
+                  </div>
+                </div>
+
+                {/* Tablet/desktop: original header layout */}
+                <div className="hidden md:flex items-start justify-between mb-4 min-w-0">
+                  <div className="min-w-0 flex-1 pr-4">
+                    <div className="flex items-center gap-3 mb-2 flex-wrap">
                       <h3 className="text-xl text-[#0A1A2F]">{booking.service}</h3>
-                      <Badge className={getStatusColor(booking.status)}>
+                      <Badge className={`shrink-0 ${getStatusColor(booking.status)}`}>
                         {getStatusLabel(booking.status)}
                       </Badge>
                     </div>
                     <p className="text-sm text-gray-500">Ref: {booking.reference}</p>
                   </div>
-                  <p className="text-xl font-semibold text-gray-900">{booking.price}</p>
+                  <p className="text-xl font-semibold text-gray-900 shrink-0">{booking.price}</p>
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-4 mb-4">
@@ -821,13 +945,16 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
 
                 <Separator className="my-4" />
 
-                <div className="flex flex-wrap gap-3">
+                <div className="grid grid-cols-1 items-stretch gap-3 @[36rem]:grid-cols-4 @[52rem]:grid-cols-5 md:grid-cols-4 xl:grid-cols-5 [&>button]:w-full [&>button]:min-h-10 [&>button]:px-4 [&>button]:py-2.5 [&>button]:text-sm [&>button]:whitespace-nowrap @[36rem]:[&>button]:h-full @[36rem]:[&>button]:min-h-[3.25rem]">
                   <Button
                     className="bg-red-600 hover:bg-red-700"
                     onClick={() => handleViewDetails(booking)}
                   >
-                    View Full Details
-                    <ChevronRight className="w-4 h-4 ml-2" />
+                    <span className="truncate">
+                      <span className="md:hidden">View Full Details</span>
+                      <span className="hidden md:inline">View Details</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0" />
                   </Button>
 
                   {booking.status === "confirmed" && (
@@ -880,14 +1007,47 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
                       </Button>
                   )}
 
+                  {booking.status === "completed" && booking.isRenewal && (
+                    hasRenewalRequestBeenSent(booking.id) ? (
+                      <div
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-900 @[36rem]:col-span-4 @[52rem]:col-span-5 md:justify-start"
+                        title="You have already sent a renewal request for this booking"
+                      >
+                        <CheckCircle className="h-4 w-4 shrink-0 text-indigo-600" />
+                        <span>Renewal request sent</span>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        className="border-blue-600 text-blue-700 hover:bg-blue-50"
+                        onClick={() => void handleRenewalRequest(booking)}
+                        disabled={renewalRequestBookingId === booking.id}
+                        title="Send Renewal Request"
+                      >
+                        {renewalRequestBookingId === booking.id ? (
+                          <>
+                            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                            <span>Sending...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="h-4 w-4 shrink-0" />
+                            <span className="xl:hidden">Renewal</span>
+                            <span className="hidden xl:inline">Send Renewal Request</span>
+                          </>
+                        )}
+                      </Button>
+                    )
+                  )}
+
                   {booking.status === "completed" && (
                     hasPayoutRequestBeenSent(booking.id) ? (
                       <div
-                        className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900"
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 @[36rem]:col-span-4 @[52rem]:col-span-5 md:justify-start"
                         title="You have already submitted a payout request for this booking"
                       >
                         <CheckCircle className="h-4 w-4 shrink-0 text-blue-600" />
-                        <span>Payout request sent — awaiting admin</span>
+                        <span>Payout request sent</span>
                       </div>
                     ) : (
                       <Button
@@ -895,16 +1055,18 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
                         className="border-green-600 text-green-700 hover:bg-green-50"
                         onClick={() => void handlePayoutRequest(booking)}
                         disabled={payoutRequestBookingId === booking.id}
+                        title="Send PayOut Request"
                       >
                         {payoutRequestBookingId === booking.id ? (
                           <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Submitting...
+                            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                            <span>Submitting...</span>
                           </>
                         ) : (
                           <>
-                            <Wallet className="w-4 h-4 mr-2" />
-                            Send PayOut Request
+                            <Wallet className="h-4 w-4 shrink-0" />
+                            <span className="xl:hidden">PayOut</span>
+                            <span className="hidden xl:inline">Send PayOut Request</span>
                           </>
                         )}
                       </Button>
@@ -970,45 +1132,58 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
           </DialogHeader>
 
           {selectedBooking && (
-            <div className="space-y-6 mt-4 px-6">
+            <div className="space-y-6 mt-4 px-4 sm:px-6 min-w-0 overflow-x-hidden">
               {/* Status Banner */}
-              <div className={`p-4 rounded-lg ${getStatusBannerClass(selectedBooking.status)}`}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold text-gray-900 flex items-center gap-2">
+              <div className={`p-4 rounded-lg min-w-0 overflow-hidden ${getStatusBannerClass(selectedBooking.status)}`}>
+                {/* Mobile: status → reference → price on separate row */}
+                <div className="space-y-2 min-w-0 md:hidden">
+                  <div className="font-semibold text-gray-900 flex flex-wrap items-center gap-2">
+                    <span>Status:</span>
+                    <Badge className={`w-fit shrink-0 whitespace-nowrap ${getStatusColor(selectedBooking.status)}`}>
+                      {getStatusLabel(selectedBooking.status)}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-gray-600 break-all">
+                    Reference: {selectedBooking.reference}
+                  </p>
+                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-200/80">
+                    <span className="text-sm font-medium text-gray-700">Price</span>
+                    <p className="text-2xl font-bold text-gray-900 shrink-0">{selectedBooking.price}</p>
+                  </div>
+                </div>
+
+                {/* Tablet/desktop: original side-by-side layout */}
+                <div className="hidden md:flex items-center justify-between gap-4 min-w-0">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
                       <span>Status:</span>
-                      <Badge className={getStatusColor(selectedBooking.status)}>
+                      <Badge className={`shrink-0 ${getStatusColor(selectedBooking.status)}`}>
                         {getStatusLabel(selectedBooking.status)}
                       </Badge>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">Reference: {selectedBooking.reference}</p>
                   </div>
-                  <p className="text-2xl font-bold text-gray-900">{selectedBooking.price}</p>
+                  <p className="text-2xl font-bold text-gray-900 shrink-0">{selectedBooking.price}</p>
                 </div>
               </div>
 
-              {/* Service Information */}
+              {/* Service questionnaire details from API (service name omitted — shown on list card) */}
               <div>
                 <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                  <Home className="w-5 h-5" />
-                  Service Information
+                  <Home className="w-5 h-5 shrink-0" />
+                  Service details
                 </h3>
-                <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                  <p>
-                    <strong>Service:</strong>{" "}
-                    {(() => {
-                      const row = apiBookingsMap.get(selectedBooking.id);
-                      if (!row) return selectedBooking.service;
-                      return (
-                        row.service?.service_name ??
-                        row.selected_service?.name ??
-                        selectedBooking.service
-                      );
-                    })()}
-                  </p>
-                  {selectedBooking.floors && <p><strong>Number of Floors:</strong> {selectedBooking.floors}</p>}
-                  <p><strong>Duration:</strong> {selectedBooking.duration}</p>
-                </div>
+                {selectedBooking.serviceDetails.length > 0 ? (
+                  <div className="bg-gray-50 p-4 rounded-lg space-y-1.5 text-sm text-gray-600">
+                    {selectedBooking.serviceDetails.map((row) => (
+                      <p key={row.label}>
+                        {row.label}: <span className="text-gray-900">{row.value}</span>
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No additional service details.</p>
+                )}
               </div>
 
               {/* Customer Information */}
@@ -1094,58 +1269,64 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
                 </div>
               )}
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-4 border-t py-6">
+              {/* Action Buttons — stack full width on mobile */}
+              <div className="flex flex-col gap-2.5 pt-4 border-t pb-5 sm:pb-6 min-w-0">
                 {selectedBooking.status === "pending" && !isMeBookingStatus(selectedBooking.status) && (
-                  <>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 min-w-0">
                     <Button
-                      className="flex-1 bg-green-600 hover:bg-green-700"
+                      className="w-full sm:flex-1 h-11 justify-center bg-green-600 hover:bg-green-700"
                       onClick={() => {
                         setShowDetailsModal(false);
                         handleAcceptBooking(selectedBooking);
                       }}
                       disabled={rejectingBookingId === selectedBooking.id}
                     >
-                      <CheckCircle className="w-4 h-4 mr-2" />
+                      <CheckCircle className="w-4 h-4 mr-2 shrink-0" />
                       Accept Booking
                     </Button>
                     <Button
                       variant="outline"
-                      className="flex-1 border-red-600 text-red-600 hover:bg-red-50"
+                      className="w-full sm:flex-1 h-11 justify-center border-red-600 text-red-600 hover:bg-red-50"
                       onClick={() => void handleRejectBooking(selectedBooking)}
                       disabled={rejectingBookingId === selectedBooking.id}
                     >
                       {rejectingBookingId === selectedBooking.id ? (
                         <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          <Loader2 className="w-4 h-4 mr-2 shrink-0 animate-spin" />
                           Rejecting...
                         </>
                       ) : (
                         <>
-                          <XCircle className="w-4 h-4 mr-2" />
+                          <XCircle className="w-4 h-4 mr-2 shrink-0" />
                           Reject Booking
                         </>
                       )}
                     </Button>
-                  </>
+                  </div>
                 )}
-                {!isMeBookingStatus(selectedBooking.status) &&
-                  (selectedBooking.status === "pending" || selectedBooking.status === "confirmed") && (
+                <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 min-w-0">
+                  {!isMeBookingStatus(selectedBooking.status) &&
+                    (selectedBooking.status === "pending" || selectedBooking.status === "confirmed") && (
+                    <Button
+                      variant="outline"
+                      className="w-full sm:flex-1 h-11 justify-center"
+                      onClick={() => {
+                        setShowDetailsModal(false);
+                        handleReschedule(selectedBooking);
+                      }}
+                    >
+                      <Calendar className="w-4 h-4 mr-2 shrink-0" />
+                      Reschedule time
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
-                    className="flex-1"
-                    onClick={() => {
-                      setShowDetailsModal(false);
-                      handleReschedule(selectedBooking);
-                    }}
+                    onClick={() => setShowDetailsModal(false)}
+                    className="w-full sm:flex-1 h-11 justify-center"
                   >
-                    <Calendar className="w-4 h-4 mr-2" />
-                    Reschedule time
+                    Close
                   </Button>
-                )}
-                <Button variant="outline" onClick={() => setShowDetailsModal(false)} className="flex-1">
-                  Close
-                </Button>
+                </div>
               </div>
             </div>
           )}
