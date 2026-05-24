@@ -1,0 +1,29 @@
+# Enable Rewrite Engine for React Router
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Don't rewrite existing files or directories
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  
+  # Rewrite all other requests to index.html for React Router
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Set correct MIME types for JavaScript and CSS
+<IfModule mod_mime.c>
+  AddType application/javascript .js
+  AddType application/javascript .mjs
+  AddType text/css .css
+</IfModule>
+
+# Set proper Content-Type headers
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|mjs)$">
+    Header set Content-Type "application/javascript; charset=utf-8"
+  </FilesMatch>
+  <FilesMatch "\.css$">
+    Header set Content-Type "text/css; charset=utf-8"
+  </FilesMatch>
+</IfModule>
