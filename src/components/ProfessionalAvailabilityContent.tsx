@@ -326,6 +326,30 @@ interface Booking {
   additional_notes?: string;
 }
 
+const getAvailabilityBookingStatusBadgeClass = (status: string) => {
+  switch (status.toLowerCase()) {
+    case "confirmed":
+      return "border border-green-200 bg-green-100 text-green-700";
+    case "pending":
+    case "me":
+      return "border border-yellow-200 bg-yellow-50 text-yellow-800";
+    case "completed":
+      return "border border-blue-200 bg-blue-100 text-blue-700";
+    case "cancelled":
+    case "canceled":
+      return "border border-red-200 bg-red-100 text-red-700";
+    default:
+      return "border border-gray-200 bg-gray-100 text-gray-700";
+  }
+};
+
+const getAvailabilityBookingStatusLabel = (status: string) => {
+  const normalized = status.toLowerCase();
+  if (normalized === "me") return "Pending";
+  if (!status) return "Unknown";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+};
+
 export function ProfessionalAvailabilityContent() {
   const [blockedBookingDayList, setBlockedBookingDayList] = useState<BlockedBookingDayItem[]>([]);
   const [loadingBlockedDates, setLoadingBlockedDates] = useState(true);
@@ -1447,16 +1471,9 @@ export function ProfessionalAvailabilityContent() {
                           <p className="text-sm text-gray-600">{booking.additional_notes}</p>
                         </div>
                         <Badge
-                          variant={booking.status === "confirmed" ? "default" : "secondary"}
-                          className={
-                            booking.status === "confirmed"
-                              ? "bg-green-100 text-green-700 text-xs"
-                              : booking.status === "completed"
-                              ? "bg-gray-100 text-gray-700 text-xs"
-                              : "bg-yellow-100 text-yellow-700 text-xs"
-                          }
+                          className={`shrink-0 whitespace-nowrap text-xs ${getAvailabilityBookingStatusBadgeClass(booking.status)}`}
                         >
-                          {booking.status}
+                          {getAvailabilityBookingStatusLabel(booking.status)}
                         </Badge>
                       </div>
                       <div className="flex items-center gap-3 text-sm text-gray-500 mb-2">

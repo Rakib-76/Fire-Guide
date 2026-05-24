@@ -76,6 +76,32 @@ interface PaymentHistoryItem {
   paidOn: string | null;
 }
 
+const getProfessionalPaymentStatusBadgeClass = (status: string) => {
+  switch (status.toLowerCase()) {
+    case "paid":
+      return "border border-green-200 bg-green-100 text-green-700";
+    case "pending":
+      return "border border-yellow-200 bg-yellow-50 text-yellow-800";
+    default:
+      return "border border-gray-200 bg-gray-100 text-gray-700";
+  }
+};
+
+function renderProfessionalPaymentStatusBadge(
+  status: PaymentHistoryItem["status"],
+  className = ""
+) {
+  const isPaid = status === "paid";
+  return (
+    <Badge
+      className={`inline-flex items-center shrink-0 whitespace-nowrap ${getProfessionalPaymentStatusBadgeClass(status)} ${className}`}
+    >
+      {isPaid ? <CheckCircle className="w-3 h-3 mr-1" /> : <Clock className="w-3 h-3 mr-1" />}
+      {isPaid ? "Paid" : "Pending"}
+    </Badge>
+  );
+}
+
 const PAYMENT_FILTER_LABELS: Record<PaymentInvoiceFilterPeriod, string> = {
   all_time: "All Time",
   this_month: "This Month",
@@ -617,17 +643,7 @@ export function ProfessionalPayments() {
                     <p className="font-medium text-gray-900 text-sm">{payment.reference}</p>
                     <p className="text-xs text-gray-500">{payment.bookingRef}</p>
                   </div>
-                  {payment.status === "paid" ? (
-                    <Badge className="bg-green-100 text-green-700">
-                      <CheckCircle className="w-3 h-3 mr-1" />
-                      Paid
-                    </Badge>
-                  ) : (
-                    <Badge className="bg-yellow-100 text-yellow-700">
-                      <Clock className="w-3 h-3 mr-1" />
-                      Pending
-                    </Badge>
-                  )}
+                  {renderProfessionalPaymentStatusBadge(payment.status)}
                 </div>
                 
                 <div className="space-y-1">
@@ -698,17 +714,11 @@ export function ProfessionalPayments() {
                     <td className="p-4">
                       {payment.status === "paid" ? (
                         <div>
-                          <Badge className="bg-green-100 text-green-700 mb-1">
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                            Paid
-                          </Badge>
+                          {renderProfessionalPaymentStatusBadge(payment.status, "mb-1")}
                           <p className="text-xs text-gray-500">{payment.paidOn}</p>
                         </div>
                       ) : (
-                        <Badge className="bg-yellow-100 text-yellow-700">
-                          <Clock className="w-3 h-3 mr-1" />
-                          Pending
-                        </Badge>
+                        renderProfessionalPaymentStatusBadge(payment.status)
                       )}
                     </td>
                   </tr>

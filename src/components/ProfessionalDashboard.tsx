@@ -349,6 +349,30 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
   }>>([]);
   const [isLoadingRecentPayments, setIsLoadingRecentPayments] = useState(false);
 
+  const getOverviewJobStatusBadgeClass = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "confirmed":
+        return "border border-green-200 bg-green-100 text-green-700";
+      case "pending":
+      case "me":
+        return "border border-yellow-200 bg-yellow-50 text-yellow-800";
+      case "completed":
+        return "border border-blue-200 bg-blue-100 text-blue-700";
+      case "cancelled":
+      case "canceled":
+        return "border border-red-200 bg-red-100 text-red-700";
+      default:
+        return "border border-gray-200 bg-gray-100 text-gray-700";
+    }
+  };
+
+  const getOverviewJobStatusLabel = (status: string) => {
+    const normalized = status.toLowerCase();
+    if (normalized === "me") return "Pending";
+    if (!status) return "Unknown";
+    return status.charAt(0).toUpperCase() + status.slice(1);
+  };
+
   // Helper function to format date
   const formatJobDate = (dateStr: string, timeStr: string): string => {
     try {
@@ -810,14 +834,10 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <h4 className="font-semibold text-gray-900">{job.service}</h4>
                       <Badge
-                        variant={job.status === "confirmed" ? "default" : "secondary"}
-                        className={
-                          job.status === "confirmed"
-                            ? "bg-green-100 text-green-700 border-0"
-                            : "bg-yellow-100 text-yellow-700 border-0"
-                        }
+                        className={`shrink-0 whitespace-nowrap ${getOverviewJobStatusBadgeClass(job.status)}`}
                       >
-                        {job.status}</Badge>
+                        {getOverviewJobStatusLabel(job.status)}
+                      </Badge>
                     </div>
                     <p className="text-sm text-gray-600 mb-1">{job.client}</p>
                     <div className="flex flex-wrap gap-3 text-sm text-gray-500">

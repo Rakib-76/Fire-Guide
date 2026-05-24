@@ -426,7 +426,7 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
     paymentStatus: string,
     priceClassName = "text-xl font-semibold text-gray-900"
   ) => (
-    <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+    <div className="flex flex-col items-end gap-1.5 shrink-0">
       <p className={priceClassName}>{price}</p>
       {renderPaymentStatusBadge(paymentStatus)}
     </div>
