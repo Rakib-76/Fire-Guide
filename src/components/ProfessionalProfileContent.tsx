@@ -74,6 +74,7 @@ export function ProfessionalProfileContent() {
       businessName: "",
       address: "",
       postcode: "",
+      responseTime: "",
       bio: "",
       serviceRadius: [50],
       emergencyCallout: true,
@@ -521,6 +522,7 @@ export function ProfessionalProfileContent() {
             businessName: currentProfessional.business_name || prev.businessName,
             address: currentProfessional.business_location || prev.address,
             postcode: currentProfessional.post_code || prev.postcode,
+            responseTime: currentProfessional.response_time?.trim() || prev.responseTime,
             bio: currentProfessional.about || prev.bio,
           }));
           setLoadingProfessional(false);
@@ -1129,8 +1131,10 @@ export function ProfessionalProfileContent() {
         };
       }
 
+      const existingProfessionalId = getProfessionalId();
+
       // Build request payload according to API specification
-      const requestPayload: any = {
+      const requestPayload: CreateProfessionalRequest = {
         api_token: token,
         name: formData.name.trim(),
         business_name: formData.businessName.trim(),
@@ -1139,8 +1143,11 @@ export function ProfessionalProfileContent() {
         number: formData.phone.trim(),
         business_location: formData.address.trim(),
         post_code: formData.postcode.trim(),
-        services: services,
-        ...certificationData
+        response_time: formData.responseTime.trim(),
+        services,
+        ...(existingProfessionalId != null &&
+          !Number.isNaN(existingProfessionalId) && { professional_id: existingProfessionalId }),
+        ...certificationData,
       };
 
       // Call API
@@ -1181,8 +1188,15 @@ export function ProfessionalProfileContent() {
 
         if (effectiveProfessionalId != null && !Number.isNaN(Number(effectiveProfessionalId))) {
           const pid = Number(effectiveProfessionalId);
+          const savedResponseTime =
+            typeof response.data?.professional?.response_time === "string"
+              ? response.data.professional.response_time.trim()
+              : formData.responseTime.trim();
           startTransition(() => {
             setProfessionalId(pid);
+            if (savedResponseTime) {
+              setFormData((prev) => ({ ...prev, responseTime: savedResponseTime }));
+            }
             fetchProfileCompletion(pid);
             fetchSelectedServicesForProfessional(pid);
             fetchProfessionalCertificates(pid);
@@ -1456,6 +1470,22 @@ export function ProfessionalProfileContent() {
                   value={formData.postcode}
                   onChange={(e) => setFormData({...formData, postcode: e.target.value})}
                 />
+              </div>
+              <div className="min-w-0 md:col-span-2">
+                <Label htmlFor="responseTime" className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 shrink-0" />
+                  Response Time
+                </Label>
+                <Input
+                  id="responseTime"
+                  className="w-full min-w-0 max-w-full"
+                  placeholder="e.g. Within 2 hours"
+                  value={formData.responseTime}
+                  onChange={(e) => setFormData({ ...formData, responseTime: e.target.value })}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Shown to customers when they compare professionals and view your profile.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -2121,6 +2151,12 @@ export function ProfessionalProfileContent() {
                   <MapPin className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
                   <span className="break-words">{formData.postcode}</span>
                 </div>
+                {formData.responseTime.trim() ? (
+                  <div className="flex items-center gap-1 text-xs sm:text-sm text-green-700 mt-1">
+                    <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                    <span className="break-words">{formData.responseTime.trim()}</span>
+                  </div>
+                ) : null}
               </div>
 
               <div className="pt-3 sm:pt-4 border-t">

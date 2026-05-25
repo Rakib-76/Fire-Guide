@@ -36,6 +36,16 @@ export function AdminProfessionals() {
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
   // const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  // const [editSaving, setEditSaving] = useState(false);
+  // const [editForm, setEditForm] = useState({
+  //   name: "",
+  //   email: "",
+  //   phone: "",
+  //   location: "",
+  //   bio: "",
+  //   responseTime: "",
+  //   status: "pending",
+  // });
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
   // const [rejectionReason, setRejectionReason] = useState("");
@@ -547,6 +557,16 @@ export function AdminProfessionals() {
           <Eye className="mr-2 h-4 w-4 shrink-0" />
           View Full Profile
         </Button>
+        {/* <Button
+          variant="outline"
+          size="sm"
+          className="h-10 w-full"
+          disabled={isUpdating}
+          onClick={() => handleEdit(professional)}
+        >
+          <Edit2 className="mr-2 h-4 w-4 shrink-0" />
+          Edit Profile
+        </Button> */}
 
         {status === "pending" && (
           <div className="grid grid-cols-2 gap-2">
@@ -1204,9 +1224,9 @@ export function AdminProfessionals() {
                             View Full Profile
                           </DropdownMenuItem>
                           {/* <DropdownMenuItem onClick={() => handleEdit(professional)}>
-                          <Edit2 className="w-4 h-4 mr-2" />
-                          Edit Profile
-                        </DropdownMenuItem> */}
+                            <Edit2 className="w-4 h-4 mr-2" />
+                            Edit Profile
+                          </DropdownMenuItem> */}
                           {professional.status === "pending" && (
                             <>
                               <DropdownMenuItem className="text-green-600" onClick={() => handleApprove(professional)}>
@@ -1505,112 +1525,99 @@ export function AdminProfessionals() {
               Edit Professional Profile
             </DialogTitle>
             <DialogDescription>
-              Make changes to {selectedProfessional?.name}'s profile information
+              Make changes to {selectedProfessional?.name}&apos;s profile information
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="grid md:grid-cols-2 gap-4">
+          {profileDetailLoading && editModalOpen ? (
+            <div className="py-12 text-center text-gray-500">Loading profile...</div>
+          ) : (
+            <div className="space-y-4 py-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="edit-name">Full Name</Label>
+                  <Input
+                    id="edit-name"
+                    defaultValue={selectedProfessional?.name}
+                    className="mt-2"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-email">Email Address</Label>
+                  <Input
+                    id="edit-email"
+                    type="email"
+                    defaultValue={selectedProfessional?.email}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="edit-phone">Phone Number</Label>
+                  <Input
+                    id="edit-phone"
+                    defaultValue={selectedProfessional?.phone}
+                    className="mt-2"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-location">Location</Label>
+                  <Input
+                    id="edit-location"
+                    defaultValue={selectedProfessional?.location}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+
+              <Separator />
+
               <div>
-                <Label htmlFor="edit-name">Full Name</Label>
-                <Input
-                  id="edit-name"
-                  defaultValue={selectedProfessional?.name}
+                <Label htmlFor="edit-bio">Bio / Description</Label>
+                <Textarea
+                  id="edit-bio"
+                  defaultValue="Experienced fire safety professional with over 10 years in the industry..."
                   className="mt-2"
+                  rows={4}
                 />
               </div>
-              <div>
-                <Label htmlFor="edit-email">Email Address</Label>
-                <Input
-                  id="edit-email"
-                  type="email"
-                  defaultValue={selectedProfessional?.email}
-                  className="mt-2"
-                />
+
+              <Separator />
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="edit-status">Account Status</Label>
+                  <Select defaultValue={selectedProfessional?.status}>
+                    <SelectTrigger className="mt-2">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="approved">Approved</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="suspended">Suspended</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="edit-response-time">Response Time</Label>
+                  <Input
+                    id="edit-response-time"
+                    defaultValue={selectedProfessional?.responseTime}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+                <p className="text-sm text-blue-700">
+                  Changes will be saved immediately and the professional will be notified of major changes via email.
+                </p>
               </div>
             </div>
-
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-phone">Phone Number</Label>
-                <Input
-                  id="edit-phone"
-                  defaultValue={selectedProfessional?.phone}
-                  className="mt-2"
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit-location">Location</Label>
-                <Input
-                  id="edit-location"
-                  defaultValue={selectedProfessional?.location}
-                  className="mt-2"
-                />
-              </div>
-            </div>
-
-            <Separator />
-
-            <div>
-              <Label htmlFor="edit-bio">Bio / Description</Label>
-              <Textarea
-                id="edit-bio"
-                defaultValue="Experienced fire safety professional with over 10 years in the industry..."
-                className="mt-2"
-                rows={4}
-              />
-            </div>
-
-            <div>
-              <Label>Qualifications</Label>
-              <div className="mt-2 space-y-2">
-                {selectedProfessional?.qualifications.map((qual: string, index: number) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <Input defaultValue={qual} />
-                    <Button variant="outline" size="sm" className="text-red-600 transition-colors hover:bg-red-50 hover:text-red-700">
-                      <XCircle className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
-                <Button variant="outline" size="sm" className="w-full transition-colors hover:bg-gray-100 hover:text-gray-900">
-                  + Add Qualification
-                </Button>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-status">Account Status</Label>
-                <Select defaultValue={selectedProfessional?.status}>
-                  <SelectTrigger className="mt-2">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="approved">Approved</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="suspended">Suspended</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="edit-response-time">Response Time</Label>
-                <Input
-                  id="edit-response-time"
-                  defaultValue={selectedProfessional?.responseTime}
-                  className="mt-2"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
-              <p className="text-sm text-blue-700">
-                Changes will be saved immediately and the professional will be notified of major changes via email.
-              </p>
-            </div>
-          </div>
+          )}
 
           <DialogFooter>
             <Button

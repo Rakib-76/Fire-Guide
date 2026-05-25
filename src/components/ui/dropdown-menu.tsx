@@ -51,16 +51,23 @@ const DropdownMenuTrigger = React.forwardRef<HTMLButtonElement, React.ButtonHTML
     const mergedRef = context?.triggerRef ? mergeRefs(ref, context.triggerRef as React.Ref<HTMLButtonElement>) : ref;
 
     const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
       onClick?.(e);
       context?.onOpenChange(!context.open);
     };
 
     // If asChild is true, clone the child element and add our props
     if (asChild && React.isValidElement(children)) {
-      return React.cloneElement(children as React.ReactElement<any>, {
-        ref: mergedRef,
-        onClick: handleClick,
+      const child = children as React.ReactElement<{ onClick?: React.MouseEventHandler<HTMLButtonElement> }>;
+      return React.cloneElement(child, {
         ...props,
+        ref: mergedRef,
+        onClick: (e: React.MouseEvent<HTMLButtonElement>) => {
+          e.stopPropagation();
+          child.props.onClick?.(e);
+          onClick?.(e);
+          context?.onOpenChange(!context.open);
+        },
       });
     }
 
@@ -85,11 +92,14 @@ const DropdownMenuContent = React.forwardRef<
   }
 >(({ className, children, align = "center", hideBackdrop = false, ...props }, ref) => {
   const context = React.useContext(DropdownMenuContext);
-  const [position, setPosition] = React.useState({ top: 0, left: 0 });
+  const contentRef = React.useRef<HTMLDivElement | null>(null);
+  const mergedContentRef = mergeRefs(ref, contentRef);
+  const [position, setPosition] = React.useState<{ top: number; left: number } | null>(null);
 
-  React.useLayoutEffect(() => {
-    if (!context?.open || !hideBackdrop || !context.triggerRef?.current) return;
-    const rect = context.triggerRef.current.getBoundingClientRect();
+  const updatePosition = React.useCallback(() => {
+    const trigger = context?.triggerRef?.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
     const gap = 8;
     let left = rect.left;
     if (align === "center") left = rect.left + rect.width / 2;
@@ -98,9 +108,49 @@ const DropdownMenuContent = React.forwardRef<
       top: rect.bottom + gap,
       left,
     });
-  }, [context?.open, hideBackdrop, align, context?.triggerRef?.current]);
+  }, [align, context?.triggerRef]);
+
+  React.useLayoutEffect(() => {
+    if (!context?.open || !hideBackdrop) {
+      setPosition(null);
+      return;
+    }
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    return () => window.removeEventListener("resize", updatePosition);
+  }, [context?.open, hideBackdrop, updatePosition]);
+
+  // Close on outside click, scroll, or Escape when portaled without backdrop
+  React.useEffect(() => {
+    if (!context?.open || !hideBackdrop) return;
+
+    const close = () => context.onOpenChange(false);
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      const trigger = context.triggerRef?.current;
+      const content = contentRef.current;
+      if (trigger?.contains(target) || content?.contains(target)) return;
+      close();
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+
+    document.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("scroll", close, true);
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("scroll", close, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [context?.open, hideBackdrop, context]);
 
   if (!context?.open) return null;
+  if (hideBackdrop && position === null) return null;
 
   const alignStyles = {
     start: "left-0",
@@ -110,7 +160,7 @@ const DropdownMenuContent = React.forwardRef<
 
   const contentEl = (
     <div
-      ref={ref}
+      ref={mergedContentRef}
       className={cn(
         hideBackdrop
           ? "fixed z-50 min-w-[8rem] overflow-hidden rounded-md border border-gray-200 bg-white p-1 text-gray-900 shadow-md"
@@ -119,7 +169,7 @@ const DropdownMenuContent = React.forwardRef<
         className
       )}
       style={
-        hideBackdrop
+        hideBackdrop && position
           ? {
               top: position.top,
               left: position.left,

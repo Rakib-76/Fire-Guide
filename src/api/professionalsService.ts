@@ -1741,6 +1741,8 @@ export interface CreateProfessionalRequest {
   business_location: string;
   post_code: string;
   services: Array<{ service_id: number }>;
+  /** Shown to customers on comparison and profile pages (e.g. "Within 2 hours"). */
+  response_time?: string | null;
   certificate_name?: string;
   description?: string;
   evidence?: string;

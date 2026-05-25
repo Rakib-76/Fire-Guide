@@ -2313,6 +2313,46 @@ export const getAdminProfessionalSingle = async (
   return response.data;
 };
 
+export interface AdminProfessionalUpdateRequest {
+  api_token: string;
+  professional_id: number;
+  name?: string;
+  email?: string;
+  number?: string;
+  business_location?: string;
+  about?: string;
+  response_time?: string;
+}
+
+export interface AdminProfessionalUpdateResponse {
+  success: boolean;
+  message: string;
+  data?: AdminProfessionalSingleData;
+}
+
+/**
+ * Update professional profile fields (admin)
+ * POST /admin_professional/update
+ */
+export const adminProfessionalUpdate = async (
+  data: AdminProfessionalUpdateRequest
+): Promise<AdminProfessionalUpdateResponse> => {
+  const response = await apiClient.post<AdminProfessionalUpdateResponse>(
+    '/admin_professional/update',
+    {
+      api_token: data.api_token,
+      professional_id: data.professional_id,
+      ...(data.name != null && { name: data.name }),
+      ...(data.email != null && { email: data.email }),
+      ...(data.number != null && { number: data.number }),
+      ...(data.business_location != null && { business_location: data.business_location }),
+      ...(data.about != null && { about: data.about }),
+      ...(data.response_time != null && { response_time: data.response_time }),
+    }
+  );
+  return response.data;
+};
+
 /** Professional status for take_action: "approved" | "pending" | "rejected" */
 export type AdminProfessionalStatus = 'approved' | 'pending' | 'rejected';
 
