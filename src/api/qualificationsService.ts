@@ -384,13 +384,15 @@ export const createCertification = async (
 ): Promise<CreateCertificationResponse> => {
   try {
     const isFileObject = data.evidence instanceof File;
+    const name = data.certificate_name.trim();
     let response: any;
 
     if (isFileObject) {
       // For documents (PDF, Word, Excel, etc.): send File object as FormData
       const formData = new FormData();
       formData.append('api_token', data.api_token);
-      formData.append('certificate_name', data.certificate_name);
+      formData.append('name', name);
+      formData.append('certificate_name', name);
       formData.append('description', data.description);
       formData.append('evidence', data.evidence as File);
       formData.append('status', data.status);
@@ -424,7 +426,8 @@ export const createCertification = async (
       // For images: send base64 string as JSON body
       const requestBody: any = {
         api_token: data.api_token,
-        certificate_name: data.certificate_name,
+        name,
+        certificate_name: name,
         description: data.description,
         evidence: data.evidence as string,
         status: data.status,

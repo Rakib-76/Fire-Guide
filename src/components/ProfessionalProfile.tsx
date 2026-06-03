@@ -1049,20 +1049,25 @@ export function ProfessionalProfile({
             {/* Right Column - Booking Sidebar */}
             <div className="lg:col-span-1">
               <div className="sticky top-20 space-y-6 lg:top-24">
-                {/* {onBook && (
+                {onBook ? (
                   <Button
                     type="button"
-                    className="w-full bg-red-600 hover:bg-red-700 text-white"
+                    className="w-full bg-red-600 hover:bg-red-700 text-white h-11"
                     disabled={isBooking}
                     aria-busy={isBooking}
                     onClick={() => void handleBookNow()}
                   >
                     {isBooking ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden />
-                    ) : null}
-                    Book Now
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden />
+                        Booking…
+                      </>
+                    ) : (
+                      "Book Now"
+                    )}
                   </Button>
-                )} */}
+                ) : null}
+
                 {/* Pricing — API data (professional_id from Professional List → View Profile) */}
                 <Card>
                   <CardHeader>

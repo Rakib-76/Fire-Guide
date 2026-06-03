@@ -27,7 +27,7 @@ import { Textarea } from "./ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Checkbox } from "./ui/checkbox";
-import { Slider } from "./ui/slider";
+// import { Slider } from "./ui/slider"; // Service radius hidden
 import { Badge } from "./ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
 import { fetchServices, ServiceResponse, formatServiceFromPrice } from "../api/servicesService";
@@ -41,6 +41,7 @@ import {
   getUserPhone,
 } from "../lib/auth";
 import { createCertification } from "../api/qualificationsService";
+import { prepareCertificationEvidence } from "../lib/certificationEvidence";
 import { createProfessional, CreateProfessionalRequest, fetchProfessionalFromListById, getProfessionalProfileImageUrl, getSelectedServices, getProfileCompletionPercentage, ProfileCompletionDetails, getCertificates, CertificateItem, getProfessionalExperiences, createProfessionalExperience, ExperienceItem } from "../api/professionalsService";
 import { toast } from "sonner";
 import {
@@ -95,6 +96,7 @@ export function ProfessionalProfileContent() {
   }, []);
 
   const [selectedServices, setSelectedServices] = useState<number[]>([]);
+  const [selectedServiceStatuses, setSelectedServiceStatuses] = useState<Record<number, string>>({});
   const [services, setServices] = useState<ServiceResponse[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
   const [servicesError, setServicesError] = useState<string | null>(null);
@@ -396,9 +398,18 @@ export function ProfessionalProfileContent() {
         const serviceIds = response.data
           .map(item => item.service_id ?? item.service?.id)
           .filter((id): id is number => typeof id === 'number' && !isNaN(id) && id > 0);
+
+        const statuses: Record<number, string> = {};
+        response.data.forEach((item) => {
+          const sid = item.service_id ?? item.service?.id;
+          if (typeof sid === 'number' && item.status) {
+            statuses[sid] = String(item.status).toLowerCase();
+          }
+        });
         
         startTransition(() => {
           setSelectedServices(serviceIds);
+          setSelectedServiceStatuses(statuses);
         });
       } else {
         console.error('Failed to fetch selected services:', response.error || response.message);
@@ -833,7 +844,7 @@ export function ProfessionalProfileContent() {
       return;
     }
 
-    if (!certificationFormData.evidence && !selectedCertificationFile) {
+    if (!selectedCertificationFile) {
       toast.error("Please upload evidence file");
       return;
     }
@@ -844,34 +855,33 @@ export function ProfessionalProfileContent() {
       return;
     }
 
+    const professionalId = getProfessionalId();
+    if (!professionalId || isNaN(professionalId)) {
+      toast.error("Professional profile is required. Please save your profile first.");
+      return;
+    }
+
     setIsSubmittingCertification(true);
     try {
-      // Convert file to base64 if a file is selected
-      let evidenceValue = certificationFormData.evidence;
-      if (selectedCertificationFile) {
-        try {
-          evidenceValue = await convertFileToBase64(selectedCertificationFile);
-        } catch (fileError) {
-          console.error("Error converting file to base64:", fileError);
-          toast.error("Error processing file. Please try again.");
-          setIsSubmittingCertification(false);
-          return;
-        }
+      let evidenceValue: string | File;
+      try {
+        evidenceValue = await prepareCertificationEvidence(selectedCertificationFile);
+      } catch (fileError) {
+        console.error("Error preparing evidence file:", fileError);
+        toast.error("Error processing file. Please try again.");
+        setIsSubmittingCertification(false);
+        return;
       }
-
-      // Get professional_id for backward compatibility (optional)
-      const professionalId = getProfessionalId();
 
       const response = await createCertification({
         api_token: token,
         certificate_name: certificationFormData.certificate_name.trim(),
         description: certificationFormData.description.trim(),
         evidence: evidenceValue,
-        status: certificationFormData.status,
-        // Optional fields for backward compatibility
-        ...(professionalId && { professional_id: professionalId }),
-        title: certificationFormData.certificate_name.trim(), // Also send as title for API compatibility
-        certification_date: new Date().toISOString().split('T')[0]
+        status: certificationFormData.status || "pending",
+        professional_id: professionalId,
+        title: certificationFormData.certificate_name.trim(),
+        certification_date: new Date().toISOString().split("T")[0],
       });
 
       if (response.status === "success" || response.success || (response.message && !response.error)) {
@@ -879,15 +889,8 @@ export function ProfessionalProfileContent() {
         // Close form and reset
         handleCloseCertificationForm();
         
-        // Refresh certifications list after successful creation
-        // Only refresh if professional_id exists
-        const professionalId = getProfessionalId();
-        
-        if (professionalId && !isNaN(professionalId)) {
-          fetchProfessionalCertificates(professionalId);
-          // Also refresh profile completion to update the percentage
-          fetchProfileCompletion(professionalId);
-        }
+        fetchProfessionalCertificates(professionalId);
+        fetchProfileCompletion(professionalId);
       } else {
         toast.error(response.message || response.error || "Failed to create certification. Please try again.");
       }
@@ -1088,52 +1091,9 @@ export function ProfessionalProfileContent() {
         service_id: serviceId
       }));
 
-      // Prepare certification data if form has data
-      let certificationData: {
-        certificate_name?: string;
-        description?: string;
-        evidence?: string;
-        status?: string;
-      } = {};
-
-      if (certificationFormData.certificate_name.trim() || 
-          certificationFormData.description.trim() || 
-          certificationFormData.evidence || 
-          selectedCertificationFile) {
-        
-        // Validate certification fields if any are filled
-        if (!certificationFormData.certificate_name.trim()) {
-          toast.error("Please enter certificate name");
-          return;
-        }
-        if (!certificationFormData.description.trim()) {
-          toast.error("Please enter certificate description");
-          return;
-        }
-        if (!certificationFormData.evidence && !selectedCertificationFile) {
-          toast.error("Please upload evidence file");
-          return;
-        }
-
-        // Use filename instead of base64-encoded content
-        // The API expects just the filename, not the file content
-        let evidenceValue = certificationFormData.evidence;
-        if (selectedCertificationFile) {
-          // Send just the filename as the API expects
-          evidenceValue = selectedCertificationFile.name;
-        }
-
-        certificationData = {
-          certificate_name: certificationFormData.certificate_name.trim(),
-          description: certificationFormData.description.trim(),
-          evidence: evidenceValue,
-          status: certificationFormData.status || "pending"
-        };
-      }
-
       const existingProfessionalId = getProfessionalId();
 
-      // Build request payload according to API specification
+      // Certificates upload via "Submit Certification" only (POST /qualifications-certification/create)
       const requestPayload: CreateProfessionalRequest = {
         api_token: token,
         name: formData.name.trim(),
@@ -1147,10 +1107,8 @@ export function ProfessionalProfileContent() {
         services,
         ...(existingProfessionalId != null &&
           !Number.isNaN(existingProfessionalId) && { professional_id: existingProfessionalId }),
-        ...certificationData,
       };
 
-      // Call API
       const response = await createProfessional(requestPayload);
 
       // Check for success: status can be true (boolean) or "success" (string)
@@ -1188,6 +1146,7 @@ export function ProfessionalProfileContent() {
 
         if (effectiveProfessionalId != null && !Number.isNaN(Number(effectiveProfessionalId))) {
           const pid = Number(effectiveProfessionalId);
+
           const savedResponseTime =
             typeof response.data?.professional?.response_time === "string"
               ? response.data.professional.response_time.trim()
@@ -1208,10 +1167,6 @@ export function ProfessionalProfileContent() {
           toast.error("Profile saved but professional ID not found in response. Please refresh the page.");
         }
         
-        // Optionally reset form or close certification form
-        if (showCertificationForm) {
-          handleCloseCertificationForm();
-        }
       } else {
         toast.error(response.message || response.error || "Failed to save profile. Please try again.");
       }
@@ -1532,9 +1487,34 @@ export function ProfessionalProfileContent() {
                         className="mt-0.5 sm:mt-1 flex-shrink-0"
                       />
                       <div className="flex-1 min-w-0">
-                        <label htmlFor={`service-${service.id}`} className="font-medium text-sm sm:text-base text-gray-900 cursor-pointer block mb-1 break-words">
-                          {service.service_name}
-                        </label>
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <label htmlFor={`service-${service.id}`} className="font-medium text-sm sm:text-base text-gray-900 cursor-pointer break-words flex-1 min-w-0">
+                            {service.service_name}
+                          </label>
+                          {selectedServices.includes(service.id) && selectedServiceStatuses[service.id] && (
+                            <Badge
+                              className={`flex-shrink-0 text-xs ${
+                                selectedServiceStatuses[service.id] === 'approved'
+                                  ? 'bg-green-100 text-green-700'
+                                  : selectedServiceStatuses[service.id] === 'pending'
+                                    ? 'bg-yellow-100 text-yellow-700'
+                                    : 'bg-red-100 text-red-700'
+                              }`}
+                            >
+                              {selectedServiceStatuses[service.id] === 'approved' && (
+                                <CheckCircle2 className="w-3 h-3 mr-1" />
+                              )}
+                              {selectedServiceStatuses[service.id] === 'pending' && (
+                                <Clock className="w-3 h-3 mr-1" />
+                              )}
+                              {selectedServiceStatuses[service.id] === 'rejected' && (
+                                <XCircle className="w-3 h-3 mr-1" />
+                              )}
+                              {selectedServiceStatuses[service.id].charAt(0).toUpperCase() +
+                                selectedServiceStatuses[service.id].slice(1)}
+                            </Badge>
+                          )}
+                        </div>
                         {service.description && (
                           <p className="text-xs sm:text-sm text-gray-600 mb-2 break-words">{service.description}</p>
                         )}
@@ -1556,57 +1536,11 @@ export function ProfessionalProfileContent() {
             </CardContent>
           </Card>
 
-          {/* Service Area */}
+          {/* Service Area — hidden per product request (radius + emergency callouts)
           <Card className="border-0 shadow-md min-w-0 overflow-hidden">
-            <CardHeader className="p-4 sm:p-6">
-              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0" />
-                Service Area
-              </CardTitle>
-              <CardDescription className="text-xs sm:text-sm mt-1">
-                Define how far you're willing to travel for jobs
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 sm:space-y-4 p-4 sm:p-6 pt-0">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <Label>Service Radius</Label>
-                  <span className="text-sm font-semibold text-red-600">
-                    {formData.serviceRadius[0]} miles
-                  </span>
-                </div>
-                <Slider 
-                  value={formData.serviceRadius}
-                  onValueChange={(value) => setFormData({...formData, serviceRadius: value})}
-                  min={5}
-                  max={100}
-                  step={5}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-sm text-gray-500 mt-2">
-                  <span>5 miles</span>
-                  <span>100 miles</span>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-2 sm:gap-3 p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <Checkbox 
-                  id="emergencyCallout"
-                  checked={formData.emergencyCallout}
-                  onCheckedChange={(checked) => setFormData({...formData, emergencyCallout: checked as boolean})}
-                  className="mt-0.5 sm:mt-1 flex-shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                  <label htmlFor="emergencyCallout" className="font-medium text-sm sm:text-base text-gray-900 cursor-pointer block mb-1">
-                    Available for Emergency Callouts
-                  </label>
-                  <p className="text-xs sm:text-sm text-gray-600">
-                    Get priority bookings for urgent fire safety issues
-                  </p>
-                </div>
-              </div>
-            </CardContent>
+            ...
           </Card>
+          */}
 
           {/* Certifications */}
           <Card className="border-0 shadow-md min-w-0 overflow-hidden">
@@ -1649,7 +1583,7 @@ export function ProfessionalProfileContent() {
                           {cert.status === 'rejected' && (
                             <XCircle className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0" />
                           )}
-                          <h4 className="font-medium text-sm sm:text-base text-gray-900 break-words">{cert.name}</h4>
+                          <h4 className="font-medium text-sm sm:text-base text-gray-900 break-words">{cert.certificate_name}</h4>
                         </div>
                         
                         {/* Description if available */}
@@ -1826,7 +1760,31 @@ export function ProfessionalProfileContent() {
                         </p>
                       </div>
 
-                   
+                      <div className="flex justify-end gap-3 pt-4">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleCloseCertificationForm}
+                          disabled={isSubmittingCertification}
+                          className="h-10"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="submit"
+                          className="bg-red-600 hover:bg-red-700 h-10"
+                          disabled={isSubmittingCertification}
+                        >
+                          {isSubmittingCertification ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Submitting...
+                            </>
+                          ) : (
+                            "Submit Certification"
+                          )}
+                        </Button>
+                      </div>
                     </form>
                   </CardContent>
                 </Card>
@@ -2164,10 +2122,12 @@ export function ProfessionalProfileContent() {
                   <span className="text-gray-600">Services</span>
                   <span className="font-semibold text-gray-900">{selectedServices.length}</span>
                 </div>
+                {/* Service radius preview — hidden per product request
                 <div className="flex items-center justify-between text-xs sm:text-sm mb-2">
                   <span className="text-gray-600">Service Radius</span>
                   <span className="font-semibold text-gray-900">{formData.serviceRadius[0]} mi</span>
                 </div>
+                */}
                 <div className="flex items-center justify-between text-xs sm:text-sm mb-2">
                   <span className="text-gray-600">Certifications</span>
                   <span className="font-semibold text-gray-900">

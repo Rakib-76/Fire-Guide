@@ -30,6 +30,10 @@ import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Separator } from "./ui/separator";
 import { toast } from "sonner";
+import {
+  getBookingPaymentStatusKey,
+  getBookingPaymentStatusLabel,
+} from "../lib/bookingPaymentStatus";
 
 type BookingDisplay = {
   id: number;
@@ -189,12 +193,20 @@ export function AdminBookings() {
       date,
       time,
       location: formatLocation(b.property_address, b.city, b.post_code),
-      amount: b.price ?? "0",
-      commission: 0,
-      professionalPayout: 0,
+      amount: b.price != null ? String(b.price) : "0",
+      commission:
+        b.platform_commission != null && b.platform_commission !== ""
+          ? Number(b.platform_commission) || 0
+          : 0,
+      professionalPayout:
+        b.professional_payout != null && b.professional_payout !== ""
+          ? Number(b.professional_payout) || 0
+          : 0,
       status: b.status ?? "pending",
       createdAt: formatBookingDate(b.created_at),
-      paymentStatus: "—",
+      paymentStatus: String(b.payment_status ?? "").trim()
+        ? getBookingPaymentStatusKey({ payment_status: b.payment_status })
+        : "",
       notes: "",
     };
   };
@@ -244,6 +256,25 @@ export function AdminBookings() {
         return `${base} bg-blue-100 text-blue-700 border-blue-200`;
       case "cancelled":
         return `${base} bg-red-100 text-red-700 border-red-200`;
+      default:
+        return `${base} bg-gray-100 text-gray-700 border-gray-200`;
+    }
+  };
+
+  const getPaymentStatusBadgeClass = (paymentStatus: string) => {
+    const base =
+      "inline-flex shrink-0 items-center rounded-full border px-3 py-1 text-sm font-medium capitalize";
+    switch (String(paymentStatus ?? "").trim().toLowerCase()) {
+      case "paid":
+        return `${base} bg-green-100 text-green-700 border-green-200`;
+      case "pending":
+        return `${base} bg-yellow-100 text-yellow-700 border-yellow-200`;
+      case "failed":
+        return `${base} bg-red-100 text-red-700 border-red-200`;
+      case "refunded":
+        return `${base} bg-purple-100 text-purple-700 border-purple-200`;
+      case "unpaid":
+        return `${base} bg-orange-100 text-orange-700 border-orange-200`;
       default:
         return `${base} bg-gray-100 text-gray-700 border-gray-200`;
     }
@@ -710,11 +741,18 @@ export function AdminBookings() {
                   <span className="font-semibold text-gray-900">£{selectedBooking?.professionalPayout}</span>
                 </div>
                 <Separator />
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center gap-2">
                   <span className="text-gray-600">Payment Status</span>
-                  <Badge className={selectedBooking?.paymentStatus === "paid" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}>
-                    {selectedBooking?.paymentStatus}
-                  </Badge>
+                  {selectedBooking?.paymentStatus ? (
+                    <Badge
+                      variant="custom"
+                      className={getPaymentStatusBadgeClass(selectedBooking.paymentStatus)}
+                    >
+                      {getBookingPaymentStatusLabel(selectedBooking.paymentStatus)}
+                    </Badge>
+                  ) : (
+                    <span className="text-gray-500">—</span>
+                  )}
                 </div>
               </div>
             </div>

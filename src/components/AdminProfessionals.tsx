@@ -2398,19 +2398,7 @@ export function AdminProfessionals() {
                               </Button>
                             </div>
                           </div>
-                        ) : (
-                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 md:p-4">
-                            <div className="flex items-start gap-2">
-                              <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                              <div className="flex-1">
-                                <p className="text-sm font-medium text-yellow-900">Evidence Required</p>
-                                <p className="text-xs text-yellow-700 mt-1">
-                                  No competency evidence has been uploaded for this service yet.
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                        ) : null}
 
                         {/* Admin Actions - Mobile Optimized */}
                         <div className="flex flex-col md:flex-row gap-2 pt-2 border-t">
@@ -2458,20 +2446,11 @@ export function AdminProfessionals() {
                               Request Re-upload
                             </Button>
                           )}
+                          {/* Request Evidence Upload hidden per product request
                           {service.status === 'pending' && !service.evidenceFile && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-blue-600 text-blue-600 hover:bg-blue-50 h-11 md:h-9"
-                              onClick={() => {
-                                setSelectedService(service);
-                                setServiceReuploadModalOpen(true);
-                              }}
-                            >
-                              <FileText className="w-4 h-4 mr-2" />
-                              Request Evidence Upload
-                            </Button>
+                            <Button ...>Request Evidence Upload</Button>
                           )}
+                          */}
                           {service.status === 'approved' && (
                             <div className="flex items-center gap-2 text-sm text-gray-600 px-2 py-1">
                               <CheckCircle className="w-4 h-4 text-green-600" />

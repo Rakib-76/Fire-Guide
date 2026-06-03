@@ -53,6 +53,7 @@ import { toast } from "sonner";
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
 import { uploadProfileImage, UploadProfileImageRequest, updateUser, UpdateUserRequest, getCustomerDashboardSummary, CustomerDashboardSummaryData, getCustomerUpcomingBookings, CustomerUpcomingBookingItem, getCustomerData, updateCustomerData, UpdateCustomerDataRequest, changePassword, getCustomerNotifications, CustomerNotificationItem, getCustomerNotificationDedupeKey, getCustomerContactAdminMessages, CustomerAdminContactMessageItem, deleteAccount, getRecentActivity, RecentActivityItem, enableNotification, disableNotification, NotificationPreferencesData, getNotificationPreferences } from "../api/authService";
 import { getApiToken, getUserInfo, setUserInfo } from "../lib/auth";
+import { formatGbp, parseApiMoneyAmount } from "../lib/money";
 import { Loader2, Upload, ArrowLeft, Save } from "lucide-react";
 import { storeAddress, StoreAddressRequest, fetchAddresses, AddressResponse, deleteAddress, updateAddress } from "../api/addressService";
 import {
@@ -1133,7 +1134,9 @@ export function CustomerDashboard({
   // Use API data for stats - show 0 while loading, then API data
   const upcomingBookings = isLoadingDashboardSummary ? 0 : (dashboardSummary?.jobs?.upcoming ?? 0);
   const completedBookings = isLoadingDashboardSummary ? 0 : (dashboardSummary?.jobs?.completed ?? 0);
-  const totalSpent = isLoadingDashboardSummary ? 0 : (dashboardSummary?.spending?.total_spent ? parseFloat(dashboardSummary.spending.total_spent) : 0);
+  const totalSpent = isLoadingDashboardSummary
+    ? 0
+    : parseApiMoneyAmount(dashboardSummary?.spending?.total_spent);
 
   // Profile image upload handlers
   const handleImageClick = () => {
@@ -1996,7 +1999,7 @@ export function CustomerDashboard({
                     <Loader2 className="w-6 h-6 text-purple-600 animate-spin" />
                   </div>
                 ) : (
-                  <p className="text-3xl text-[#0A1A2F]">£{totalSpent.toFixed(2)}</p>
+                  <p className="text-3xl text-[#0A1A2F]">{formatGbp(totalSpent)}</p>
                 )}
                 <p className="text-sm text-purple-600 mt-2 flex items-center gap-1">
                   <TrendingUp className="w-4 h-4" />

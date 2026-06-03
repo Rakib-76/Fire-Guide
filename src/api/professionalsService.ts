@@ -1799,10 +1799,16 @@ export const createProfessional = async (
 // TypeScript types for Selected Services
 export interface SelectedServiceItem {
   id?: number;
-  service_id: number;
+  professional_id?: number;
+  service_id?: number;
+  price?: number | null;
+  service_area?: string | null;
+  status?: string;
   service?: {
     id: number;
+    service_name?: string;
     name?: string;
+    description?: string;
   };
 }
 

@@ -6,6 +6,7 @@ import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { createCertification } from "../api/qualificationsService";
+import { prepareCertificationEvidence } from "../lib/certificationEvidence";
 import { getApiToken, getProfessionalId } from "../lib/auth";
 import { toast } from "sonner";
 import { ArrowLeft, X, Upload, Loader2, FileText } from "lucide-react";
@@ -70,20 +71,6 @@ export function AddCertification() {
     }
   };
 
-  const convertFileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Remove data URL prefix (e.g., "data:image/png;base64,")
-        const base64String = result.split(',')[1] || result;
-        resolve(base64String);
-      };
-      reader.onerror = (error) => reject(error);
-    });
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -116,13 +103,12 @@ export function AddCertification() {
 
     setIsSubmitting(true);
     try {
-      // Convert file to base64 if a file is selected
-      let evidenceValue = formData.evidence;
+      let evidenceValue: string | File = formData.evidence;
       if (selectedFile) {
         try {
-          evidenceValue = await convertFileToBase64(selectedFile);
+          evidenceValue = await prepareCertificationEvidence(selectedFile);
         } catch (fileError) {
-          console.error("Error converting file to base64:", fileError);
+          console.error("Error preparing evidence file:", fileError);
           toast.error("Error processing file. Please try again.");
           setIsSubmitting(false);
           return;

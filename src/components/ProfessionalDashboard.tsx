@@ -761,7 +761,8 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
       </div>
 
       {/* Quick Actions */}
-      <div className="grid md:grid-cols-3 gap-4 mb-8">
+      <div className="grid md:grid-cols-2 gap-4 mb-8">
+        {/* Upload Report — hidden per product request
         <Button 
           onClick={onNavigateToReports}
           className="h-auto py-4 bg-red-600 hover:bg-red-700 justify-start"
@@ -772,6 +773,7 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
             <p className="text-xs opacity-90">Submit completed job reports</p>
           </div>
         </Button>
+        */}
         <Button 
           variant="outline" 
           className="h-auto py-4 justify-start border-2"

@@ -77,10 +77,10 @@ export const Hero = React.memo(function Hero({ onGetStarted }: HeroProps) {
         <div className="grid md:grid-cols-1 lg:grid-cols-[40%_60%] gap-12 items-center">
           
           {/* Left Column - Content */}
-          <div className="space-y-5 md:space-y-8">
+          <div className="space-y-5 md:space-y-5">
             {/* Heading */}
             <h1 className="text-white md:text-[#0A1A2F] text-[32px] md:text-[70px] leading-[115%] md:leading-[120%] tracking-[-0.01em] font-bold mt-[10px] mb-3 max-w-[280px] md:max-w-none mx-auto md:mx-0 text-center md:text-left">
-              Fire Safety Made Simple.
+              Fire Safety Made <span className="text-red-500">Simple.</span>
             </h1>
             
             {/* Paragraph */}

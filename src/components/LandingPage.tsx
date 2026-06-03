@@ -8,7 +8,7 @@ const ProfessionalCTA = lazy(() => import("./ProfessionalCTA").then(m => ({ defa
 const Footer = lazy(() => import("./Footer").then(m => ({ default: m.Footer })));
 const TrustIndicators = lazy(() => import("./TrustIndicators").then(m => ({ default: m.TrustIndicators })));
 const Testimonials = lazy(() => import("./Testimonials").then(m => ({ default: m.Testimonials })));
-const FeaturedProfessionals = lazy(() => import("./FeaturedProfessionals").then(m => ({ default: m.FeaturedProfessionals })));
+// const FeaturedProfessionals = lazy(() => import("./FeaturedProfessionals").then(m => ({ default: m.FeaturedProfessionals })));
 const LiveBookingFeed = lazy(() => import("./LiveBookingFeed").then(m => ({ default: m.LiveBookingFeed })));
 const PricingPreview = lazy(() => import("./PricingPreview").then(m => ({ default: m.PricingPreview })));
 const CoverageMap = lazy(() => import("./CoverageMap").then(m => ({ default: m.CoverageMap })));
@@ -108,9 +108,9 @@ export function LandingPage({
       <Suspense fallback={null}>
         <ServicesGrid onSelectService={onGetStarted} />
       </Suspense>
-      <Suspense fallback={null}>
+      {/* <Suspense fallback={null}>
         <FeaturedProfessionals onViewProfile={onGetStarted} />
-      </Suspense>
+      </Suspense> */}
       <Suspense fallback={null}>
         <LiveBookingFeed />
       </Suspense>

@@ -2601,6 +2601,9 @@ export interface AdminBookingListItem {
   professional_phone?: string | null;
   service_name: string | null;
   created_at: string;
+  payment_status?: string | null;
+  platform_commission?: string | number | null;
+  professional_payout?: string | number | null;
 }
 
 export interface AdminBookingListResponse {
