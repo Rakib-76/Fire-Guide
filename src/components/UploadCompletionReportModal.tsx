@@ -161,6 +161,11 @@ export function UploadCompletionReportModal({
       return;
     }
 
+    if (!booking.user_id) {
+      toast.error("Customer account not found for this booking. Please refresh and try again.");
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       const base64File = await fileToBase64(uploadedFiles[0]);

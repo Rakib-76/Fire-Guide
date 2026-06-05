@@ -22,6 +22,7 @@ import {
   getProfessionalBookingCustomerName,
   getProfessionalBookingCustomerEmail,
   getProfessionalBookingCustomerPhone,
+  getProfessionalBookingCustomerUserId,
   splitProfessionalBookingCustomerName,
   getProfessionalBookingPaymentStatus,
   getProfessionalBookingPaymentStatusLabel,
@@ -515,7 +516,7 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
     const apiBooking = apiBookingsMap.get(booking.id);
     setUploadReportBooking({
       id: booking.id,
-      user_id: apiBooking?.user_id ?? null,
+      user_id: apiBooking ? getProfessionalBookingCustomerUserId(apiBooking) : null,
       reference: booking.reference,
       service: booking.service,
       customer: booking.customer,

@@ -649,6 +649,20 @@ export const getProfessionalBookingCustomerPhone = (
   booking: ProfessionalBookingItem
 ): string => booking.user?.phone?.trim() || booking.phone?.trim() || "";
 
+/** Customer user id for report upload and other customer-scoped APIs. */
+export const getProfessionalBookingCustomerUserId = (
+  booking: ProfessionalBookingItem
+): number | null => {
+  if (typeof booking.user_id === "number" && booking.user_id > 0) {
+    return booking.user_id;
+  }
+  const nestedId = booking.user?.id;
+  if (typeof nestedId === "number" && nestedId > 0) {
+    return nestedId;
+  }
+  return null;
+};
+
 export const splitProfessionalBookingCustomerName = (
   fullName: string
 ): { first_name: string; last_name: string } => {

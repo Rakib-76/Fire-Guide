@@ -613,6 +613,23 @@ export function ProfessionalProfile({
       .slice(0, 3);
   }, [profileCertifications]);
 
+  const isCertificationVerified = (status: string | undefined | null): boolean => {
+    const normalized = (status ?? "").toLowerCase().trim();
+    return normalized === "verified" || normalized === "approved";
+  };
+
+  const renderCertificationStatusBadge = (status: string | undefined | null) =>
+    isCertificationVerified(status) ? (
+      <Badge className="mt-2 border border-green-200 bg-green-100 text-green-700 hover:bg-green-100">
+        <CheckCircle2 className="w-3 h-3 mr-1" />
+        Verified
+      </Badge>
+    ) : (
+      <Badge className="mt-2 border border-red-200 bg-red-100 text-red-700 hover:bg-red-100">
+        Not Verified
+      </Badge>
+    );
+
   const renderStars = (rating: number) => {
     return (
       <div className="flex items-center gap-1">
@@ -798,7 +815,6 @@ export function ProfessionalProfile({
                       <div className="space-y-3">
                         {latestCertifications.map((cert) => {
                           const year = new Date(cert.created_at).getFullYear();
-                          const isEvidenceUrl = cert.evidence && /^https?:\/\//i.test(cert.evidence);
                           return (
                             <div key={cert.id} className="flex items-start justify-between py-3 border-b last:border-0">
                               <div className="flex items-start gap-3">
@@ -811,20 +827,7 @@ export function ProfessionalProfile({
                                     <p className="text-sm text-gray-600 mt-0.5">{cert.description}</p>
                                   )}
                                   <p className="text-sm text-gray-500 mt-1">Certified {year}</p>
-                                  {cert.evidence && (
-                                    isEvidenceUrl ? (
-                                      <a
-                                        href={cert.evidence}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-sm text-red-600 hover:underline mt-1 inline-block"
-                                      >
-                                        View certificate
-                                      </a>
-                                    ) : (
-                                      <span className="text-sm text-gray-500 mt-1 block">{cert.evidence}</span>
-                                    )
-                                  )}
+                                  {renderCertificationStatusBadge(cert.status)}
                                 </div>
                               </div>
                             </div>
@@ -835,49 +838,42 @@ export function ProfessionalProfile({
                         View More
                       </Button>
                       <Dialog open={certificationsModalOpen} onOpenChange={setCertificationsModalOpen}>
-                        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0">
-                          <DialogHeader className="flex-shrink-0 border-b pl-6 pr-14 py-4">
-                            <DialogTitle className="text-[#0A1A2F]">
-                              All Qualifications & Certifications ({profileCertifications.length})
-                            </DialogTitle>
+                        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+                          <DialogHeader className="shrink-0 border-b border-gray-100 text-left !m-0 !p-0">
+                            <div className="px-6 pt-6 pb-5 pr-14 sm:px-8 sm:pt-7 sm:pb-5">
+                              <DialogTitle className="text-base sm:text-lg font-semibold text-[#0A1A2F] leading-snug">
+                                All Qualifications & Certifications ({profileCertifications.length})
+                              </DialogTitle>
+                            </div>
                           </DialogHeader>
-                          <div className="overflow-y-auto flex-1 min-h-0 px-6 py-4 space-y-4">
-                            {[...profileCertifications]
-                              .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                              .map((cert) => {
-                                const year = new Date(cert.created_at).getFullYear();
-                                const isEvidenceUrl = cert.evidence && /^https?:\/\//i.test(cert.evidence);
-                                return (
-                                  <div key={cert.id} className="pb-4 border-b last:border-0 last:pb-0">
-                                    <div className="flex items-start gap-3">
-                                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                                        <Award className="w-5 h-5 text-blue-600" />
-                                      </div>
-                                      <div>
-                                        <p className="font-medium text-gray-900">{cert.name}</p>
-                                        {cert.description && (
-                                          <p className="text-sm text-gray-600 mt-0.5">{cert.description}</p>
-                                        )}
-                                        <p className="text-sm text-gray-500 mt-1">Certified {year}</p>
-                                        {cert.evidence && (
-                                          isEvidenceUrl ? (
-                                            <a
-                                              href={cert.evidence}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="text-sm text-red-600 hover:underline mt-1 inline-block"
-                                            >
-                                              View certificate
-                                            </a>
-                                          ) : (
-                                            <span className="text-sm text-gray-500 mt-1 block">{cert.evidence}</span>
-                                          )
-                                        )}
+                          <div className="overflow-y-auto flex-1 min-h-0 px-5 py-4 sm:px-6">
+                            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                              {[...profileCertifications]
+                                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                                .map((cert) => {
+                                  const year = new Date(cert.created_at).getFullYear();
+                                  return (
+                                    <div
+                                      key={cert.id}
+                                      className="rounded-lg border border-gray-200 p-3 h-full"
+                                    >
+                                      <div className="flex items-start gap-3">
+                                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                          <Award className="w-5 h-5 text-blue-600" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <p className="font-medium text-gray-900 break-words">{cert.name}</p>
+                                          {cert.description && (
+                                            <p className="text-sm text-gray-600 mt-0.5 break-words">{cert.description}</p>
+                                          )}
+                                          <p className="text-sm text-gray-500 mt-1">Certified {year}</p>
+                                          {renderCertificationStatusBadge(cert.status)}
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                            </div>
                           </div>
                         </DialogContent>
                       </Dialog>
@@ -1069,7 +1065,7 @@ export function ProfessionalProfile({
                 ) : null}
 
                 {/* Pricing — API data (professional_id from Professional List → View Profile) */}
-                <Card>
+                {/* <Card>
                   <CardHeader>
                     <CardTitle className="text-[#0A1A2F]">Pricing</CardTitle>
                   </CardHeader>
@@ -1130,7 +1126,7 @@ export function ProfessionalProfile({
                       </>
                     )}
                   </CardContent>
-                </Card>
+                </Card> */}
 
                 {/* Availability Calendar */}
                 <Card>
