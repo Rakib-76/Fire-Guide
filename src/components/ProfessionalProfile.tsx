@@ -12,7 +12,11 @@ import { Badge } from "./ui/badge";
 import { Separator } from "./ui/separator";
 import { fetchProfessionalProfileCertifications, ProfessionalProfileCertificationItem } from "../api/qualificationsService";
 import { fetchProfessionalProfileInsurance, ProfessionalProfileInsuranceData } from "../api/insuranceService";
-import { fetchProfessionalProfileExperiences, ProfessionalProfileExperienceData } from "../api/experiencesService";
+import {
+  fetchProfessionalProfileExperiences,
+  normalizeProfessionalProfileExperience,
+  ProfessionalProfileExperienceData,
+} from "../api/experiencesService";
 import { fetchProfessionalProfileReviews, ProfessionalProfileReviewItem } from "../api/reviewsService";
 import { fetchProfessionalProfileAvailableDates, ProfessionalProfileAvailableDateItem } from "../api/availableDatesService";
 import {
@@ -379,6 +383,27 @@ export function ProfessionalProfile({
 
   const resolvedProfessionalData = getResolvedProfessional();
   const professionalToUse = resolvedProfessionalData || professional || defaultData;
+
+  const compareExperienceLabels = useMemo(() => {
+    const badges = (
+      professionalToUse as {
+        qualificationBadges?: { key: string; label: string }[];
+      }
+    ).qualificationBadges;
+    if (!badges?.length) return [];
+    return badges
+      .filter((badge) => badge.key.startsWith("exp-"))
+      .map((badge) => badge.label.trim())
+      .filter(Boolean);
+  }, [professionalToUse]);
+
+  const displayExperience = useMemo(() => {
+    if (!profileExperience) return null;
+    return normalizeProfessionalProfileExperience(
+      profileExperience,
+      compareExperienceLabels
+    );
+  }, [profileExperience, compareExperienceLabels]);
 
   const professionalRecipientEmail = useMemo(() => {
     const fromDetails =
@@ -940,31 +965,17 @@ export function ProfessionalProfile({
                       <Loader2 className="w-6 h-6 animate-spin text-red-600 mr-2" />
                       <span className="text-gray-600">Loading experience data...</span>
                     </div>
-                  ) : profileExperience ? (
+                  ) : displayExperience ? (
                     <>
                       <div className="grid md:grid-cols-2 gap-6 mb-6">
                         <div className="text-center p-4 bg-gray-50 rounded-lg">
-                          <p className="text-3xl text-red-600 mb-1">{profileExperience.years_experience}</p>
+                          <p className="text-3xl text-red-600 mb-1">{displayExperience.years_experience}</p>
                           <p className="text-sm text-gray-600">Years Experience</p>
                         </div>
                         <div className="text-center p-4 bg-gray-50 rounded-lg">
-                          <p className="text-3xl text-red-600 mb-1">{profileExperience.assessments_completed}</p>
+                          <p className="text-3xl text-red-600 mb-1">{displayExperience.assessments_completed}</p>
                           <p className="text-sm text-gray-600">Assessments Completed</p>
                         </div>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600 mb-3">Specializations:</p>
-                        {profileExperience.specializations?.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {profileExperience.specializations.map((spec, index) => (
-                              <Badge key={index} variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                                {spec}
-                              </Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-500">No specializations available</p>
-                        )}
                       </div>
                     </>
                   ) : (

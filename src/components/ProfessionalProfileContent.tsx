@@ -27,7 +27,7 @@ import { Textarea } from "./ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Checkbox } from "./ui/checkbox";
-// import { Slider } from "./ui/slider"; // Service radius hidden
+import { Slider } from "./ui/slider";
 import { Badge } from "./ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
 import { fetchServices, ServiceResponse, formatServiceFromPrice } from "../api/servicesService";
@@ -42,12 +42,26 @@ import {
 } from "../lib/auth";
 import { createCertification } from "../api/qualificationsService";
 import { prepareCertificationEvidence } from "../lib/certificationEvidence";
-import { createProfessional, CreateProfessionalRequest, fetchProfessionalFromListById, getProfessionalProfileImageUrl, getSelectedServices, getProfileCompletionPercentage, ProfileCompletionDetails, getCertificates, CertificateItem, getProfessionalExperiences, createProfessionalExperience, ExperienceItem } from "../api/professionalsService";
+import { createProfessional, CreateProfessionalRequest, CreateProfessionalServiceItem, fetchProfessionalFromListById, getProfessionalProfileImageUrl, getSelectedServices, getProfileCompletionPercentage, ProfileCompletionDetails, getCertificates, CertificateItem, getProfessionalExperiences, createProfessionalExperience, ExperienceItem, parseProfessionalServiceRadiusMiles } from "../api/professionalsService";
 import { toast } from "sonner";
 import {
   readCompleteProfileReminderFlag,
   clearCompleteProfileReminderFlag,
+  shouldShowNewProfessionalOnboarding,
+  isProfileFullyComplete,
 } from "../lib/professionalProfileReminder";
+import { resolveAndStoreProfessionalId } from "../lib/resolveProfessionalId";
+
+/** API expects plain numeric strings e.g. `"100"`, not `£100.00`. */
+function formatServicePriceForApi(raw: string | number | null | undefined): string {
+  if (raw == null || raw === "") return "0";
+  const cleaned = String(raw).trim().replace(/^£\s*/, "");
+  const n = Number.parseFloat(cleaned);
+  if (Number.isFinite(n)) {
+    return Number.isInteger(n) ? String(n) : String(n);
+  }
+  return cleaned || "0";
+}
 
 /** Pre-fill from signup/login session (localStorage) — same fields the user entered at registration. */
 function readAuthContactDefaults() {
@@ -58,11 +72,9 @@ function readAuthContactDefaults() {
   };
 }
 
-/** Modal/banner when onboarding flag is set, or no professional profile has been saved yet. */
+/** Intro modal only after first-time signup redirect (session flag), not returning login. */
 function computeShowProfileOnboardingReminder(): boolean {
-  if (readCompleteProfileReminderFlag()) return true;
-  const pid = getProfessionalId();
-  return pid == null || Number.isNaN(Number(pid));
+  return shouldShowNewProfessionalOnboarding();
 }
 
 export function ProfessionalProfileContent() {
@@ -97,6 +109,9 @@ export function ProfessionalProfileContent() {
 
   const [selectedServices, setSelectedServices] = useState<number[]>([]);
   const [selectedServiceStatuses, setSelectedServiceStatuses] = useState<Record<number, string>>({});
+  const [selectedServiceMeta, setSelectedServiceMeta] = useState<
+    Record<number, { price?: string; service_area?: string }>
+  >({});
   const [services, setServices] = useState<ServiceResponse[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
   const [servicesError, setServicesError] = useState<string | null>(null);
@@ -158,25 +173,31 @@ export function ProfessionalProfileContent() {
 
   const [showCompleteProfileReminder, setShowCompleteProfileReminder] = useState(computeShowProfileOnboardingReminder);
 
-  /** Shown first after signup redirect; hidden after successful save or if professional already exists. */
+  /** Shown first after signup redirect; hidden after save or when profile completion reaches 100%. */
   const [completeProfileIntroModalOpen, setCompleteProfileIntroModalOpen] = useState(computeShowProfileOnboardingReminder);
+  const [introModalDismissedByUser, setIntroModalDismissedByUser] = useState(false);
 
-  // Clear onboarding once a saved professional profile exists and reminder was dismissed or completed
-  useEffect(() => {
-    const pid = getProfessionalId();
-    if (pid != null && !Number.isNaN(Number(pid)) && !readCompleteProfileReminderFlag()) {
+  const syncOnboardingVisibility = (completionPct: number) => {
+    if (isProfileFullyComplete(completionPct)) {
+      clearCompleteProfileReminderFlag();
       setShowCompleteProfileReminder(false);
       setCompleteProfileIntroModalOpen(false);
+      setIntroModalDismissedByUser(false);
+      return;
     }
-  }, []);
+    const show = shouldShowNewProfessionalOnboarding(completionPct);
+    setShowCompleteProfileReminder(show);
+    setCompleteProfileIntroModalOpen(show && !introModalDismissedByUser);
+  };
 
   useEffect(() => {
-    if (showCompleteProfileReminder) return;
-    const id = window.setTimeout(() => {
-      if (readCompleteProfileReminderFlag()) setShowCompleteProfileReminder(true);
-    }, 0);
-    return () => clearTimeout(id);
-  }, [showCompleteProfileReminder]);
+    if (!readCompleteProfileReminderFlag()) {
+      setShowCompleteProfileReminder(false);
+      setCompleteProfileIntroModalOpen(false);
+      return;
+    }
+    syncOnboardingVisibility(profileCompletionPercentage);
+  }, [profileCompletionPercentage]);
 
   // Load profile image from localStorage using email-based key for persistence
   // This allows the image to persist across logout/login for the same user
@@ -400,16 +421,25 @@ export function ProfessionalProfileContent() {
           .filter((id): id is number => typeof id === 'number' && !isNaN(id) && id > 0);
 
         const statuses: Record<number, string> = {};
+        const meta: Record<number, { price?: string; service_area?: string }> = {};
         response.data.forEach((item) => {
           const sid = item.service_id ?? item.service?.id;
-          if (typeof sid === 'number' && item.status) {
+          if (typeof sid !== "number") return;
+          if (item.status) {
             statuses[sid] = String(item.status).toLowerCase();
           }
+          meta[sid] = {
+            ...(item.price != null ? { price: formatServicePriceForApi(item.price) } : {}),
+            ...(item.service_area?.trim()
+              ? { service_area: item.service_area.trim() }
+              : {}),
+          };
         });
         
         startTransition(() => {
           setSelectedServices(serviceIds);
           setSelectedServiceStatuses(statuses);
+          setSelectedServiceMeta(meta);
         });
       } else {
         console.error('Failed to fetch selected services:', response.error || response.message);
@@ -431,9 +461,11 @@ export function ProfessionalProfileContent() {
       });
 
       if (response.status === true && response.details && response.profile_completion_percentage !== undefined) {
+        const pct = response.profile_completion_percentage || 0;
         startTransition(() => {
           setProfileCompletionDetails(response.details || null);
-          setProfileCompletionPercentage(response.profile_completion_percentage || 0);
+          setProfileCompletionPercentage(pct);
+          syncOnboardingVisibility(pct);
         });
       } else {
         console.error('Failed to fetch profile completion:', response.error || response.message);
@@ -535,6 +567,10 @@ export function ProfessionalProfileContent() {
             postcode: currentProfessional.post_code || prev.postcode,
             responseTime: currentProfessional.response_time?.trim() || prev.responseTime,
             bio: currentProfessional.about || prev.bio,
+            serviceRadius: (() => {
+              const miles = parseProfessionalServiceRadiusMiles(currentProfessional);
+              return miles != null ? [miles] : prev.serviceRadius;
+            })(),
           }));
           setLoadingProfessional(false);
         });
@@ -593,8 +629,17 @@ export function ProfessionalProfileContent() {
     let isMounted = true;
     
     const loadProfessionalData = async () => {
-      // Get professional_id from localStorage (only exists after professional/create is called)
-      const professionalId = getProfessionalId();
+      const initialProfessionalId = getProfessionalId();
+      const hadMissingId =
+        initialProfessionalId == null || Number.isNaN(Number(initialProfessionalId));
+      let professionalId = initialProfessionalId;
+
+      // OTP login clears professional_id on logout; restore for returning pros
+      if (hadMissingId) {
+        const resolved = await resolveAndStoreProfessionalId();
+        if (!isMounted) return;
+        professionalId = resolved;
+      }
 
       // If professional_id doesn't exist, keep UI blank
       // Professional must complete professional/create process before data is displayed
@@ -604,6 +649,12 @@ export function ProfessionalProfileContent() {
           setHasAttemptedFetch(false); // No data exists
         }
         return;
+      }
+
+      // Returning OTP login: no signup flag — never show onboarding modal
+      if (hadMissingId && isMounted && !readCompleteProfileReminderFlag()) {
+        setShowCompleteProfileReminder(false);
+        setCompleteProfileIntroModalOpen(false);
       }
 
       // professional_id exists - fetch and display data
@@ -1086,10 +1137,19 @@ export function ProfessionalProfileContent() {
     }
 
     try {
-      // Prepare services array
-      const services = selectedServices.map(serviceId => ({
-        service_id: serviceId
-      }));
+      // POST /professional/create expects { service_id, price, service_area } per row (strings)
+      const defaultServiceArea =
+        formData.address.trim() || formData.businessName.trim() || formData.postcode.trim();
+      const servicePayload: CreateProfessionalServiceItem[] = selectedServices.map((serviceId) => {
+        const saved = selectedServiceMeta[serviceId];
+        const catalog = services.find((s) => s.id === serviceId);
+        const priceRaw = saved?.price ?? catalog?.from_price ?? catalog?.price;
+        return {
+          service_id: serviceId,
+          price: formatServicePriceForApi(priceRaw),
+          service_area: saved?.service_area || defaultServiceArea,
+        };
+      });
 
       const existingProfessionalId = getProfessionalId();
 
@@ -1104,7 +1164,8 @@ export function ProfessionalProfileContent() {
         business_location: formData.address.trim(),
         post_code: formData.postcode.trim(),
         response_time: formData.responseTime.trim(),
-        services,
+        radius: String(formData.serviceRadius[0]),
+        services: servicePayload,
         ...(existingProfessionalId != null &&
           !Number.isNaN(existingProfessionalId) && { professional_id: existingProfessionalId }),
       };
@@ -1151,11 +1212,20 @@ export function ProfessionalProfileContent() {
             typeof response.data?.professional?.response_time === "string"
               ? response.data.professional.response_time.trim()
               : formData.responseTime.trim();
+          const savedServiceRadius = parseProfessionalServiceRadiusMiles(
+            (response.data?.professional && typeof response.data.professional === "object"
+              ? response.data.professional
+              : response.data) as Record<string, unknown>
+          );
           startTransition(() => {
             setProfessionalId(pid);
-            if (savedResponseTime) {
-              setFormData((prev) => ({ ...prev, responseTime: savedResponseTime }));
-            }
+            setFormData((prev) => ({
+              ...prev,
+              ...(savedResponseTime ? { responseTime: savedResponseTime } : {}),
+              ...(savedServiceRadius != null
+                ? { serviceRadius: [savedServiceRadius] }
+                : {}),
+            }));
             fetchProfileCompletion(pid);
             fetchSelectedServicesForProfessional(pid);
             fetchProfessionalCertificates(pid);
@@ -1238,7 +1308,10 @@ export function ProfessionalProfileContent() {
             <Button
               type="button"
               className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white"
-              onClick={() => setCompleteProfileIntroModalOpen(false)}
+              onClick={() => {
+                setIntroModalDismissedByUser(true);
+                setCompleteProfileIntroModalOpen(false);
+              }}
             >
               Continue to the form
             </Button>
@@ -1536,11 +1609,66 @@ export function ProfessionalProfileContent() {
             </CardContent>
           </Card>
 
-          {/* Service Area — hidden per product request (radius + emergency callouts)
+          {/* Service Area */}
           <Card className="border-0 shadow-md min-w-0 overflow-hidden">
-            ...
+            <CardHeader className="p-4 sm:p-6">
+              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0" />
+                Service Area
+              </CardTitle>
+              <CardDescription className="text-xs sm:text-sm text-gray-600 mt-2">
+                Define how far you&apos;re willing to travel for jobs
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5 sm:space-y-6 p-4 sm:p-6 pt-0 min-w-0">
+              <div>
+                <div className="flex items-center justify-between mb-4 gap-3">
+                  <Label className="text-sm sm:text-base text-gray-900">Service Radius</Label>
+                  <span className="text-sm sm:text-base font-semibold text-red-600 whitespace-nowrap">
+                    {formData.serviceRadius[0]} miles
+                  </span>
+                </div>
+                <Slider
+                  value={formData.serviceRadius}
+                  onValueChange={(value) => setFormData({ ...formData, serviceRadius: value })}
+                  min={5}
+                  max={100}
+                  step={5}
+                  className="py-4"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-2">
+                  <span>5 miles</span>
+                  <span>100 miles</span>
+                </div>
+              </div>
+
+              {/* Emergency callouts — hidden per product request
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="emergency-callout"
+                    checked={formData.emergencyCallout}
+                    onCheckedChange={(checked) =>
+                      setFormData({ ...formData, emergencyCallout: checked === true })
+                    }
+                    className="mt-0.5 flex-shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <label
+                      htmlFor="emergency-callout"
+                      className="text-sm sm:text-base font-semibold text-gray-900 cursor-pointer"
+                    >
+                      Available for Emergency Callouts
+                    </label>
+                    <p className="text-xs sm:text-sm text-gray-600 mt-1">
+                      Get priority bookings for urgent fire safety issues
+                    </p>
+                  </div>
+                </div>
+              </div>
+              */}
+            </CardContent>
           </Card>
-          */}
 
           {/* Certifications */}
           <Card className="border-0 shadow-md min-w-0 overflow-hidden">
@@ -2122,12 +2250,10 @@ export function ProfessionalProfileContent() {
                   <span className="text-gray-600">Services</span>
                   <span className="font-semibold text-gray-900">{selectedServices.length}</span>
                 </div>
-                {/* Service radius preview — hidden per product request
                 <div className="flex items-center justify-between text-xs sm:text-sm mb-2">
                   <span className="text-gray-600">Service Radius</span>
                   <span className="font-semibold text-gray-900">{formData.serviceRadius[0]} mi</span>
                 </div>
-                */}
                 <div className="flex items-center justify-between text-xs sm:text-sm mb-2">
                   <span className="text-gray-600">Certifications</span>
                   <span className="font-semibold text-gray-900">

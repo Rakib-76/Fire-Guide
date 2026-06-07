@@ -1,12 +1,12 @@
 import type { NavigateFunction } from "react-router-dom";
 import { getProfessionalId } from "./auth";
 import {
-  readCompleteProfileReminderFlag,
+  clearCompleteProfileReminderFlag,
   setCompleteProfileReminderFlag,
 } from "./professionalProfileReminder";
 
+/** True when no professional row id is stored yet (not the signup onboarding modal). */
 export function professionalNeedsProfileSetup(): boolean {
-  if (readCompleteProfileReminderFlag()) return true;
   const pid = getProfessionalId();
   return pid == null || Number.isNaN(Number(pid));
 }
@@ -23,14 +23,21 @@ export function navigateToProfessionalHome(
   options?: { replace?: boolean; forceProfileOnboarding?: boolean }
 ): void {
   const replace = options?.replace ?? false;
-  const needsProfile = options?.forceProfileOnboarding ?? professionalNeedsProfileSetup();
 
-  if (needsProfile) {
+  if (options?.forceProfileOnboarding) {
     setCompleteProfileReminderFlag();
     navigate("/professional/dashboard/profile", {
       replace,
       state: { showCompleteProfileReminder: true },
     });
+    return;
+  }
+
+  // Returning login — never reuse the new-signup onboarding modal flag
+  clearCompleteProfileReminderFlag();
+
+  if (professionalNeedsProfileSetup()) {
+    navigate("/professional/dashboard/profile", { replace });
     return;
   }
 

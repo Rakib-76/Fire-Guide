@@ -17,3 +17,15 @@ export function professionalBenefitsJoinPath(): string {
 export function professionalBenefitsJoinTo(): To {
   return { pathname: PROFESSIONAL_BENEFITS_PATHNAME, hash: PROFESSIONAL_BENEFITS_JOIN_ID };
 }
+
+export const PROFESSIONAL_AUTH_PATH = "/professional/auth" as const;
+
+/** Opens professional auth on the registration form (“Join as a Professional”). */
+export function professionalAuthSignupPath(): string {
+  return `${PROFESSIONAL_AUTH_PATH}?mode=signup`;
+}
+
+/** Opens professional auth on the login form. */
+export function professionalAuthLoginPath(): string {
+  return `${PROFESSIONAL_AUTH_PATH}?mode=login`;
+}

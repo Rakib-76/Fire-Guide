@@ -4,29 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Label } from "./ui/label";
 import { Calendar, ChevronLeft, ChevronRight, Clock, Loader2 } from "lucide-react";
 import { fetchProfessionalProfileAvailableDates, type ProfessionalProfileAvailableDateItem } from "../api/availableDatesService";
-import { getBlockedBookingDaysListForProfessional } from "../api/professionalsService";
+import { getNoticeBlockedBookingDates } from "../api/professionalsService";
 import { normalizeSlotForBookingComparison, parseBookingDateKey } from "../lib/bookingSlotNormalize";
 
 function parseDateOnly(dateStr: string): string {
   if (!dateStr) return "";
   return dateStr.replace(" ", "T").slice(0, 10);
-}
-
-function datesInRange(startStr: string, endStr: string): string[] {
-  const start = parseDateOnly(startStr);
-  const end = parseDateOnly(endStr);
-  if (!start || !end) return [];
-  const out: string[] = [];
-  const d = new Date(start + "T12:00:00");
-  const endD = new Date(end + "T12:00:00");
-  while (d <= endD) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    out.push(`${y}-${m}-${day}`);
-    d.setDate(d.getDate() + 1);
-  }
-  return out;
 }
 
 type DayInfo = { date: string; day: number; isAvailable: boolean; isBlocked: boolean } | null;
@@ -41,7 +24,7 @@ export interface RescheduleCalendarPickerProps {
 
 /**
  * Calendar + time slots for customer reschedule — same APIs as booking flow:
- * - POST `block-professional/booking-days-list` with `{ professional_id }` (blocked ranges on calendar)
+ * - POST `block-professional/booking-days-list` with `{ professional_id }` (notice_blocked_dates + blocked_ranges)
  * - POST `professional-profile/available-date` with `{ professional_id }` (slots per date + extra blocked dates)
  */
 export function RescheduleCalendarPicker({
@@ -111,15 +94,9 @@ export function RescheduleCalendarPicker({
     let cancelled = false;
     const load = async () => {
       try {
-        const list = await getBlockedBookingDaysListForProfessional(pid);
+        const blocked = await getNoticeBlockedBookingDates(pid);
         if (cancelled) return;
-        const set = new Set<string>();
-        for (const item of list ?? []) {
-          for (const d of datesInRange(item.start_day, item.end_day)) {
-            set.add(d);
-          }
-        }
-        setBlockedDatesSet(set);
+        setBlockedDatesSet(new Set(blocked));
       } catch {
         if (!cancelled) setBlockedDatesSet(new Set());
       }

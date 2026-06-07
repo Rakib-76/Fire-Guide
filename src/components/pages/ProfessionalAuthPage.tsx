@@ -1,6 +1,6 @@
 import React, { startTransition } from "react";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { ProfessionalAuth } from "../ProfessionalAuth";
 import { setUserInfo, getUserRole, setUserRole } from "../../lib/auth";
@@ -9,10 +9,13 @@ import { navigateToProfessionalHome } from "../../lib/professionalDashboardNavig
 
 export default function ProfessionalAuthPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { setCurrentUser } = useApp();
+  const initialSignUp = searchParams.get("mode") === "signup";
 
   return (
     <ProfessionalAuth
+      initialSignUp={initialSignUp}
       onAuthSuccess={(name: string, options) => {
         // Get user role from backend FIRST (stored during auth)
         const userRole = getUserRole();

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, startTransition } from "react";
 import { isAuthenticated, getSessionUserDisplay, setUserInfo, removeAuthToken } from "../lib/auth";
+import { clearCompleteProfileReminderFlag } from "../lib/professionalProfileReminder";
 import type { FilterProfessionalForFraItem } from "../api/servicesService";
 
 export interface Booking {
@@ -283,6 +284,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Error clearing localStorage on logout:', error);
     }
+    clearCompleteProfileReminderFlag();
     removeAuthToken();
   };
 

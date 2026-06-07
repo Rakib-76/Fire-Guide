@@ -740,7 +740,19 @@ export const getNoticeBlockedBookingDates = async (
   }
 
   if (Array.isArray(data)) {
-    return [];
+    const legacy = new Set<string>();
+    for (const item of data) {
+      if (item == null || typeof item !== "object") continue;
+      const row = item as Record<string, unknown>;
+      const sd = row.start_day;
+      const ed = row.end_day;
+      if (typeof sd === "string" && typeof ed === "string") {
+        for (const d of expandBlockedRangeToIsoDates(sd, ed)) {
+          legacy.add(d);
+        }
+      }
+    }
+    return Array.from(legacy).sort();
   }
 
   return collectCalendarBlockedDatesFromListPayload(payload, data);
@@ -1285,6 +1297,10 @@ export interface ProfessionalResponse {
   latitude: number | null;
   post_code?: string;
   response_time: string | null;
+  /** Miles willing to travel — stored via POST /professional/create as `radius`. */
+  radius?: number | string | null;
+  /** @deprecated Legacy alias; prefer `radius`. */
+  service_radius?: number | string | null;
   rating: string | null;
   review: string | null;
   number: string;
@@ -1301,6 +1317,24 @@ export interface ProfessionalResponse {
 }
 
 /** Avatar URL from a `/professional/list` row — prefers nested `user.image`. */
+const SERVICE_RADIUS_MIN_MILES = 5;
+const SERVICE_RADIUS_MAX_MILES = 100;
+const SERVICE_RADIUS_STEP_MILES = 5;
+
+/** Parse service radius from API rows (snake_case or legacy aliases). */
+export function parseProfessionalServiceRadiusMiles(
+  source: Record<string, unknown> | ProfessionalResponse | null | undefined
+): number | null {
+  if (!source || typeof source !== "object") return null;
+  const row = source as Record<string, unknown>;
+  const raw = row.radius ?? row.service_radius ?? row.serviceRadius ?? row.miles;
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : Number.parseInt(String(raw), 10);
+  if (!Number.isFinite(n)) return null;
+  const clamped = Math.min(SERVICE_RADIUS_MAX_MILES, Math.max(SERVICE_RADIUS_MIN_MILES, n));
+  return Math.round(clamped / SERVICE_RADIUS_STEP_MILES) * SERVICE_RADIUS_STEP_MILES;
+}
+
 export function getProfessionalProfileImageUrl(prof: ProfessionalResponse): string {
   const u = prof.user;
   if (u && typeof u.image === "string" && u.image.trim()) return u.image.trim();
@@ -1393,6 +1427,40 @@ export const fetchProfessionalFromListById = async (
     }
     const { rows, lastPage } = parsed;
     const found = rows.find((p) => p.id === professionalId) ?? null;
+    if (found) {
+      return found;
+    }
+
+    if (page >= lastPage || rows.length === 0) {
+      return null;
+    }
+    page += 1;
+  }
+  return null;
+};
+
+/**
+ * Paginated GET /professional/list — walks pages until a row matches `email`.
+ * Used after OTP login when verify-otp omits professional_id (cleared on logout).
+ */
+export const fetchProfessionalFromListByEmail = async (
+  email: string
+): Promise<ProfessionalResponse | null> => {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return null;
+
+  let page = 1;
+  const maxPages = 500;
+
+  for (let guard = 0; guard < maxPages; guard++) {
+    const response = await apiClient.get<ProfessionalsApiResponse>("/professional/list", { params: { page } });
+    const parsed = parseProfessionalListResponse(response.data);
+    if (!parsed) {
+      return null;
+    }
+    const { rows, lastPage } = parsed;
+    const found =
+      rows.find((p) => p.email?.trim().toLowerCase() === normalized) ?? null;
     if (found) {
       return found;
     }
@@ -1730,6 +1798,13 @@ export const createOrUpdateNotificationSettings = async (
   }
 };
 
+/** One row in POST /professional/create `services` array. */
+export interface CreateProfessionalServiceItem {
+  service_id: number;
+  price?: string;
+  service_area?: string;
+}
+
 // TypeScript types for Create Professional
 export interface CreateProfessionalRequest {
   api_token: string;
@@ -1740,9 +1815,11 @@ export interface CreateProfessionalRequest {
   number: string;
   business_location: string;
   post_code: string;
-  services: Array<{ service_id: number }>;
+  services: CreateProfessionalServiceItem[];
   /** Shown to customers on comparison and profile pages (e.g. "Within 2 hours"). */
   response_time?: string | null;
+  /** Service area radius in miles (slider: 5–100, step 5). API expects string e.g. `"35"`. */
+  radius?: number | string;
   certificate_name?: string;
   description?: string;
   evidence?: string;

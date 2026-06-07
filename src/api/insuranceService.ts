@@ -39,6 +39,7 @@ export interface CreateInsuranceRequest {
   price: string;
   expire_date: string;
   professional_id: number;
+  provider_name?: string;
 }
 
 export interface CreateInsuranceResponse {
@@ -56,6 +57,7 @@ export interface UpdateInsuranceRequest {
   price: string;
   expire_date: string;
   professional_id: number;
+  provider_name?: string;
 }
 
 export interface UpdateInsuranceResponse {

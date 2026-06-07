@@ -3,6 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { useScrollToProfessionalBenefitsJoin } from "../../hooks/useScrollToProfessionalBenefitsJoin";
 import { ProfessionalBenefits } from "../ProfessionalBenefits";
+import {
+  professionalAuthLoginPath,
+  professionalAuthSignupPath,
+} from "../../lib/professionalBenefitsNavigation";
 
 export default function ProfessionalBenefitsPage() {
   useScrollToProfessionalBenefitsJoin();
@@ -17,8 +21,8 @@ export default function ProfessionalBenefitsPage() {
 
   return (
     <ProfessionalBenefits
-      onRegister={() => go("/professional/auth")}
-      onLogin={() => go("/professional/auth")}
+      onRegister={() => go(professionalAuthSignupPath())}
+      onLogin={() => go(professionalAuthLoginPath())}
       onBack={() => go("/")}
       onNavigateHome={() => go("/")}
       onNavigateServices={() => go("/services")}

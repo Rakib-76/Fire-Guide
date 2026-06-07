@@ -151,6 +151,19 @@ export function AdminProfessionals() {
     return "pending";
   };
 
+  const profileModalStatusBadgeClass = (
+    variant: "approved" | "rejected" | "pending"
+  ): string => {
+    const base = "rounded-full border px-2.5 py-0.5 text-xs font-medium shrink-0";
+    if (variant === "approved") {
+      return `${base} border-green-200 bg-green-100 text-green-700`;
+    }
+    if (variant === "rejected") {
+      return `${base} border-red-200 bg-red-100 text-red-700`;
+    }
+    return `${base} border-yellow-200 bg-yellow-100 text-yellow-700`;
+  };
+
   const isAdminActionSuccess = (res: { success?: boolean; status?: boolean | string } | null | undefined): boolean => {
     if (!res) return false;
     if (res.success === true) return true;
@@ -1664,13 +1677,13 @@ export function AdminProfessionals() {
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-2xl text-[#0A1A2F]">{profileDetail?.name ?? selectedProfessional?.name}</h3>
                       <Badge
-                        className={
+                        className={profileModalStatusBadgeClass(
                           (profileDetail?.status ?? selectedProfessional?.status) === "approved"
-                            ? "bg-green-100 text-green-700"
+                            ? "approved"
                             : (profileDetail?.status ?? selectedProfessional?.status) === "pending"
-                              ? "bg-yellow-100 text-yellow-700"
-                              : "bg-red-100 text-red-700"
-                        }
+                              ? "pending"
+                              : "rejected"
+                        )}
                       >
                         {(profileDetail?.status ?? selectedProfessional?.status) === "rejected" ? "suspended" : (profileDetail?.status ?? selectedProfessional?.status)}
                       </Badge>
@@ -1789,13 +1802,9 @@ export function AdminProfessionals() {
                                     <p className="text-xs text-gray-500 mt-1">Uploaded: {identity.uploadDate}</p>
                                   </div>
                                   <Badge
-                                    className={`shrink-0 w-fit ${
-                                      isApproved
-                                        ? "bg-green-100 text-green-700"
-                                        : isRejected
-                                          ? "bg-red-100 text-red-700"
-                                          : "bg-yellow-100 text-yellow-700"
-                                    }`}
+                                    className={profileModalStatusBadgeClass(
+                                      isApproved ? "approved" : isRejected ? "rejected" : "pending"
+                                    )}
                                   >
                                     {isApproved ? "Verified" : isRejected ? "Rejected" : "Pending verification"}
                                   </Badge>
@@ -1918,13 +1927,9 @@ export function AdminProfessionals() {
                                     <p className="text-xs text-gray-500">Valid until: {insurance.expireDate}</p>
                                   </div>
                                   <Badge
-                                    className={
-                                      isApproved
-                                        ? "bg-green-100 text-green-700"
-                                        : isRejected
-                                          ? "bg-red-100 text-red-700"
-                                          : "bg-yellow-100 text-yellow-700"
-                                    }
+                                    className={profileModalStatusBadgeClass(
+                                      isApproved ? "approved" : isRejected ? "rejected" : "pending"
+                                    )}
                                   >
                                     {isApproved ? "Verified" : isRejected ? "Rejected" : "Pending verification"}
                                   </Badge>
@@ -2079,10 +2084,9 @@ export function AdminProfessionals() {
 
                                   {/* Status Badge */}
                                   <Badge
-                                    className={`flex-shrink-0 ${isApproved ? 'bg-green-100 text-green-700' :
-                                      isPending ? 'bg-yellow-100 text-yellow-700' :
-                                        'bg-red-100 text-red-700'
-                                      }`}
+                                    className={profileModalStatusBadgeClass(
+                                      isApproved ? "approved" : isPending ? "pending" : "rejected"
+                                    )}
                                   >
                                     {isApproved ? 'Verified' : isPending ? 'Not Verified' : 'Rejected'}
                                   </Badge>
@@ -2195,13 +2199,9 @@ export function AdminProfessionals() {
                                     ) : null}
                                   </div>
                                   <Badge
-                                    className={
-                                      isApproved
-                                        ? "bg-green-100 text-green-700"
-                                        : isRejected
-                                          ? "bg-red-100 text-red-700"
-                                          : "bg-yellow-100 text-yellow-700"
-                                    }
+                                    className={profileModalStatusBadgeClass(
+                                      isApproved ? "approved" : isRejected ? "rejected" : "pending"
+                                    )}
                                   >
                                     {isApproved ? "Verified" : isRejected ? "Rejected" : "Pending verification"}
                                   </Badge>
@@ -2344,12 +2344,13 @@ export function AdminProfessionals() {
                             </p>
                           </div>
                           <Badge
-                            className={`flex-shrink-0 ${service.status === 'approved'
-                              ? 'bg-green-100 text-green-700'
-                              : service.status === 'pending'
-                                ? 'bg-yellow-100 text-yellow-700'
-                                : 'bg-red-100 text-red-700'
-                              }`}
+                            className={profileModalStatusBadgeClass(
+                              service.status === "approved"
+                                ? "approved"
+                                : service.status === "pending"
+                                  ? "pending"
+                                  : "rejected"
+                            )}
                           >
                             {service.status === 'approved' && <CheckCircle className="w-3 h-3 mr-1" />}
                             {service.status === 'pending' && <Clock className="w-3 h-3 mr-1" />}

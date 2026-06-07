@@ -1,13 +1,15 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { Mail, ArrowRight, Shield, Briefcase, CheckCircle, Calendar, TrendingUp, Menu, User } from "lucide-react";
+import { Mail, ArrowRight, Shield, Briefcase, CheckCircle, Calendar, TrendingUp, Menu, User, Eye, EyeOff } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { toast } from "sonner";
-import { sendOtp, verifyOtp, registerProfessional, loginUser } from "../api/authService";
+import { sendOtp, verifyOtp, registerProfessional } from "../api/authService";
 import { fetchServices, ServiceResponse } from "../api/servicesService";
 import { setAuthToken, setUserEmail, setUserInfo, setUserPhone, setUserRole, setProfessionalId } from "../lib/auth";
+import { resolveAndStoreProfessionalId } from "../lib/resolveProfessionalId";
+import { formatApiErrorMessage } from "../lib/apiValidationMessage";
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
 
 function extractAuthToken(payload: unknown): string | null {
@@ -77,6 +79,8 @@ function persistProfessionalSession(
 }
 
 interface ProfessionalAuthProps {
+  /** When true, show “Join as a Professional” (from /professional/auth?mode=signup). */
+  initialSignUp?: boolean;
   /** `isNewProfessionalSignup` is true after first-time registration + OTP (not returning login). */
   onAuthSuccess: (name: string, options?: { isNewProfessionalSignup?: boolean }) => void;
   onBack: () => void;
@@ -87,8 +91,17 @@ interface ProfessionalAuthProps {
   onNavigateContact: () => void;
 }
 
-export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavigateServices, onNavigateProfessionals, onNavigateAbout, onNavigateContact }: ProfessionalAuthProps) {
-  const [isSignUp, setIsSignUp] = useState(false);
+export function ProfessionalAuth({
+  initialSignUp = false,
+  onAuthSuccess,
+  onBack,
+  onNavigateHome,
+  onNavigateServices,
+  onNavigateProfessionals,
+  onNavigateAbout,
+  onNavigateContact,
+}: ProfessionalAuthProps) {
+  const [isSignUp, setIsSignUp] = useState(initialSignUp);
   const [step, setStep] = useState<"form" | "otp">("form");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
@@ -100,6 +113,7 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
   const [contactName, setContactName] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [showSignUpPassword, setShowSignUpPassword] = useState(false);
   const [companyNumber, setCompanyNumber] = useState("");
   const [serviceType, setServiceType] = useState("");
   const [services, setServices] = useState<ServiceResponse[]>([]);
@@ -208,54 +222,26 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
         Boolean(response.data);
 
       if (!isSuccess) {
-        toast.error(response.message || "Registration failed. Please try again.");
+        toast.error(
+          formatApiErrorMessage(response, "Registration failed. Please try again.")
+        );
         return;
       }
 
-      const data =
-        response.data && typeof response.data === "object"
-          ? (response.data as Record<string, unknown>)
-          : null;
-
-      let token = extractAuthToken(response);
-      if (!token) {
-        try {
-          const loginResponse = await loginUser({
-            email: email.trim().toLowerCase(),
-            password,
-          });
-          token = extractAuthToken(loginResponse);
-        } catch (loginError) {
-          console.warn("Auto-login after professional registration failed:", loginError);
-        }
-      }
-
-      if (!token) {
-        toast.error("Account created. Please sign in to continue.");
-        setIsSignUp(false);
-        return;
-      }
-
-      const fullName =
-        (typeof data?.full_name === "string" && data.full_name) ||
-        (typeof data?.name === "string" && data.name) ||
-        (typeof data?.contact_name === "string" && data.contact_name) ||
-        contactName.trim() ||
-        businessName.trim();
-
-      persistProfessionalSession(
-        token,
-        email,
-        fullName,
-        phone,
-        data
+      // Step 2: backend registers the account and emails an OTP — verify before finishing signup
+      toast.success(
+        response.message || "Account registered! Check your email for the verification code."
       );
-
-      toast.success(response.message || "Account created successfully!");
-      onAuthSuccess(fullName, { isNewProfessionalSignup: true });
+      setOtp(["", "", "", "", "", ""]);
+      setStep("otp");
+      setTimer(60);
+      setTimeout(() => otpInputs.current[0]?.focus(), 100);
     } catch (error: unknown) {
       const err = error as { message?: string; error?: string };
-      toast.error(err?.message || err?.error || "Registration failed. Please try again.");
+      toast.error(
+        err?.message ||
+          formatApiErrorMessage(err, "Registration failed. Please try again.")
+      );
     } finally {
       setIsLoading(false);
     }
@@ -359,6 +345,17 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
             setProfessionalId(professionalId);
           }
 
+          // Returning login: OTP often omits professional_id; restore from list before navigation
+          if (!isSignUp) {
+            await resolveAndStoreProfessionalId({
+              responseData:
+                response.data && typeof response.data === "object"
+                  ? (response.data as Record<string, unknown>)
+                  : null,
+              email: email.trim().toLowerCase(),
+            });
+          }
+
           // Success message and navigation
           if (isSignUp) {
             toast.success("Welcome to Fire Guide! Your account is pending approval.");
@@ -392,6 +389,16 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
           const professionalId = response.data?.professional?.id || response.data?.professional_id;
           if (professionalId) {
             setProfessionalId(professionalId);
+          }
+
+          if (!isSignUp) {
+            await resolveAndStoreProfessionalId({
+              responseData:
+                response.data && typeof response.data === "object"
+                  ? (response.data as Record<string, unknown>)
+                  : null,
+              email: email.trim().toLowerCase(),
+            });
           }
           
           if (isSignUp) {
@@ -454,6 +461,7 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
     setContactName("");
     setPhone("");
     setPassword("");
+    setShowSignUpPassword(false);
     setCompanyNumber("");
     setServiceType("");
   };
@@ -786,17 +794,31 @@ export function ProfessionalAuth({ onAuthSuccess, onBack, onNavigateHome, onNavi
                           <Label htmlFor="signup-password" className="text-[14px] text-gray-700 block mb-2">
                             Password *
                           </Label>
-                          <Input
-                            id="signup-password"
-                            type="password"
-                            placeholder="Create a password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="h-12 px-4 text-[15px] border-gray-200 focus:border-red-500 focus:ring-red-500/20 rounded-xl"
-                            required
-                            minLength={6}
-                            autoComplete="new-password"
-                          />
+                          <div className="relative">
+                            <Input
+                              id="signup-password"
+                              type={showSignUpPassword ? "text" : "password"}
+                              placeholder="Create a password"
+                              value={password}
+                              onChange={(e) => setPassword(e.target.value)}
+                              className="h-12 px-4 pr-11 text-[15px] border-gray-200 focus:border-red-500 focus:ring-red-500/20 rounded-xl"
+                              required
+                              minLength={6}
+                              autoComplete="new-password"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowSignUpPassword((prev) => !prev)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                              aria-label={showSignUpPassword ? "Hide password" : "Show password"}
+                            >
+                              {showSignUpPassword ? (
+                                <EyeOff className="w-4 h-4" />
+                              ) : (
+                                <Eye className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
                         </div>
 
                         <div className="space-y-0">

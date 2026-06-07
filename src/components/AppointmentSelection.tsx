@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 import { fetchProfessionalProfileAvailableDates, ProfessionalProfileAvailableDateItem } from "../api/availableDatesService";
-import { getBlockedBookingDaysListForProfessional } from "../api/professionalsService";
+import { getNoticeBlockedBookingDates } from "../api/professionalsService";
 import { normalizeSlotForBookingComparison, parseBookingDateKey } from "../lib/bookingSlotNormalize";
 import type { BookingData } from "./BookingFlow";
 import { BookingServiceDetailsLines } from "./BookingServiceDetailsLines";
@@ -26,24 +26,6 @@ function parseDateOnly(dateStr: string): string {
   if (!dateStr) return "";
   const s = dateStr.replace(" ", "T").slice(0, 10);
   return s;
-}
-
-/** Return all YYYY-MM-DD dates between start and end (inclusive). */
-function datesInRange(startStr: string, endStr: string): string[] {
-  const start = parseDateOnly(startStr);
-  const end = parseDateOnly(endStr);
-  if (!start || !end) return [];
-  const out: string[] = [];
-  const d = new Date(start + "T12:00:00");
-  const endD = new Date(end + "T12:00:00");
-  while (d <= endD) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    out.push(`${y}-${m}-${day}`);
-    d.setDate(d.getDate() + 1);
-  }
-  return out;
 }
 
 interface AppointmentSelectionProps {
@@ -152,7 +134,7 @@ export function AppointmentSelection({
     };
   }, [professionalId, availabilityRefreshTick]);
 
-  // Fetch blocked booking days: POST booking-days-list with { professional_id } only.
+  // Fetch blocked booking days: notice_blocked_dates + blocked_ranges from booking-days-list.
   useEffect(() => {
     if (professionalId == null || Number.isNaN(Number(professionalId))) {
       setBlockedDatesSet(new Set());
@@ -161,15 +143,9 @@ export function AppointmentSelection({
     let cancelled = false;
     const load = async () => {
       try {
-        const list = await getBlockedBookingDaysListForProfessional(Number(professionalId));
+        const blocked = await getNoticeBlockedBookingDates(Number(professionalId));
         if (cancelled) return;
-        const set = new Set<string>();
-        for (const item of list ?? []) {
-          for (const d of datesInRange(item.start_day, item.end_day)) {
-            set.add(d);
-          }
-        }
-        setBlockedDatesSet(set);
+        setBlockedDatesSet(new Set(blocked));
       } catch {
         if (!cancelled) setBlockedDatesSet(new Set());
       }

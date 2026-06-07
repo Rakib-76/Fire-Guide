@@ -1,16 +1,160 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Shield, CheckCircle, AlertCircle, Upload, FileText, Award, X, Loader2 } from "lucide-react";
+import { Shield, CheckCircle, AlertCircle, Upload, FileText, Award, X, Loader2, Pencil } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
 import { Separator } from "./ui/separator";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
 import { getProfessionalWiseIdentity, createProfessionalIdentity, updateProfessionalIdentity, ProfessionalIdentityItem, getVerificationSummary, VerificationSummaryData, getProfessionalWiseEvidence, ProfessionalEvidenceItem } from "../api/professionalsService";
 import { createCertification, updateEvidence } from "../api/qualificationsService";
-import { showInsuranceCoverage, InsuranceItem, updateInsuranceDocument, createInsuranceDocument } from "../api/insuranceService";
+import {
+  showInsuranceCoverage,
+  InsuranceItem,
+  updateInsuranceDocument,
+  createInsuranceCoverage,
+  updateInsuranceCoverage,
+} from "../api/insuranceService";
 import { getApiToken, getProfessionalId } from "../lib/auth";
 import { resolveApiBaseUrl } from "../lib/apiBaseUrl";
 import { toast } from "sonner";
+
+const PUBLIC_LIABILITY_TITLE = "Public Liability Insurance";
+const PROFESSIONAL_INDEMNITY_TITLE = "Professional Indemnity Insurance";
+
+function insuranceTitleLower(title: string | null | undefined): string {
+  return (title ?? "").trim().toLowerCase();
+}
+
+function isPublicLiabilityItem(item: InsuranceItem): boolean {
+  const title = insuranceTitleLower(item.title);
+  return (
+    title.includes("public liability") ||
+    (title.includes("liability") && !title.includes("indemnity"))
+  );
+}
+
+function isProfessionalIndemnityItem(item: InsuranceItem): boolean {
+  const title = insuranceTitleLower(item.title);
+  return title.includes("professional indemnity") || title.includes("indemnity");
+}
+
+function findPublicLiabilityItem(items: InsuranceItem[]): InsuranceItem | undefined {
+  return items.find(isPublicLiabilityItem);
+}
+
+function findProfessionalIndemnityItem(items: InsuranceItem[]): InsuranceItem | undefined {
+  return items.find(isProfessionalIndemnityItem);
+}
+
+function findDocumentOnlyInsuranceItem(items: InsuranceItem[]): InsuranceItem | undefined {
+  return items.find(
+    (item) =>
+      Boolean(item.document?.trim()) &&
+      !isPublicLiabilityItem(item) &&
+      !isProfessionalIndemnityItem(item)
+  );
+}
+
+interface InsuranceDetailsFormState {
+  publicLiability: string;
+  professionalIndemnity: string;
+  provider: string;
+  expire_date: string;
+}
+
+type InsuranceDocumentTarget = "public_liability" | "professional_indemnity";
+
+function getInsuranceDocumentUrl(documentPath: string | null | undefined): string {
+  const path = documentPath?.trim() ?? "";
+  if (!path) return "";
+  if (path.includes("http://") || path.includes("https://")) return path;
+  const baseUrl = resolveApiBaseUrl();
+  const apiBaseUrl = baseUrl.replace(/\/api\/?$/, "");
+  return `${apiBaseUrl}/image/${path}`;
+}
+
+function resolvePublicLiabilityRow(items: InsuranceItem[]): InsuranceItem | undefined {
+  return findPublicLiabilityItem(items) || findDocumentOnlyInsuranceItem(items);
+}
+
+function insuranceRowRecord(row: InsuranceItem | undefined): Record<string, unknown> | null {
+  if (!row) return null;
+  return row as unknown as Record<string, unknown>;
+}
+
+interface InsuranceDocumentStatusEntry {
+  target: InsuranceDocumentTarget;
+  label: string;
+  row: InsuranceItem | undefined;
+  uiStatus: string;
+  rejectionNote: string | null;
+}
+
+function buildInsuranceDocumentStatusEntries(
+  items: InsuranceItem[],
+  normalizeStatus: (status: string | null | undefined) => string,
+  extractNote: (record: Record<string, unknown> | null | undefined) => string | null
+): InsuranceDocumentStatusEntry[] {
+  const slots: Array<{ target: InsuranceDocumentTarget; label: string; row: InsuranceItem | undefined }> = [
+    {
+      target: "public_liability",
+      label: "Public Liability",
+      row: resolvePublicLiabilityRow(items),
+    },
+    {
+      target: "professional_indemnity",
+      label: "Professional Indemnity",
+      row: findProfessionalIndemnityItem(items),
+    },
+  ];
+
+  return slots.map((slot) => {
+    const uiStatus = slot.row ? normalizeStatus(slot.row.status) : "pending";
+    const rejectionNote =
+      uiStatus === "rejected" ? extractNote(insuranceRowRecord(slot.row)) : null;
+    return { ...slot, uiStatus, rejectionNote };
+  });
+}
+
+function buildInsuranceFormState(items: InsuranceItem[]): InsuranceDetailsFormState {
+  const plItem = findPublicLiabilityItem(items);
+  const piItem = findProfessionalIndemnityItem(items);
+  const documentOnly = findDocumentOnlyInsuranceItem(items);
+
+  const expireDates = items
+    .map((item) => item.expire_date)
+    .filter((value): value is string => Boolean(value?.trim()));
+  const latestExpire =
+    expireDates.length > 0
+      ? expireDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
+      : "";
+
+  const provider =
+    plItem?.provider_name?.trim() ||
+    piItem?.provider_name?.trim() ||
+    documentOnly?.provider_name?.trim() ||
+    items[0]?.provider_name?.trim() ||
+    "";
+
+  return {
+    publicLiability: plItem?.price?.trim() || documentOnly?.price?.trim() || "",
+    professionalIndemnity: piItem?.price?.trim() || "",
+    provider,
+    expire_date: latestExpire
+      ? new Date(latestExpire).toISOString().split("T")[0]
+      : "",
+  };
+}
 
 export function ProfessionalVerification() {
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
@@ -21,6 +165,16 @@ export function ProfessionalVerification() {
   const [verificationSummary, setVerificationSummary] = useState<VerificationSummaryData | null>(null);
   const [currentUploadRequirement, setCurrentUploadRequirement] = useState<string | null>(null);
   const [currentEvidenceId, setCurrentEvidenceId] = useState<number | null>(null);
+  const [insuranceUploadTarget, setInsuranceUploadTarget] =
+    useState<InsuranceDocumentTarget | null>(null);
+  const [insuranceDetailsOpen, setInsuranceDetailsOpen] = useState(false);
+  const [isSavingInsuranceDetails, setIsSavingInsuranceDetails] = useState(false);
+  const [insuranceForm, setInsuranceForm] = useState<InsuranceDetailsFormState>({
+    publicLiability: "",
+    professionalIndemnity: "",
+    provider: "",
+    expire_date: "",
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Helper function to format date
@@ -142,30 +296,6 @@ export function ProfessionalVerification() {
     return "pending";
   };
 
-  const resolveInsuranceRequirementStatus = (): string => {
-    if (insuranceData.some((item) => normalizeUiStatus(item.status) === "rejected")) {
-      return "rejected";
-    }
-    if (verificationSummary?.checks?.insurance === true) return "verified";
-    if (insuranceData.some((item) => normalizeUiStatus(item.status) === "verified")) {
-      return "verified";
-    }
-    if (insuranceData.length > 0) return "pending";
-    return "pending";
-  };
-
-  const resolveQualificationsRequirementStatus = (): string => {
-    if (qualificationsEvidence.some((item) => normalizeUiStatus(item.status) === "rejected")) {
-      return "rejected";
-    }
-    if (verificationSummary?.checks?.certificate === true) return "verified";
-    if (qualificationsEvidence.some((item) => normalizeUiStatus(item.status) === "verified")) {
-      return "verified";
-    }
-    if (qualificationsEvidence.length > 0) return "pending";
-    return "pending";
-  };
-
   const extractRejectionNote = (record: Record<string, unknown> | null | undefined): string | null => {
     if (!record) return null;
     const keys = [
@@ -193,6 +323,68 @@ export function ProfessionalVerification() {
       "Your insurance document was rejected. Please upload valid insurance coverage documents.",
   };
 
+  const insuranceDocumentStatuses = buildInsuranceDocumentStatusEntries(
+    insuranceData,
+    normalizeUiStatus,
+    extractRejectionNote
+  );
+
+  const resolveInsuranceRequirementStatus = (): string => {
+    const tracked = insuranceDocumentStatuses.filter((entry) => entry.row);
+    const rejectedEntries = tracked.filter((entry) => entry.uiStatus === "rejected");
+    const verifiedEntries = tracked.filter((entry) => entry.uiStatus === "verified");
+
+    if (rejectedEntries.length > 0) {
+      return rejectedEntries.length === tracked.length && tracked.length > 0
+        ? "rejected"
+        : "action_required";
+    }
+    if (verificationSummary?.checks?.insurance === true) return "verified";
+    if (
+      tracked.length > 0 &&
+      verifiedEntries.length === tracked.length
+    ) {
+      return "verified";
+    }
+    if (insuranceData.length > 0) return "pending";
+    return "pending";
+  };
+
+  const getInsuranceRejectionSummaryText = (): string => {
+    const rejected = insuranceDocumentStatuses.filter((entry) => entry.uiStatus === "rejected");
+    const verified = insuranceDocumentStatuses.filter((entry) => entry.uiStatus === "verified");
+
+    if (rejected.length === 0) {
+      return rejectionGuidanceByRequirement.insurance;
+    }
+
+    const rejectedLines = rejected.map((entry) => {
+      const note = entry.rejectionNote ? ` — ${entry.rejectionNote}` : "";
+      return `${entry.label} document was rejected${note}`;
+    });
+
+    const verifiedLine =
+      verified.length > 0
+        ? ` ${verified.map((entry) => entry.label).join(" and ")} ${
+            verified.length === 1 ? "is" : "are"
+          } verified.`
+        : "";
+
+    return `${rejectedLines.join(". ")}.${verifiedLine} Please upload corrected file(s) using Update Document on the rejected item(s) below.`;
+  };
+
+  const resolveQualificationsRequirementStatus = (): string => {
+    if (qualificationsEvidence.some((item) => normalizeUiStatus(item.status) === "rejected")) {
+      return "rejected";
+    }
+    if (verificationSummary?.checks?.certificate === true) return "verified";
+    if (qualificationsEvidence.some((item) => normalizeUiStatus(item.status) === "verified")) {
+      return "verified";
+    }
+    if (qualificationsEvidence.length > 0) return "pending";
+    return "pending";
+  };
+
   const getRequirementRejectionNote = (requirementId: string): string | null => {
     if (requirementId === "identity") {
       return extractRejectionNote(identityData as unknown as Record<string, unknown>);
@@ -204,8 +396,8 @@ export function ProfessionalVerification() {
       return extractRejectionNote(rejected as unknown as Record<string, unknown>);
     }
     if (requirementId === "insurance") {
-      const rejected = insuranceData.find((item) => normalizeUiStatus(item.status) === "rejected");
-      return extractRejectionNote(rejected as unknown as Record<string, unknown>);
+      const rejected = insuranceDocumentStatuses.find((entry) => entry.uiStatus === "rejected");
+      return rejected?.rejectionNote ?? null;
     }
     return null;
   };
@@ -249,45 +441,168 @@ export function ProfessionalVerification() {
   const getInsuranceDetails = () => {
     if (!insuranceData || insuranceData.length === 0) {
       return {
-        publicLiability: "£5M",
-        professionalIndemnity: "£2M",
-        provider: "AXA Insurance",
-        validUntil: "Dec 2025"
+        publicLiability: "N/A",
+        professionalIndemnity: "N/A",
+        provider: "N/A",
+        validUntil: "N/A",
       };
     }
 
-    const titleLower = (title: string | null | undefined) => (title ?? "").toLowerCase();
+    const plItem = resolvePublicLiabilityRow(insuranceData);
+    const piItem = findProfessionalIndemnityItem(insuranceData);
+    const documentOnly = findDocumentOnlyInsuranceItem(insuranceData);
+    const resolvedPl = plItem || documentOnly;
 
-    // Try to find insurance items by title (API may return null title after document-only create)
-    const publicLiabilityItem = insuranceData.find(item =>
-      titleLower(item.title).includes("public liability") ||
-      titleLower(item.title).includes("liability")
-    );
-    const professionalIndemnityItem = insuranceData.find(item =>
-      titleLower(item.title).includes("professional indemnity") ||
-      titleLower(item.title).includes("indemnity")
-    );
+    const allExpireDates = insuranceData
+      .map((item) => item.expire_date)
+      .filter((value): value is string => Boolean(value?.trim()));
+    const latestExpireDate =
+      allExpireDates.length > 0
+        ? allExpireDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
+        : null;
 
-    // Use found items or fallback to first/second items from API
-    // First item for Public Liability, second item for Professional Indemnity
-    const plItem = publicLiabilityItem || insuranceData[0];
-    const piItem = professionalIndemnityItem || (insuranceData.length > 1 ? insuranceData[1] : insuranceData[0]);
-
-    // Get the most recent expire date for "Valid Until"
-    const allExpireDates = insuranceData.map(item => item.expire_date).filter(Boolean);
-    const latestExpireDate = allExpireDates.length > 0 
-      ? allExpireDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
-      : null;
-
-    // Get provider name from first item or default
-    const provider = insuranceData[0]?.provider_name || "AXA Insurance";
+    const provider =
+      plItem?.provider_name?.trim() ||
+      piItem?.provider_name?.trim() ||
+      documentOnly?.provider_name?.trim() ||
+      insuranceData[0]?.provider_name?.trim() ||
+      "";
 
     return {
-      publicLiability: plItem ? formatPrice(plItem.price) : "£5M",
-      professionalIndemnity: piItem ? formatPrice(piItem.price) : "£2M",
-      provider: provider,
-      validUntil: latestExpireDate ? formatExpireDate(latestExpireDate) : "Dec 2025"
+      publicLiability: resolvedPl?.price ? formatPrice(resolvedPl.price) : "N/A",
+      professionalIndemnity: piItem?.price ? formatPrice(piItem.price) : "N/A",
+      provider: provider || "N/A",
+      validUntil: latestExpireDate ? formatExpireDate(latestExpireDate) : "N/A",
     };
+  };
+
+  const openInsuranceDetailsDialog = () => {
+    setInsuranceForm(buildInsuranceFormState(insuranceData));
+    setInsuranceDetailsOpen(true);
+  };
+
+  const upsertInsuranceCoverageRow = async (
+    apiToken: string,
+    professionalId: number,
+    existing: InsuranceItem | undefined,
+    title: string,
+    price: string,
+    expireDate: string,
+    providerName: string
+  ) => {
+    const payload = {
+      api_token: apiToken,
+      title,
+      price,
+      expire_date: expireDate,
+      professional_id: professionalId,
+      provider_name: providerName.trim() || undefined,
+    };
+
+    if (existing?.id) {
+      return updateInsuranceCoverage({
+        ...payload,
+        id: existing.id,
+      });
+    }
+
+    return createInsuranceCoverage(payload);
+  };
+
+  const handleSaveInsuranceDetails = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const { publicLiability, professionalIndemnity, provider, expire_date } = insuranceForm;
+
+    if (!publicLiability.trim() || !professionalIndemnity.trim() || !provider.trim() || !expire_date) {
+      toast.error("Please fill in all insurance coverage fields.");
+      return;
+    }
+
+    const plValue = parseFloat(publicLiability);
+    const piValue = parseFloat(professionalIndemnity);
+    if (Number.isNaN(plValue) || plValue <= 0 || Number.isNaN(piValue) || piValue <= 0) {
+      toast.error("Please enter valid coverage amounts greater than 0.");
+      return;
+    }
+
+    const expireDate = new Date(expire_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (expireDate <= today) {
+      toast.error("Expiry date must be in the future.");
+      return;
+    }
+
+    const apiToken = getApiToken();
+    const professionalId = getProfessionalId();
+    if (!apiToken) {
+      toast.error("Please log in to save insurance details.");
+      return;
+    }
+    if (!professionalId) {
+      toast.error("Professional ID not found. Please log in again.");
+      return;
+    }
+
+    setIsSavingInsuranceDetails(true);
+    try {
+      const plExisting = findPublicLiabilityItem(insuranceData);
+      const piExisting = findProfessionalIndemnityItem(insuranceData);
+      const documentOnly = findDocumentOnlyInsuranceItem(insuranceData);
+      const plTarget = plExisting || documentOnly;
+
+      const plResponse = await upsertInsuranceCoverageRow(
+        apiToken,
+        professionalId,
+        plTarget,
+        PUBLIC_LIABILITY_TITLE,
+        publicLiability.trim(),
+        expire_date,
+        provider.trim()
+      );
+
+      const plOk =
+        plResponse.status === "success" ||
+        plResponse.success === true ||
+        Boolean(plResponse.data);
+      if (!plOk) {
+        toast.error(plResponse.message || plResponse.error || "Failed to save public liability coverage.");
+        return;
+      }
+
+      const piResponse = await upsertInsuranceCoverageRow(
+        apiToken,
+        professionalId,
+        piExisting,
+        PROFESSIONAL_INDEMNITY_TITLE,
+        professionalIndemnity.trim(),
+        expire_date,
+        provider.trim()
+      );
+
+      const piOk =
+        piResponse.status === "success" ||
+        piResponse.success === true ||
+        Boolean(piResponse.data);
+      if (!piOk) {
+        toast.error(piResponse.message || piResponse.error || "Failed to save professional indemnity coverage.");
+        return;
+      }
+
+      toast.success("Insurance coverage details saved.");
+      setInsuranceDetailsOpen(false);
+      await fetchInsuranceData();
+      await fetchVerificationSummary();
+    } catch (error: unknown) {
+      const message =
+        (error as { message?: string })?.message ||
+        (error as { error?: string })?.error ||
+        "Failed to save insurance details. Please try again.";
+      toast.error(message);
+    } finally {
+      setIsSavingInsuranceDetails(false);
+    }
   };
 
   // Get insurance verified date from fetched data
@@ -374,38 +689,7 @@ export function ProfessionalVerification() {
       verifiedDate: getInsuranceVerifiedDate(),
       icon: Shield,
       details: getInsuranceDetails(),
-      documents: insuranceData.map((item) => {
-        // Use title as display name
-        let fileName = item.title || "Insurance Document";
-        let fileUrl = item.document || "";
-        
-        // If it's already a full URL, use it directly
-        // Otherwise, construct the full URL from the base URL
-        if (fileUrl && !fileUrl.includes('http://') && !fileUrl.includes('https://')) {
-          // It's a filename, construct the full URL
-          const baseUrl = resolveApiBaseUrl();
-          const apiBaseUrl = baseUrl.replace(/\/api\/?$/, "");
-          fileUrl = `${apiBaseUrl}/image/${fileUrl}`;
-        }
-        
-        // If we don't have a title, try to extract filename from URL
-        if (!fileName && item.document && item.document.includes('/')) {
-          const urlParts = item.document.split('/');
-          fileName = urlParts[urlParts.length - 1] || "Insurance Document";
-        }
-        
-        return {
-          name: fileName,
-          uploadedOn: item.created_at ? formatDate(item.created_at) : formatDate(new Date().toISOString()),
-          url: fileUrl, // Store the full document URL for viewing
-          id: item.id, // Store the insurance ID
-          title: item.title, // Store the insurance title
-          price: item.price, // Store the price
-          provider: item.provider_name, // Store the provider
-          expireDate: item.expire_date, // Store the expire date
-          status: item.status // Store the status
-        };
-      })
+      documents: [],
     }
   ];
 
@@ -417,24 +701,32 @@ export function ProfessionalVerification() {
         return <AlertCircle className="w-5 h-5 text-yellow-600" />;
       case "rejected":
         return <X className="w-5 h-5 text-red-600" />;
+      case "action_required":
+        return <AlertCircle className="w-5 h-5 text-orange-600" />;
       default:
         return <AlertCircle className="w-5 h-5 text-gray-400" />;
     }
   };
 
   const getStatusBadge = (status: string) => {
-    // Display the actual status value from API dynamically
-    // Map colors based on status value
-    let badgeClass = "bg-gray-100 text-gray-700";
+    let badgeClass = "border border-gray-200 bg-gray-100 text-gray-700";
+    let label = status || "Not Submitted";
+
     if (status === "verified") {
-      badgeClass = "bg-green-100 text-green-700";
+      badgeClass = "border border-green-200 bg-green-100 text-green-700";
+      label = "verified";
     } else if (status === "pending") {
-      badgeClass = "bg-yellow-100 text-yellow-700";
+      badgeClass = "border border-yellow-200 bg-yellow-100 text-yellow-700";
+      label = "pending";
     } else if (status === "rejected") {
-      badgeClass = "bg-red-100 text-red-700";
+      badgeClass = "border border-red-200 bg-red-100 text-red-700";
+      label = "rejected";
+    } else if (status === "action_required") {
+      badgeClass = "border border-orange-200 bg-orange-100 text-orange-800";
+      label = "action required";
     }
-    
-    return <Badge className={badgeClass}>{status || "Not Submitted"}</Badge>;
+
+    return <Badge className={badgeClass}>{label}</Badge>;
   };
 
   // Helper function to convert file to base64
@@ -508,10 +800,140 @@ export function ProfessionalVerification() {
   };
 
   const handleFileButtonClick = (requirementId: string, evidenceId?: number) => {
-    console.log('handleFileButtonClick - requirementId:', requirementId, 'evidenceId:', evidenceId);
     setCurrentUploadRequirement(requirementId);
-    setCurrentEvidenceId(evidenceId || null);
+    setCurrentEvidenceId(evidenceId ?? null);
+    setInsuranceUploadTarget(null);
     fileInputRef.current?.click();
+  };
+
+  const handleInsuranceDocumentClick = (
+    target: InsuranceDocumentTarget,
+    insuranceId?: number
+  ) => {
+    setCurrentUploadRequirement("insurance");
+    setInsuranceUploadTarget(target);
+    setCurrentEvidenceId(insuranceId ?? null);
+    fileInputRef.current?.click();
+  };
+
+  const ensureInsuranceRowForDocument = async (
+    apiToken: string,
+    professionalId: number,
+    target: InsuranceDocumentTarget
+  ): Promise<number | null> => {
+    const plRow = resolvePublicLiabilityRow(insuranceData);
+    const piRow = findProfessionalIndemnityItem(insuranceData);
+    const existing = target === "public_liability" ? plRow : piRow;
+    if (existing?.id) return existing.id;
+
+    const formState = buildInsuranceFormState(insuranceData);
+    const title =
+      target === "public_liability" ? PUBLIC_LIABILITY_TITLE : PROFESSIONAL_INDEMNITY_TITLE;
+    const price =
+      target === "public_liability"
+        ? formState.publicLiability.trim()
+        : formState.professionalIndemnity.trim();
+
+    if (!price || !formState.provider.trim() || !formState.expire_date) {
+      toast.error(
+        "Please save insurance coverage details (amounts, provider, expiry) before uploading documents."
+      );
+      return null;
+    }
+
+    const response = await createInsuranceCoverage({
+      api_token: apiToken,
+      title,
+      price,
+      expire_date: formState.expire_date,
+      professional_id: professionalId,
+      provider_name: formState.provider.trim(),
+    });
+
+    const createdId = response.data?.id;
+    if (
+      createdId &&
+      (response.status === "success" || response.success === true || response.data)
+    ) {
+      return createdId;
+    }
+
+    toast.error(response.message || response.error || "Failed to prepare insurance record.");
+    return null;
+  };
+
+  const renderInsuranceDocumentSlot = (entry: InsuranceDocumentStatusEntry) => {
+    const { target, label, row, uiStatus, rejectionNote } = entry;
+    const uploadKey =
+      target === "public_liability" ? "insurance-public_liability" : "insurance-professional_indemnity";
+    const hasDocument = Boolean(row?.document?.trim());
+    const documentUrl = getInsuranceDocumentUrl(row?.document);
+    const uploadedOn = row?.created_at ? formatDate(row.created_at) : null;
+    const slotSurfaceClass =
+      uiStatus === "rejected"
+        ? "bg-red-50 border-red-200"
+        : uiStatus === "verified"
+          ? "bg-green-50 border-green-200"
+          : uiStatus === "pending"
+            ? "bg-yellow-50/60 border-yellow-200"
+            : "bg-gray-50 border-gray-100";
+
+    return (
+      <div className={`p-3 rounded-lg border ${slotSurfaceClass}`}>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="flex items-start gap-2 min-w-0 flex-1">
+            <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <p className="text-sm font-medium text-gray-900">{label}</p>
+                {row ? getStatusBadge(uiStatus) : getStatusBadge("pending")}
+              </div>
+              <p className="text-xs text-gray-500">
+                {hasDocument
+                  ? uploadedOn
+                    ? `Uploaded ${uploadedOn}`
+                    : "Document uploaded"
+                  : "No document uploaded yet"}
+              </p>
+              {uiStatus === "rejected" ? (
+                <p className="text-xs text-red-700 mt-2">
+                  {rejectionNote ||
+                    "Rejected by admin. Upload a corrected document for this coverage type."}
+                </p>
+              ) : null}
+              {uiStatus === "verified" ? (
+                <p className="text-xs text-green-700 mt-2 flex items-center gap-1">
+                  <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                  Verified by admin
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+            {hasDocument && documentUrl ? (
+              <Button variant="ghost" size="sm" onClick={() => window.open(documentUrl, "_blank")}>
+                View
+              </Button>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleInsuranceDocumentClick(target, row?.id)}
+              disabled={uploadingDoc === uploadKey}
+            >
+              {uploadingDoc === uploadKey ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 mr-1" />
+                  {hasDocument ? "Update Document" : "Upload Document"}
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -566,7 +988,6 @@ export function ProfessionalVerification() {
     const apiToken = getApiToken();
     const professionalId = getProfessionalId();
 
-    const isInsuranceCreate = requirementId === "insurance" && currentEvidenceId == null;
     const isIdentityCreate = requirementId === "identity" && !identityData?.id;
 
     if (!apiToken) {
@@ -575,15 +996,27 @@ export function ProfessionalVerification() {
       return;
     }
 
-    if (!professionalId && !isInsuranceCreate && !isIdentityCreate) {
+    if (requirementId === "insurance" && !insuranceUploadTarget) {
+      toast.error("Please choose which insurance document to upload.");
+      setCurrentUploadRequirement(null);
+      return;
+    }
+
+    if (!professionalId && !isIdentityCreate) {
       toast.error("Professional ID not found. Please try again.");
       setCurrentUploadRequirement(null);
       return;
     }
 
-    // Note: identity create does not require an existing record; qualifications can create new evidence too
-
-    setUploadingDoc(requirementId);
+    if (requirementId === "insurance" && insuranceUploadTarget) {
+      setUploadingDoc(
+        insuranceUploadTarget === "public_liability"
+          ? "insurance-public_liability"
+          : "insurance-professional_indemnity"
+      );
+    } else {
+      setUploadingDoc(requirementId);
+    }
 
     try {
       // Determine if file is an image or document
@@ -668,51 +1101,64 @@ export function ProfessionalVerification() {
           }
         }
       } else if (requirementId === "insurance") {
-        const insuranceIdToUpdate = currentEvidenceId;
+        if (!insuranceUploadTarget) {
+          toast.error("Could not determine which insurance document to upload.");
+          return;
+        }
 
-        if (insuranceIdToUpdate) {
-          // Update existing insurance row (needs insurance id + professional id)
-          const response = await updateInsuranceDocument({
-            api_token: apiToken,
-            id: insuranceIdToUpdate,
-            professional_id: professionalId!,
-            document: fileToSend,
-          });
+        if (!professionalId) {
+          toast.error("Professional ID not found. Please log in again.");
+          return;
+        }
 
-          if (response.status === true || response.success === true || response.data) {
-            toast.success(response.message || "Insurance document updated successfully!");
+        let insuranceId = currentEvidenceId ?? undefined;
+        if (!insuranceId) {
+          const plRow = resolvePublicLiabilityRow(insuranceData);
+          const piRow = findProfessionalIndemnityItem(insuranceData);
+          insuranceId =
+            insuranceUploadTarget === "public_liability" ? plRow?.id : piRow?.id;
+        }
+
+        if (!insuranceId) {
+          insuranceId =
+            (await ensureInsuranceRowForDocument(
+              apiToken,
+              professionalId,
+              insuranceUploadTarget
+            )) ?? undefined;
+          if (insuranceId) {
             await fetchInsuranceData();
-            await fetchVerificationSummary();
-          } else {
-            toast.error(response.message || "Failed to update insurance document.");
           }
+        }
+
+        if (!insuranceId) {
+          return;
+        }
+
+        let documentPayload: string | File = fileToSend;
+        if (isImage && typeof fileToSend === "string") {
+          documentPayload = await imageFileToCompressedDataUrl(file);
+        }
+
+        const response = await updateInsuranceDocument({
+          api_token: apiToken,
+          id: insuranceId,
+          professional_id: professionalId,
+          document: documentPayload,
+        });
+
+        if (response.status === true || response.success === true || response.data) {
+          const label =
+            insuranceUploadTarget === "public_liability"
+              ? "Public liability"
+              : "Professional indemnity";
+          toast.success(
+            response.message || `${label} insurance document uploaded successfully!`
+          );
+          await fetchInsuranceData();
+          await fetchVerificationSummary();
         } else {
-          // First document: POST /insurance-coverage/create_document — { api_token, document }
-          let documentPayload: string;
-          if (isImage) {
-            documentPayload = await imageFileToCompressedDataUrl(file);
-          } else {
-            documentPayload = await fileToBase64(file);
-          }
-
-          const response = await createInsuranceDocument({
-            api_token: apiToken,
-            document: documentPayload,
-          });
-
-          const ok =
-            response.status === true ||
-            response.status === "success" ||
-            response.success === true ||
-            response.data != null;
-
-          if (ok) {
-            toast.success(response.message || "Insurance document uploaded successfully!");
-            await fetchInsuranceData();
-            await fetchVerificationSummary();
-          } else {
-            toast.error(response.message || response.error || "Failed to upload insurance document.");
-          }
+          toast.error(response.message || "Failed to upload insurance document.");
         }
       }
     } catch (error: any) {
@@ -728,9 +1174,9 @@ export function ProfessionalVerification() {
       setUploadingDoc(null);
       setCurrentUploadRequirement(null);
       setCurrentEvidenceId(null);
-      // Reset file input
+      setInsuranceUploadTarget(null);
       if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+        fileInputRef.current.value = "";
       }
     }
   };
@@ -759,7 +1205,7 @@ export function ProfessionalVerification() {
                 </p>
               </div>
             </div>
-            <Badge className="bg-white text-green-600 text-sm sm:text-lg px-3 py-1.5 sm:px-4 sm:py-2 w-fit shrink-0 self-start md:self-start">
+            <Badge className="border border-green-200 bg-white text-green-600 text-sm sm:text-lg px-3 py-1.5 sm:px-4 sm:py-2 w-fit shrink-0 self-start md:self-start">
               <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2" />
               {verificationSummary?.active_status || "Active"}
             </Badge>
@@ -834,20 +1280,41 @@ export function ProfessionalVerification() {
                     </div>
                   )}
 
-                  {requirement.status === "rejected" && (
-                    <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3">
-                      <p className="text-sm font-medium text-red-900 flex items-start gap-2">
+                  {(requirement.status === "rejected" || requirement.status === "action_required") && (
+                    <div
+                      className={`mt-3 rounded-lg border p-3 ${
+                        requirement.status === "action_required"
+                          ? "border-orange-200 bg-orange-50"
+                          : "border-red-200 bg-red-50"
+                      }`}
+                    >
+                      <p
+                        className={`text-sm font-medium flex items-start gap-2 ${
+                          requirement.status === "action_required" ? "text-orange-900" : "text-red-900"
+                        }`}
+                      >
                         <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                        Rejected by admin
+                        {requirement.id === "insurance" && requirement.status === "action_required"
+                          ? "Action required on insurance documents"
+                          : "Rejected by admin"}
                       </p>
-                      <p className="text-sm text-red-800 mt-1">
-                        {getRequirementRejectionNote(requirement.id) ||
-                          rejectionGuidanceByRequirement[requirement.id] ||
-                          "This verification was rejected. Please update your documents and submit again."}
+                      <p
+                        className={`text-sm mt-1 ${
+                          requirement.status === "action_required" ? "text-orange-800" : "text-red-800"
+                        }`}
+                      >
+                        {requirement.id === "insurance"
+                          ? getInsuranceRejectionSummaryText()
+                          : getRequirementRejectionNote(requirement.id) ||
+                            rejectionGuidanceByRequirement[requirement.id] ||
+                            "This verification was rejected. Please update your documents and submit again."}
                       </p>
-                      <p className="text-xs text-red-700 mt-2">
-                        Use <span className="font-medium">Update Document</span> below to upload a corrected file for admin review.
-                      </p>
+                      {requirement.id !== "insurance" ? (
+                        <p className="text-xs text-red-700 mt-2">
+                          Use <span className="font-medium">Update Document</span> below to upload a
+                          corrected file for admin review.
+                        </p>
+                      ) : null}
                     </div>
                   )}
 
@@ -906,84 +1373,75 @@ export function ProfessionalVerification() {
                     </div>
                   )}
 
+                  {requirement.id === "insurance" && (
+                    <div className="mt-4">
+                      <Separator className="mb-3" />
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
+                        <p className="text-sm font-medium text-gray-700">Coverage details</p>
+                        <Button variant="outline" size="sm" onClick={openInsuranceDetailsDialog}>
+                          <Pencil className="w-4 h-4 mr-1" />
+                          {insuranceData.length > 0 ? "Edit insurance details" : "Add insurance details"}
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <p className="text-xs text-gray-500">Public Liability</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {requirement.details?.publicLiability || "N/A"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Professional Indemnity</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {requirement.details?.professionalIndemnity || "N/A"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Provider</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {requirement.details?.provider || "N/A"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Valid Until</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {requirement.details?.validUntil || "N/A"}
+                          </p>
+                        </div>
+                      </div>
+                      <Separator className="my-4" />
+                      <p className="text-sm font-medium text-gray-700 mb-2">Insurance documents</p>
+                      <p className="text-xs text-gray-500 mb-3">
+                        Upload a separate certificate for each coverage type so admin can verify them
+                        individually.
+                      </p>
+                      <div className="space-y-2">
+                        {insuranceDocumentStatuses.map((entry) =>
+                          renderInsuranceDocumentSlot({
+                            ...entry,
+                            label: `${entry.label} document`,
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {requirement.documents && requirement.documents.length > 0 && (
                     <div className="mt-4">
                       <Separator className="mb-3" />
                       <p className="text-sm font-medium text-gray-700 mb-2">Uploaded Documents:</p>
                       <div className="space-y-2">
                         {requirement.documents.map((doc, index) => {
-                          // For insurance, show additional details (price, provider, expire date)
-                          const isInsurance = requirement.id === "insurance";
-                          const docAny = doc as any;
-                          
-                          // Use the document ID as the key to ensure React correctly tracks each item
+                          const docAny = doc as {
+                            id?: number;
+                            url?: string;
+                            name?: string;
+                            uploadedOn?: string;
+                          };
                           const docKey = docAny.id || `doc-${index}`;
-                          
+
                           return (
                             <div key={docKey} className="p-2 bg-gray-50 rounded space-y-2">
-                              {isInsurance ? (
-                                <>
-                                  {/* Title and details outside document section - using individual item data */}
-                                  <div className="space-y-2">
-                                    
-                                    <div className="grid grid-cols-2 gap-4">
-                                      <div>
-                                        <p className="text-xs text-gray-500">Public Liability</p>
-                                        <p className="text-sm font-medium text-gray-900">{docAny.title ? formatPrice(docAny.title) : 'N/A'}</p>
-                                      </div>
-                                      <div>
-                                        <p className="text-xs text-gray-500">Professional Indemnity</p>
-                                        <p className="text-sm font-medium text-gray-900">{docAny.price ? formatPrice(docAny.price) : 'N/A'}</p>
-                                      </div>
-                                      <div>
-                                        <p className="text-xs text-gray-500">Provider</p>
-                                        <p className="text-sm font-medium text-gray-900">{docAny.provider || 'N/A'}</p>
-                                      </div>
-                                      <div>
-                                        <p className="text-xs text-gray-500">Valid Until</p>
-                                        <p className="text-sm font-medium text-gray-900">{docAny.expireDate ? formatExpireDate(docAny.expireDate) : 'N/A'}</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  {/* Document section separate */}
-                                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between pt-2 border-t border-gray-200">
-                                    <div className="flex items-start gap-2 min-w-0">
-                                      <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
-                                      <span className="text-sm text-gray-700 break-words min-w-0">Document</span>
-                                    </div>
-                                    <div className="flex flex-wrap items-center justify-end gap-2 flex-shrink-0 w-full md:w-auto">
-                                      <Button 
-                                        variant="ghost" 
-                                        size="sm"
-                                        onClick={() => {
-                                          // Use the stored URL from the document (same as Identity)
-                                          const urlToOpen = (doc as any).url || '';
-                                          window.open(urlToOpen, '_blank');
-                                        }}
-                                      >
-                                        View
-                                      </Button>
-                                      {requirement.id === "insurance" && (doc as any).id && (
-                                        <Button 
-                                          variant="ghost" 
-                                          size="sm"
-                                          onClick={() => handleFileButtonClick("insurance", (doc as any).id)}
-                                          disabled={uploadingDoc === "insurance" && currentEvidenceId === (doc as any).id}
-                                        >
-                                          {(uploadingDoc === "insurance" && currentEvidenceId === (doc as any).id) ? (
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                          ) : (
-                                            <>
-                                              <Upload className="w-4 h-4 mr-1" />
-                                              Update Document
-                                            </>
-                                          )}
-                                        </Button>
-                                      )}
-                                    </div>
-                                  </div>
-                                </>
-                              ) : (
                                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                                   <div className="flex items-start gap-2 min-w-0 w-full md:flex-1">
                                     <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
@@ -1033,18 +1491,10 @@ export function ProfessionalVerification() {
                                     )}
                                   </div>
                                 </div>
-                              )}
                             </div>
                           );
                         })}
                       </div>
-                    </div>
-                  )}
-
-                  {requirement.details && (
-                    <div className="mt-4">
-                      <Separator className="mb-3" />
-                  
                     </div>
                   )}
 
@@ -1071,37 +1521,104 @@ export function ProfessionalVerification() {
                     </div>
                   )}
 
-                  {requirement.id === "insurance" && insuranceData.length === 0 && (
-                    <div className="mt-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setCurrentEvidenceId(null);
-                          handleFileButtonClick("insurance");
-                        }}
-                        disabled={uploadingDoc === "insurance"}
-                      >
-                        {uploadingDoc === "insurance" ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Uploading...
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="w-4 h-4 mr-2" />
-                            Upload Document
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  )}
                 </div>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
+
+      <Dialog open={insuranceDetailsOpen} onOpenChange={setInsuranceDetailsOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Insurance coverage details</DialogTitle>
+            <DialogDescription>
+              Enter your public liability and professional indemnity amounts, provider, and expiry date.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSaveInsuranceDetails} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="insurance-public-liability">Public Liability (£) *</Label>
+              <Input
+                id="insurance-public-liability"
+                type="text"
+                inputMode="decimal"
+                value={insuranceForm.publicLiability}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === "" || /^\d*\.?\d*$/.test(value)) {
+                    setInsuranceForm((prev) => ({ ...prev, publicLiability: value }));
+                  }
+                }}
+                placeholder="e.g. 5000000 for £5M"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="insurance-professional-indemnity">Professional Indemnity (£) *</Label>
+              <Input
+                id="insurance-professional-indemnity"
+                type="text"
+                inputMode="decimal"
+                value={insuranceForm.professionalIndemnity}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === "" || /^\d*\.?\d*$/.test(value)) {
+                    setInsuranceForm((prev) => ({ ...prev, professionalIndemnity: value }));
+                  }
+                }}
+                placeholder="e.g. 2000000 for £2M"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="insurance-provider">Provider *</Label>
+              <Input
+                id="insurance-provider"
+                value={insuranceForm.provider}
+                onChange={(e) =>
+                  setInsuranceForm((prev) => ({ ...prev, provider: e.target.value }))
+                }
+                placeholder="e.g. AXA Insurance"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="insurance-expire-date">Valid Until *</Label>
+              <Input
+                id="insurance-expire-date"
+                type="date"
+                value={insuranceForm.expire_date}
+                onChange={(e) =>
+                  setInsuranceForm((prev) => ({ ...prev, expire_date: e.target.value }))
+                }
+                min={new Date().toISOString().split("T")[0]}
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setInsuranceDetailsOpen(false)}
+                disabled={isSavingInsuranceDetails}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSavingInsuranceDetails}>
+                {isSavingInsuranceDetails ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save details"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Support — hidden per product request
       <Card className="bg-gray-50">

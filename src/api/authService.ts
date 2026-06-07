@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { formatApiErrorMessage } from '../lib/apiValidationMessage';
 import { handleTokenExpired, isTokenExpiredError } from '../lib/auth';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 
@@ -179,7 +180,10 @@ export const registerProfessional = async (
       if (error.response) {
         throw {
           success: false,
-          message: error.response.data?.message || 'Professional registration failed',
+          message: formatApiErrorMessage(
+            error.response.data,
+            'Professional registration failed'
+          ),
           error: error.response.data?.error || error.message,
           status: error.response.status,
         };

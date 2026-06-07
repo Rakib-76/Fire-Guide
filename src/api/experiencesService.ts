@@ -59,6 +59,56 @@ export interface ProfessionalProfileExperienceResponse {
   data: ProfessionalProfileExperienceData;
 }
 
+/** e.g. "10+", "5+" — backend often stores these as specialization titles */
+const YEARS_EXPERIENCE_TIER = /^(\d+)\+$/;
+
+function parseYearsExperienceTier(value: string): number | null {
+  const match = value.trim().match(YEARS_EXPERIENCE_TIER);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+/**
+ * Backend may return experience tiers (e.g. "10+") inside `specializations` while
+ * `years_experience` shows a computed value like "1+". Move tier labels to years experience.
+ */
+export function normalizeProfessionalProfileExperience(
+  data: ProfessionalProfileExperienceData,
+  experienceLabelsFromCompare?: string[]
+): ProfessionalProfileExperienceData {
+  const yearTierLabels: { label: string; years: number }[] = [];
+  const remainingSpecializations: string[] = [];
+
+  for (const spec of data.specializations ?? []) {
+    const trimmed = spec.trim();
+    const years = parseYearsExperienceTier(trimmed);
+    if (years != null) {
+      yearTierLabels.push({ label: trimmed, years });
+    } else if (trimmed) {
+      remainingSpecializations.push(spec);
+    }
+  }
+
+  for (const label of experienceLabelsFromCompare ?? []) {
+    const trimmed = label.trim();
+    const years = parseYearsExperienceTier(trimmed);
+    if (years != null) {
+      yearTierLabels.push({ label: trimmed, years });
+    }
+  }
+
+  let yearsExperience = data.years_experience?.trim() ?? "";
+  if (yearTierLabels.length > 0) {
+    const best = yearTierLabels.sort((a, b) => b.years - a.years)[0];
+    yearsExperience = best.label;
+  }
+
+  return {
+    ...data,
+    years_experience: yearsExperience,
+    specializations: remainingSpecializations,
+  };
+}
+
 export const fetchProfessionalProfileExperiences = async (
   professionalId: number
 ): Promise<ProfessionalProfileExperienceData> => {
@@ -69,7 +119,7 @@ export const fetchProfessionalProfileExperiences = async (
   const payload = response.data as { status?: boolean; message?: string; data?: ProfessionalProfileExperienceData };
   const data = payload?.data;
   if (data && typeof data.years_experience === 'string' && Array.isArray(data.specializations)) {
-    return data;
+    return normalizeProfessionalProfileExperience(data);
   }
   throw new Error(payload?.message || 'Failed to fetch experience');
 };
