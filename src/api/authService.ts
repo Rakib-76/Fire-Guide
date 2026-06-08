@@ -1467,6 +1467,8 @@ export interface CustomerAllBookingItem {
   } | null;
   has_review?: boolean | number | string | null;
   is_reviewed?: boolean | number | string | null;
+  /** When `"on"`, customer may submit a new review for a completed booking. */
+  can_review?: string | boolean | number | null;
   review_id?: number | string | null;
   review?: { id?: number } | null;
   created_at: string;

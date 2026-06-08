@@ -981,86 +981,81 @@ export function AdminPayments() {
 
       {/* Transaction Details Modal */}
       <Dialog open={detailsModalOpen} onOpenChange={setDetailsModalOpen}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-h-[90vh] w-[calc(100%-2rem)] max-w-4xl overflow-y-auto !px-8 !pb-10 sm:w-full">
+          <DialogHeader className="!pb-8">
             <DialogTitle className="text-2xl text-[#0A1A2F]">Transaction Details</DialogTitle>
-            <DialogDescription>{selectedTransaction?.reference}</DialogDescription>
+            <DialogDescription className="mt-3">{selectedTransaction?.reference}</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
+          <div className="space-y-8 py-4">
+            <div className="grid gap-8 md:grid-cols-2">
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-6">
                 <Label className="text-sm text-gray-600">Customer</Label>
-                <p className="font-medium text-gray-900 mt-1">{selectedTransaction?.customer}</p>
-                <p className="text-sm text-gray-600">{selectedTransaction?.customerEmail}</p>
+                <p className="mt-3 font-medium text-gray-900">{selectedTransaction?.customer}</p>
+                <p className="mt-2 text-sm text-gray-600">{selectedTransaction?.customerEmail}</p>
               </div>
-              <div>
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-6">
                 <Label className="text-sm text-gray-600">Professional</Label>
-                <p className="font-medium text-gray-900 mt-1">{selectedTransaction?.professional}</p>
-                <p className="text-sm text-gray-600">{selectedTransaction?.professionalEmail}</p>
+                <p className="mt-3 font-medium text-gray-900">{selectedTransaction?.professional}</p>
+                <p className="mt-2 text-sm text-gray-600">{selectedTransaction?.professionalEmail}</p>
               </div>
             </div>
 
-            <Separator />
-
-            <div>
-              <Label className="text-sm text-gray-600">Service</Label>
-              <p className="mt-1 break-words font-medium text-gray-900">{selectedTransaction?.service}</p>
-              <p className="text-sm text-gray-600">Booking: {selectedTransaction?.bookingRef}</p>
+            <div className="grid gap-8 md:grid-cols-2 md:items-stretch">
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 sm:p-8">
+                <Label className="text-sm text-gray-600">Service</Label>
+                <p className="mt-3 break-words font-medium text-gray-900">{selectedTransaction?.service}</p>
+                <p className="mt-2 text-sm text-gray-600">Booking: {selectedTransaction?.bookingRef}</p>
+              </div>
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 sm:p-8">
+                <h4 className="text-sm text-gray-600">Status</h4>
+                <div className="mt-4 space-y-4">
+                  <div className="flex items-center justify-between gap-6">
+                    <span className="shrink-0 text-sm font-medium text-gray-700 sm:text-base">Booking Status</span>
+                    <Badge
+                      variant="custom"
+                      className={`shrink-0 whitespace-nowrap ${getBookingStatusBadgeClass(selectedTransaction?.status ?? "")}`}
+                    >
+                      {selectedTransaction?.status || "—"}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between gap-6">
+                    <span className="shrink-0 text-sm font-medium text-gray-700 sm:text-base">Payment Status</span>
+                    <Badge
+                      variant="custom"
+                      className={`shrink-0 whitespace-nowrap ${getPayoutStatusBadgeClass(selectedTransaction?.payoutStatus ?? "")}`}
+                    >
+                      {selectedTransaction?.payoutStatus || "—"}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <Separator />
-
-            <div className="space-y-2">
-              <h4 className="font-semibold text-gray-900">Payment Breakdown</h4>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between">
+            <div className="space-y-6 rounded-xl border border-gray-200 bg-gray-50 p-6 sm:p-8">
+              <h4 className="text-base font-semibold text-gray-900">Payment Breakdown</h4>
+              <div className="space-y-5 text-sm sm:text-base">
+                <div className="flex items-center justify-between gap-6 border-b border-gray-200 pb-5">
                   <span className="text-gray-600">Total Amount</span>
                   <span className="font-semibold text-gray-900">£{Number(selectedTransaction?.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex items-center justify-between gap-6 border-b border-gray-200 pb-5">
                   <span className="text-gray-600">Transaction Fee</span>
                   <span className="text-gray-900">£{selectedTransaction?.transactionFee}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex items-center justify-between gap-6 border-b border-gray-200 pb-5">
                   <span className="text-gray-600">Platform Commission ({selectedTransaction?.commissionRate || commissionRate || "—"})</span>
                   <span className="text-green-600">£{Number(selectedTransaction?.commission).toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Professional Payout</span>
+                <div className="flex items-center justify-between gap-6 pt-2">
+                  <span className="text-gray-600">Professional Payment</span>
                   <span className="font-semibold text-blue-600">£{Number(selectedTransaction?.professionalEarning).toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div>
-              <h4 className="mb-3 font-semibold text-gray-900">Status</h4>
-              <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                <div className="flex items-center justify-between gap-4 border-b border-gray-200 pb-3">
-                  <span className="shrink-0 text-sm font-medium text-gray-700">Booking Status</span>
-                  <Badge
-                    variant="custom"
-                    className={`shrink-0 whitespace-nowrap ${getBookingStatusBadgeClass(selectedTransaction?.status ?? "")}`}
-                  >
-                    {selectedTransaction?.status || "—"}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="shrink-0 text-sm font-medium text-gray-700">Payout Status</span>
-                  <Badge
-                    variant="custom"
-                    className={`shrink-0 whitespace-nowrap ${getPayoutStatusBadgeClass(selectedTransaction?.payoutStatus ?? "")}`}
-                  >
-                    {selectedTransaction?.payoutStatus || "—"}
-                  </Badge>
                 </div>
               </div>
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="!mt-8 !px-0 !pt-4">
             <Button variant="outline" onClick={() => setDetailsModalOpen(false)}>
               Close
             </Button>

@@ -406,13 +406,14 @@ export function ProfessionalProfile({
   }, [profileExperience, compareExperienceLabels]);
 
   const professionalRecipientEmail = useMemo(() => {
-    const fromDetails =
-      typeof profileDetails?.email === "string" ? profileDetails.email.trim() : "";
-    if (fromDetails.length > 0) return fromDetails;
-    const src = professionalToUse as { email?: string | null };
-    const e = typeof src.email === "string" ? src.email.trim() : "";
-    return e.length > 0 ? e : "";
-  }, [professionalToUse, profileDetails]);
+    if (!profileDetails) return "";
+    const email =
+      typeof profileDetails.email === "string" ? profileDetails.email.trim() : "";
+    return email.length > 0 ? email : "";
+  }, [profileDetails]);
+
+  const isSendMessageDisabled =
+    isLoadingProfileDetails || professionalRecipientEmail.length === 0;
 
   const resetSendMessageForm = useCallback(() => {
     setMsgFullName("");
@@ -431,17 +432,13 @@ export function ProfessionalProfile({
     [resetSendMessageForm]
   );
 
-  const contactPhoneForCall = useMemo(
-    () =>
-      resolveProfessionalDisplayPhone(
-        profileDetails as Record<string, unknown> | null,
-        (resolvedProfessionalData ||
-          (persistedProfessional?.name ? persistedProfessional : null) ||
-          professional ||
-          null) as Record<string, unknown> | null
-      ),
-    [profileDetails, resolvedProfessionalData, persistedProfessional, professional]
-  );
+  const contactPhoneForCall = useMemo(() => {
+    if (!profileDetails) return null;
+    return resolveProfessionalDisplayPhone(profileDetails as Record<string, unknown>, null);
+  }, [profileDetails]);
+
+  const isCallNowDisabled =
+    isLoadingProfileDetails || isCallNowBusy || contactPhoneForCall == null;
 
   const handleCallNow = useCallback(async () => {
     if (isCallNowBusy) return;
@@ -1244,9 +1241,18 @@ export function ProfessionalProfile({
                         type="button"
                         variant="outline"
                         className="w-full justify-start"
-                        disabled={isCallNowBusy}
+                        disabled={isCallNowDisabled}
                         aria-busy={isCallNowBusy}
-                        aria-label="Call now: copy number to clipboard and open phone dialer"
+                        aria-label={
+                          isCallNowDisabled && !isCallNowBusy
+                            ? "Call now unavailable: no phone number on file"
+                            : "Call now: copy number to clipboard and open phone dialer"
+                        }
+                        title={
+                          isCallNowDisabled && !isLoadingProfileDetails && !isCallNowBusy
+                            ? "No phone number available"
+                            : undefined
+                        }
                         onClick={() => void handleCallNow()}
                       >
                         {isCallNowBusy ? (
@@ -1260,6 +1266,17 @@ export function ProfessionalProfile({
                         type="button"
                         variant="outline"
                         className="w-full justify-start"
+                        disabled={isSendMessageDisabled}
+                        aria-label={
+                          isSendMessageDisabled
+                            ? "Send message unavailable: no email on file"
+                            : "Send message to this professional"
+                        }
+                        title={
+                          isSendMessageDisabled && !isLoadingProfileDetails
+                            ? "No email address available"
+                            : undefined
+                        }
                         onClick={() => setSendMessageOpen(true)}
                       >
                         <Mail className="w-4 h-4 mr-2 shrink-0" aria-hidden />

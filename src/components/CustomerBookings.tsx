@@ -106,6 +106,14 @@ function isBookingPaid(booking: Booking): boolean {
   return booking.isPaid === true || getBookingPaymentStatus(booking) === "paid";
 }
 
+function parseApiBookingCanReview(apiBooking: CustomerAllBookingItem): boolean {
+  const v = apiBooking.can_review;
+  if (v == null) return false;
+  if (typeof v === "boolean") return v;
+  const s = String(v).trim().toLowerCase();
+  return s === "on" || s === "1" || s === "true" || s === "yes";
+}
+
 function parseApiBookingHasReview(apiBooking: CustomerAllBookingItem): boolean {
   if (parseApiBookingReviewId(apiBooking) != null) return true;
   const candidates = [apiBooking.has_review, apiBooking.is_reviewed];
@@ -268,6 +276,7 @@ const transformApiBooking = (apiBooking: CustomerAllBookingItem): Booking => {
     reviewId:
       parseApiBookingReviewId(apiBooking) ?? loadBookingReviewIds()[apiBooking.id.toString()],
     hasReview: parseApiBookingHasReview(apiBooking),
+    canReview: parseApiBookingCanReview(apiBooking),
     customerEmail: typeof apiBooking.email === "string" ? apiBooking.email.trim() : "",
     serviceDetails: buildBookingServiceDetailsFromApiSelectedService(
       apiBooking.selected_service ?? null
@@ -283,9 +292,10 @@ const bookingHasSubmittedReview = (booking: Booking, reviewedLocally: Set<string
   return storedReviewId != null && storedReviewId > 0;
 };
 
-/** Completed + paid bookings eligible for a new review. */
+/** Completed + paid bookings eligible for a new review (API `can_review` must be on). */
 const bookingCanGiveReview = (booking: Booking, reviewedLocally: Set<string>): boolean =>
   normalizeApiBookingStatus(booking.apiStatus) === "completed" &&
+  booking.canReview === true &&
   isBookingPaid(booking) &&
   booking.professionalId != null &&
   !bookingHasSubmittedReview(booking, reviewedLocally);

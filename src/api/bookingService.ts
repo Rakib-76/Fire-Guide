@@ -1156,3 +1156,73 @@ export const requestProfessionalPayout = async (
     };
   }
 };
+
+/** One payout request row for the professional dashboard Payout List page. */
+export interface ProfessionalMyPayoutRequestItem {
+  id: number;
+  professional_id: number;
+  booking_id: number;
+  amount: string | number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  service?: {
+    id: number;
+    name: string;
+  } | null;
+  customer?: {
+    id?: number;
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+  } | null;
+  booking_details?: {
+    id?: number;
+    status?: string;
+  } | null;
+}
+
+export interface ProfessionalMyPayoutRequestListResponse {
+  status: boolean | string;
+  message?: string;
+  data?: ProfessionalMyPayoutRequestItem[];
+}
+
+/**
+ * Professional's own payout request list.
+ * POST /professional-payout/list — body: { api_token }
+ */
+export const getMyProfessionalPayoutRequestList = async (
+  api_token: string
+): Promise<ProfessionalMyPayoutRequestListResponse> => {
+  try {
+    const response = await apiClient.post<ProfessionalMyPayoutRequestListResponse>(
+      '/professional-payout/list',
+      { api_token }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching professional payout list:', error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          success: false,
+          message: error.response.data?.message || 'Failed to fetch payout list',
+          error: error.response.data?.error || error.message,
+          status: error.response.status,
+        };
+      } else if (error.request) {
+        throw {
+          success: false,
+          message: 'No response from server. Please check your connection.',
+          error: 'Network error',
+        };
+      }
+    }
+    throw {
+      success: false,
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};

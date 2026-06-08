@@ -34,6 +34,8 @@ export interface Booking {
   professionalType?: "individual" | "company";
   /** From API — used for reschedule calendar (available-date / booking-days-list). */
   professionalId?: number;
+  /** From API `can_review` — when true, customer may submit a new review. */
+  canReview?: boolean;
   /** Customer has already submitted a review for this booking/professional. */
   hasReview?: boolean;
   /** Existing review record id (for POST /reviews/update). */

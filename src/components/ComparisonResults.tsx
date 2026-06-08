@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronRight, ArrowLeft, MapPin, Star, CheckCircle, Shield, Briefcase, Calendar, SlidersHorizontal, Loader2, Award } from "lucide-react";
+import { ChevronRight, MapPin, Star, CheckCircle, Shield, Briefcase, Calendar, SlidersHorizontal, Loader2, Award } from "lucide-react";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -43,7 +43,6 @@ interface Professional {
 interface ComparisonResultsProps {
   onViewProfile: (professional: Professional) => void;
   onBookNow: (professional: Professional) => void;
-  onBack: () => void;
 }
 
 function formatPreferredDate(value: string): string {
@@ -217,7 +216,7 @@ function mapFilterItemToProfessional(
   };
 }
 
-export function ComparisonResults({ onViewProfile, onBookNow, onBack }: ComparisonResultsProps) {
+export function ComparisonResults({ onViewProfile, onBookNow }: ComparisonResultsProps) {
   const navigate = useNavigate();
   const { filteredProfessionalsFromFra, questionnaireData, locationSearchData, selectedService } = useApp();
   const filteredListRef = useRef(filteredProfessionalsFromFra);
@@ -412,26 +411,14 @@ export function ComparisonResults({ onViewProfile, onBookNow, onBack }: Comparis
         </div>
       </header>
 
-      {/* Breadcrumb + icon-only back (left arrow, right) */}
+      {/* Breadcrumb */}
       <div className="bg-white py-3 px-4 md:px-6 border-b">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-gray-600">
-            <a href="/" className="hover:text-red-600 transition-colors shrink-0">Home</a>
-            <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />
-            <a href="/services" className="hover:text-red-600 transition-colors shrink-0">Select Service</a>
-            <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />
-            <span className="text-gray-900 truncate">Compare Professionals</span>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={onBack}
-            className="shrink-0 h-10 w-10 rounded-full border-0 bg-transparent text-[#0A1A2F] shadow-none hover:bg-transparent hover:text-red-600 active:bg-transparent sm:h-11 sm:w-11 focus-visible:ring-2 focus-visible:ring-red-500/25"
-            aria-label="Back to previous page"
-          >
-            <ArrowLeft className="h-5 w-5" aria-hidden />
-          </Button>
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-2 text-sm text-gray-600">
+          <a href="/" className="hover:text-red-600 transition-colors shrink-0">Home</a>
+          <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />
+          <a href="/services" className="hover:text-red-600 transition-colors shrink-0">Select Service</a>
+          <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />
+          <span className="text-gray-900 truncate">Compare Professionals</span>
         </div>
       </div>
 
@@ -461,7 +448,7 @@ export function ComparisonResults({ onViewProfile, onBookNow, onBack }: Comparis
               </div>
             </div>
             <Button type="button" variant="outline" className="whitespace-nowrap" onClick={handleChangeDetails}>
-              Change Details
+              Change Area
             </Button>
           </div>
         </div>

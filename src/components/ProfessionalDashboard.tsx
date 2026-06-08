@@ -19,7 +19,8 @@ import {
   FileText,
   MessageCircle,
   MessageSquare,
-  Loader2
+  Loader2,
+  Wallet
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "./ui/card";
@@ -42,6 +43,7 @@ import {
 import { getPaymentInvoices, PaymentInvoiceItem } from "../api/paymentService";
 import { ProfessionalBookings } from "./ProfessionalBookings";
 import { ProfessionalPayments } from "./ProfessionalPayments";
+import { ProfessionalPayoutList } from "./ProfessionalPayoutList";
 import { ProfessionalVerification } from "./ProfessionalVerification";
 import { ProfessionalSettings } from "./ProfessionalSettings";
 import { ProfessionalNotifications } from "./ProfessionalNotifications";
@@ -75,6 +77,7 @@ type ProfessionalView =
   | "availability"
   | "bookings"
   | "payments"
+  | "payout-list"
   | "custom-quote"
   | "verification"
   | "admin-messages"
@@ -92,6 +95,7 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
     "availability",
     "bookings",
     "payments",
+    "payout-list",
     "custom-quote",
     "verification",
     "admin-messages",
@@ -254,6 +258,7 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
     { id: "availability" as ProfessionalView, label: "Availability", icon: Clock },
     { id: "bookings" as ProfessionalView, label: "Bookings", icon: Calendar },
     { id: "payments" as ProfessionalView, label: "Payments", icon: CreditCard },
+    { id: "payout-list" as ProfessionalView, label: "Payout List", icon: Wallet },
     { id: "custom-quote" as ProfessionalView, label: "Custom Quote", icon: MessageCircle },
     { id: "verification" as ProfessionalView, label: "Verification Status", icon: ShieldCheck },
     { id: "admin-messages" as ProfessionalView, label: "Admin-Message", icon: MessageSquare },
@@ -683,6 +688,8 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
         return <ProfessionalBookings onViewDetails={(id) => console.log("View booking:", id)} />;
       case "payments":
         return <ProfessionalPayments />;
+      case "payout-list":
+        return <ProfessionalPayoutList />;
       case "custom-quote":
         return <ProfessionalCustomQuoteContent />;
       case "verification":

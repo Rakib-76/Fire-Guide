@@ -270,23 +270,6 @@ export default function ComparisonPage() {
           });
         });
       }}
-      onBack={() => {
-        startTransition(() => {
-          const serviceId =
-            locationSearchData?.service_id ??
-            selectedServiceId ??
-            (questionnaireData as { service_id?: number } | null)?.service_id;
-          if (serviceId != null && Number(serviceId) > 0) {
-            navigate(`/services/${serviceId}/location`);
-            return;
-          }
-          if (selectedService) {
-            navigate(`/services/${selectedService}/location`);
-            return;
-          }
-          navigate("/services");
-        });
-      }}
     />
   );
 }
