@@ -311,11 +311,13 @@ const bookingCanUpdateReview = (booking: Booking, reviewedLocally: Set<string>):
 const bookingNeedsPayment = (booking: Booking): boolean =>
   booking.status !== "cancelled" && !isBookingPaid(booking);
 
-/** Hide cancel for confirmed bookings (and other non-cancellable upcoming states). */
-const bookingAllowsCustomerCancel = (booking: Booking): boolean =>
-  booking.status === "upcoming" &&
-  !isBookingPaid(booking) &&
-  normalizeApiBookingStatus(booking.apiStatus) !== "confirmed";
+/** Cancel allowed unless professional confirmed, completed, or already cancelled (paid/unpaid ignored). */
+const bookingAllowsCustomerCancel = (booking: Booking): boolean => {
+  if (booking.status === "cancelled" || booking.status === "completed") return false;
+  const apiStatus = normalizeApiBookingStatus(booking.apiStatus);
+  if (apiStatus === "confirmed" || apiStatus === "completed") return false;
+  return true;
+};
 
 const bookingAllowsCustomerReschedule = (booking: Booking): boolean =>
   booking.status === "upcoming" &&
@@ -754,13 +756,17 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
       if (response.status === 'success') {
         toast.success(response.message || "Booking cancelled successfully. Refund will be processed within 5-7 days.");
         setSelectedBooking(null);
-        // Remove the cancelled booking from the list or update its status
-        setApiBookings(prev => prev.map(booking => 
-          booking.id === bookingId 
-            ? { ...booking, status: 'cancelled' as const, displayStatus: 'Cancelled' }
-            : booking
-        ));
-        onDeleteBooking(bookingId);
+        const cancelledUpdates: Partial<Booking> = {
+          status: "cancelled",
+          apiStatus: "cancelled",
+          displayStatus: "Cancelled",
+        };
+        setApiBookings((prev) =>
+          prev.map((booking) =>
+            booking.id === bookingId ? { ...booking, ...cancelledUpdates } : booking
+          )
+        );
+        onUpdateBooking(bookingId, cancelledUpdates);
       } else {
         toast.error(response.message || "Failed to cancel booking. Please try again.");
       }

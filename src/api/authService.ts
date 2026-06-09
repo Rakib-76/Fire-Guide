@@ -388,7 +388,7 @@ export const getCustomerNotifications = async (
   data: GetCustomerNotificationsRequest
 ): Promise<GetCustomerNotificationsResponse> => {
   try {
-    const response = await apiClient.post<unknown>("/notifications", {
+    const response = await apiClient.post<unknown>("/user/notifications", {
       api_token: data.api_token,
     });
     const body = response.data;

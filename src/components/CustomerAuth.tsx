@@ -5,7 +5,6 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Flame, ArrowRight, User, Shield, Heart, Clock, Star, Menu, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
@@ -15,7 +14,6 @@ import { getFacebookOAuthStartUrl, getGoogleOAuthStartUrl } from "../lib/socialA
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
 
 interface CustomerAuthProps {
-  /** Pass `{ isNewProfessionalSignup: true }` when a new account was created with the Professional role. */
   onAuthSuccess: (name: string, options?: { isNewProfessionalSignup?: boolean }) => void;
   onBack: () => void;
 }
@@ -39,8 +37,6 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
   const [signUpPhone, setSignUpPhone] = useState("");
   const [signUpPassword, setSignUpPassword] = useState("");
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
-  const [signUpRole, setSignUpRole] = useState<string>("USER");
-
   // Forgot Password State
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
@@ -144,20 +140,20 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
     setIsLoading(true);
 
     // Validation
-    if (!signUpName || !signUpEmail || !signUpPhone || !signUpPassword || !signUpRole) {
+    if (!signUpName || !signUpEmail || !signUpPhone || !signUpPassword) {
       toast.error("Please fill in all fields.");
       setIsLoading(false);
       return;
     }
 
-    // API call
+    // API call — customer portal always registers as USER
     try {
       const response = await registerUser({
         full_name: signUpName,
         email: signUpEmail,
         phone: signUpPhone,
         password: signUpPassword,
-        role: signUpRole, // Already in correct format: "USER" or "PROFESSIONAL"
+        role: "USER",
       });
 
       // Check if registration was successful
@@ -177,22 +173,12 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
           setUserEmail(signUpEmail.trim().toLowerCase());
           // Store user info - extract first name from full_name
           const fullName = response.data?.full_name || signUpName;
-          // Store role from backend response, or the role chosen on the form
-          const role = response.data?.role || response.data?.data?.role || response.role || signUpRole;
-          const roleUpper = String(role ?? "USER").toUpperCase();
-          setUserRole(roleUpper);
-          const appRole =
-            roleUpper === "PROFESSIONAL" ? "professional" : roleUpper === "ADMIN" ? "admin" : "customer";
-          setUserInfo(fullName, appRole);
+          setUserRole("USER");
+          setUserInfo(fullName, "customer");
           // Store phone number from response or signup form
           const phone = response.data?.phone || signUpPhone;
           if (phone) {
             setUserPhone(phone);
-          }
-          // Store professional_id if available in response (for PROFESSIONAL role)
-          const professionalId = response.data?.professional?.id;
-          if (professionalId) {
-            setProfessionalId(professionalId);
           }
           console.log('Token stored successfully after registration');
         } else {
@@ -204,16 +190,8 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
 
         toast.success("Account created successfully! Welcome to Fire Guide.");
         const fullName = response.data?.full_name || signUpName;
-        const firstName = fullName.trim().split(' ')[0]; // Extract first name for callback
-        const registeredAsProfessional =
-          String(
-            response.data?.role ||
-              response.data?.data?.role ||
-              response.role ||
-              signUpRole ||
-              ""
-          ).toUpperCase() === "PROFESSIONAL";
-        onAuthSuccess(firstName, { isNewProfessionalSignup: registeredAsProfessional });
+        const firstName = fullName.trim().split(' ')[0];
+        onAuthSuccess(firstName);
       } else {
         toast.error(response.message || response.error || "Registration failed. Please try again.");
       }
@@ -770,21 +748,6 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
                           className="h-12 text-base"
                           required
                         />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="signup-role" className="text-base">
-                          Role
-                        </Label>
-                        <Select value={signUpRole} onValueChange={setSignUpRole}>
-                          <SelectTrigger id="signup-role" className="h-12 text-base">
-                            <SelectValue placeholder="Select your role" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="USER">User</SelectItem>
-                            <SelectItem value="PROFESSIONAL">Professional</SelectItem>
-                          </SelectContent>
-                        </Select>
                       </div>
 
                       <div className="space-y-2">
