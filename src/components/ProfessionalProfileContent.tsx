@@ -1405,20 +1405,22 @@ export function ProfessionalProfileContent() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
                 <div className="min-w-0">
                   <Label htmlFor="name">Full Name *</Label>
-                  <Input 
-                    id="name" 
-                    className="w-full min-w-0 max-w-full"
+                  <Input
+                    id="name"
+                    className="w-full min-w-0 max-w-full bg-gray-50 text-gray-700"
                     value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    disabled
+                    readOnly
                   />
                 </div>
                 <div className="min-w-0">
                   <Label htmlFor="businessName">Business Name *</Label>
-                  <Input 
-                    id="businessName" 
-                    className="w-full min-w-0 max-w-full"
+                  <Input
+                    id="businessName"
+                    className="w-full min-w-0 max-w-full bg-gray-50 text-gray-700"
                     value={formData.businessName}
-                    onChange={(e) => setFormData({...formData, businessName: e.target.value})}
+                    disabled
+                    readOnly
                   />
                 </div>
               </div>

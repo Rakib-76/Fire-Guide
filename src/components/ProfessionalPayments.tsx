@@ -153,8 +153,6 @@ export function ProfessionalPayments() {
       const lightGray = [245, 245, 245] as [number, number, number];
       
       // Calculate totals from payment history
-      const totalAmount = paymentHistory.reduce((sum, payment) => sum + payment.amount, 0);
-      const totalCommission = paymentHistory.reduce((sum, payment) => sum + payment.commission, 0);
       const totalNetEarnings = paymentHistory.reduce((sum, payment) => sum + payment.netAmount, 0);
       const statementDate = new Date().toLocaleDateString('en-GB');
       const statementNumber = `STM-${new Date().getFullYear()}-${String(paymentHistory.length).padStart(4, '0')}`;
@@ -192,40 +190,11 @@ export function ProfessionalPayments() {
       doc.text('Payment History Report', 14, 48);
       doc.text('United Kingdom', 14, 54);
       
-      // Account Summary Box
-      const summaryY = 65;
-      doc.setFillColor(...lightGray);
-      doc.rect(pageWidth - 80, summaryY, 66, 32, 'F');
-      doc.setDrawColor(200, 200, 200);
-      doc.rect(pageWidth - 80, summaryY, 66, 32, 'S');
-      
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...primaryBlue);
-      doc.text('Account Summary', pageWidth - 77, summaryY + 7);
-      
-      doc.setFontSize(9);
-      doc.setTextColor(100, 100, 100);
-      doc.text('Total Amount', pageWidth - 77, summaryY + 14);
-      doc.setTextColor(0, 0, 0);
-      doc.text(`£${totalAmount.toFixed(2)}`, pageWidth - 17, summaryY + 14, { align: 'right' });
-      
-      doc.setTextColor(100, 100, 100);
-      doc.text('Commission (15%)', pageWidth - 77, summaryY + 21);
-      doc.setTextColor(220, 38, 38);
-      doc.text(`-£${totalCommission.toFixed(2)}`, pageWidth - 17, summaryY + 21, { align: 'right' });
-      
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(100, 100, 100);
-      doc.text('Your Earnings', pageWidth - 77, summaryY + 28);
-      doc.setTextColor(34, 139, 34);
-      doc.text(`£${totalNetEarnings.toFixed(2)}`, pageWidth - 17, summaryY + 28, { align: 'right' });
-      
       // Payment History Section
       doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(0, 0, 0);
-      doc.text('Payment History', 14, 105);
+      doc.text('Payment History', 14, 62);
       
       // Table data from paymentHistory
       const tableData = paymentHistory.map((payment) => {
@@ -243,7 +212,7 @@ export function ProfessionalPayments() {
       
       // Add the table
       autoTable(doc, {
-        startY: 110,
+        startY: 67,
         head: [['REFERENCE', 'DATE', 'CUSTOMER', 'SERVICE', 'AMOUNT', 'COMMISSION', 'EARNINGS', 'STATUS']],
         body: tableData,
         theme: 'plain',

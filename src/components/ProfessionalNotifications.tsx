@@ -11,7 +11,7 @@ import {
   fetchBookingsNotifications,
   fetchPaymentsNotifications,
   // fetchReviewsNotifications,
-  fetchSystemNotifications,
+  // fetchSystemNotifications,
   markAllNotificationsAsRead,
   markNotificationAsRead,
   // deleteAllNotifications,
@@ -105,9 +105,9 @@ export function ProfessionalNotifications() {
       // } else if (activeTab === "review") {
       //   console.log("Fetching reviews notifications...");
       //   response = await fetchReviewsNotifications({ api_token: apiToken });
-      } else if (activeTab === "system") {
-        console.log("Fetching system notifications...");
-        response = await fetchSystemNotifications({ api_token: apiToken });
+      // } else if (activeTab === "system") {
+      //   console.log("Fetching system notifications...");
+      //   response = await fetchSystemNotifications({ api_token: apiToken });
       } else if (activeTab === "unread") {
         console.log("Fetching unread notifications...");
         response = await fetchUnreadNotifications({ api_token: apiToken });
@@ -403,7 +403,7 @@ export function ProfessionalNotifications() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full min-w-0">
         <div className="min-w-0 w-full overflow-x-auto overscroll-x-contain scroll-smooth [-webkit-overflow-scrolling:touch] md:overflow-visible">
-          <TabsList className="inline-flex h-auto w-max min-w-full flex-nowrap justify-start gap-1 p-1 md:grid md:w-full md:grid-cols-5 md:overflow-visible">
+          <TabsList className="inline-flex h-auto w-max min-w-full flex-nowrap justify-start gap-1 p-1 md:grid md:w-full md:grid-cols-4 md:overflow-visible">
             <TabsTrigger value="all" className="relative shrink-0 text-xs md:text-sm">
               All
               {allNotifications.length > 0 && (
@@ -429,9 +429,9 @@ export function ProfessionalNotifications() {
             {/* <TabsTrigger value="review" className="shrink-0 text-xs md:text-sm">
             Reviews
           </TabsTrigger> */}
-            <TabsTrigger value="system" className="shrink-0 text-xs md:text-sm">
+            {/* <TabsTrigger value="system" className="shrink-0 text-xs md:text-sm">
               System
-            </TabsTrigger>
+            </TabsTrigger> */}
           </TabsList>
         </div>
 

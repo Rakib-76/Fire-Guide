@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Shield, CheckCircle, AlertCircle, Upload, FileText, Award, X, Loader2, Pencil } from "lucide-react";
+import { Shield, CheckCircle, AlertCircle, Upload, FileText, Award, X, Loader2, Pencil, Building2, Plus, Trash2, ImageIcon } from "lucide-react";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
 import { Separator } from "./ui/separator";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Textarea } from "./ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,96 @@ import { toast } from "sonner";
 
 const PUBLIC_LIABILITY_TITLE = "Public Liability Insurance";
 const PROFESSIONAL_INDEMNITY_TITLE = "Professional Indemnity Insurance";
+
+const PROFESSIONAL_MEMBERSHIPS_STORAGE_PREFIX = "fireguide_professional_memberships";
+
+type ProfessionalMembershipEntry = {
+  id: string;
+  organizationName: string;
+  membershipType: string;
+  membershipId: string;
+  memberSince: string;
+  notes: string;
+  documentFileName?: string;
+  documentDataUrl?: string;
+  documentUploadedAt?: string;
+  logoFileName?: string;
+  logoDataUrl?: string;
+};
+
+function membershipsStorageKey(): string {
+  const professionalId = getProfessionalId();
+  return professionalId
+    ? `${PROFESSIONAL_MEMBERSHIPS_STORAGE_PREFIX}_${professionalId}`
+    : PROFESSIONAL_MEMBERSHIPS_STORAGE_PREFIX;
+}
+
+function loadStoredMemberships(): ProfessionalMembershipEntry[] {
+  try {
+    const raw = localStorage.getItem(membershipsStorageKey());
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is ProfessionalMembershipEntry => {
+        if (!item || typeof item !== "object") return false;
+        const row = item as Partial<ProfessionalMembershipEntry>;
+        return typeof row.id === "string" && typeof row.organizationName === "string";
+      })
+      .map((item) => ({
+        id: item.id,
+        organizationName: item.organizationName.trim(),
+        membershipType: (item.membershipType ?? "").trim(),
+        membershipId: (item.membershipId ?? "").trim(),
+        memberSince: (item.memberSince ?? "").trim(),
+        notes: (item.notes ?? "").trim(),
+        documentFileName: (item.documentFileName ?? "").trim() || undefined,
+        documentDataUrl: (item.documentDataUrl ?? "").trim() || undefined,
+        documentUploadedAt: (item.documentUploadedAt ?? "").trim() || undefined,
+        logoFileName: (item.logoFileName ?? "").trim() || undefined,
+        logoDataUrl: (item.logoDataUrl ?? "").trim() || undefined,
+      }))
+      .filter((item) => item.organizationName.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function persistMemberships(entries: ProfessionalMembershipEntry[]): void {
+  try {
+    localStorage.setItem(membershipsStorageKey(), JSON.stringify(entries));
+  } catch {
+    // ignore quota / private mode errors for UI-only persistence
+  }
+}
+
+const EMPTY_MEMBERSHIP_FORM = {
+  organizationName: "",
+  membershipType: "",
+  membershipId: "",
+  memberSince: "",
+  notes: "",
+  documentFileName: "",
+  documentDataUrl: "",
+  documentUploadedAt: "",
+  logoFileName: "",
+  logoDataUrl: "",
+};
+
+type MembershipUploadTarget = {
+  kind: "document" | "logo";
+  membershipId?: string;
+  forForm?: boolean;
+};
+
+const PROFESSIONAL_MEMBERSHIP_SUGGESTIONS = [
+  "Fire Industry Association (FIA)",
+  "Institution of Fire Engineers (IFE)",
+  "BAFE (British Approvals for Fire Equipment)",
+  "IOSH (Institution of Occupational Safety and Health)",
+  "NEBOSH Alumni / Network",
+  "NFPA (National Fire Protection Association)",
+];
 
 function insuranceTitleLower(title: string | null | undefined): string {
   return (title ?? "").trim().toLowerCase();
@@ -175,7 +266,13 @@ export function ProfessionalVerification() {
     provider: "",
     expire_date: "",
   });
+  const [memberships, setMemberships] = useState<ProfessionalMembershipEntry[]>([]);
+  const [membershipForm, setMembershipForm] = useState({ ...EMPTY_MEMBERSHIP_FORM });
+  const [membershipFormOpen, setMembershipFormOpen] = useState(false);
+  const [membershipUploadTarget, setMembershipUploadTarget] = useState<MembershipUploadTarget | null>(null);
+  const [uploadingMembershipAsset, setUploadingMembershipAsset] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const membershipAssetInputRef = useRef<HTMLInputElement>(null);
 
   // Helper function to format date
   const formatDate = (dateString: string): string => {
@@ -260,6 +357,7 @@ export function ProfessionalVerification() {
     fetchVerificationSummary();
     fetchQualificationsEvidence();
     fetchInsuranceData();
+    setMemberships(loadStoredMemberships());
   }, []);
 
   // Progress: each of insurance, certificate, identity true = one third (no other logic).
@@ -618,6 +716,286 @@ export function ProfessionalVerification() {
       .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
 
     return allDates.length > 0 ? formatDate(allDates[0]) : null;
+  };
+
+  const handleAddMembership = () => {
+    const organizationName = membershipForm.organizationName.trim();
+    if (!organizationName) {
+      toast.error("Please enter the organization or body name.");
+      return;
+    }
+
+    const entry: ProfessionalMembershipEntry = {
+      id: `membership-${Date.now()}`,
+      organizationName,
+      membershipType: membershipForm.membershipType.trim(),
+      membershipId: membershipForm.membershipId.trim(),
+      memberSince: membershipForm.memberSince.trim(),
+      notes: membershipForm.notes.trim(),
+      ...(membershipForm.documentDataUrl
+        ? {
+            documentFileName: membershipForm.documentFileName.trim() || "Membership document",
+            documentDataUrl: membershipForm.documentDataUrl,
+            documentUploadedAt: membershipForm.documentUploadedAt || new Date().toISOString(),
+          }
+        : {}),
+      ...(membershipForm.logoDataUrl
+        ? {
+            logoFileName: membershipForm.logoFileName.trim() || "Organization logo",
+            logoDataUrl: membershipForm.logoDataUrl,
+          }
+        : {}),
+    };
+
+    const next = [...memberships, entry];
+    setMemberships(next);
+    persistMemberships(next);
+    setMembershipForm({ ...EMPTY_MEMBERSHIP_FORM });
+    setMembershipFormOpen(false);
+    toast.success("Membership added.");
+  };
+
+  const handleRemoveMembership = (id: string) => {
+    const next = memberships.filter((item) => item.id !== id);
+    setMemberships(next);
+    persistMemberships(next);
+    toast.success("Membership removed.");
+  };
+
+  const readFileAsDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+
+  const handleMembershipAssetClick = (target: MembershipUploadTarget) => {
+    setMembershipUploadTarget(target);
+    membershipAssetInputRef.current?.click();
+  };
+
+  const applyMembershipAssetToForm = (
+    kind: "document" | "logo",
+    file: File,
+    dataUrl: string
+  ) => {
+    if (kind === "document") {
+      setMembershipForm((prev) => ({
+        ...prev,
+        documentFileName: file.name,
+        documentDataUrl: dataUrl,
+        documentUploadedAt: new Date().toISOString(),
+      }));
+      return;
+    }
+    setMembershipForm((prev) => ({
+      ...prev,
+      logoFileName: file.name,
+      logoDataUrl: dataUrl,
+    }));
+  };
+
+  const applyMembershipAssetToEntry = (
+    membershipId: string,
+    kind: "document" | "logo",
+    file: File,
+    dataUrl: string
+  ) => {
+    const next = memberships.map((item) => {
+      if (item.id !== membershipId) return item;
+      if (kind === "document") {
+        return {
+          ...item,
+          documentFileName: file.name,
+          documentDataUrl: dataUrl,
+          documentUploadedAt: new Date().toISOString(),
+        };
+      }
+      return {
+        ...item,
+        logoFileName: file.name,
+        logoDataUrl: dataUrl,
+      };
+    });
+    setMemberships(next);
+    persistMemberships(next);
+  };
+
+  const handleMembershipAssetChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const target = membershipUploadTarget;
+    if (!file || !target) return;
+
+    const isLogo = target.kind === "logo";
+    const imageTypes = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
+    const documentTypes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    const fileExtension = file.name.split(".").pop()?.toLowerCase() || "";
+    const validDocExtensions = ["jpg", "jpeg", "png", "gif", "webp", "pdf", "doc", "docx"];
+
+    if (isLogo) {
+      if (!file.type.startsWith("image/") && !["jpg", "jpeg", "png", "gif", "webp"].includes(fileExtension)) {
+        toast.error("Please select an image file for the organization logo.");
+        e.target.value = "";
+        setMembershipUploadTarget(null);
+        return;
+      }
+      if (file.size > 3 * 1024 * 1024) {
+        toast.error("Logo image must be less than 3MB.");
+        e.target.value = "";
+        setMembershipUploadTarget(null);
+        return;
+      }
+    } else if (
+      !imageTypes.includes(file.type) &&
+      !documentTypes.includes(file.type) &&
+      !validDocExtensions.includes(fileExtension)
+    ) {
+      toast.error("Please select an image or PDF/Word document.");
+      e.target.value = "";
+      setMembershipUploadTarget(null);
+      return;
+    } else if (file.size > 5 * 1024 * 1024) {
+      toast.error("Document must be less than 5MB.");
+      e.target.value = "";
+      setMembershipUploadTarget(null);
+      return;
+    }
+
+    const uploadKey = target.forForm
+      ? `form-${target.kind}`
+      : `${target.membershipId}-${target.kind}`;
+    setUploadingMembershipAsset(uploadKey);
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      if (target.forForm) {
+        applyMembershipAssetToForm(target.kind, file, dataUrl);
+        toast.success(
+          target.kind === "document" ? "Membership document added." : "Organization logo added."
+        );
+      } else if (target.membershipId) {
+        applyMembershipAssetToEntry(target.membershipId, target.kind, file, dataUrl);
+        toast.success(
+          target.kind === "document"
+            ? "Membership document updated."
+            : "Organization logo updated."
+        );
+      }
+    } catch {
+      toast.error("Failed to process file. Please try again.");
+    } finally {
+      setUploadingMembershipAsset(null);
+      setMembershipUploadTarget(null);
+      e.target.value = "";
+    }
+  };
+
+  const renderMembershipDocumentSlot = (args: {
+    label: string;
+    hasDocument: boolean;
+    uploadedOn: string | null;
+    documentUrl: string | null;
+    uploadKey: string;
+    onUpload: () => void;
+  }) => {
+    const { label, hasDocument, uploadedOn, documentUrl, uploadKey, onUpload } = args;
+    const slotSurfaceClass = hasDocument
+      ? "bg-green-50 border-green-200"
+      : "bg-gray-50 border-gray-100";
+
+    return (
+      <div className={`rounded-lg border p-3 ${slotSurfaceClass}`}>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="flex min-w-0 flex-1 items-start gap-2">
+            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+            <div className="min-w-0 flex-1">
+              <p className="mb-1 text-sm font-medium text-gray-900">{label}</p>
+              <p className="text-xs text-gray-500">
+                {hasDocument
+                  ? uploadedOn
+                    ? `Uploaded ${uploadedOn}`
+                    : "Document uploaded"
+                  : "No document uploaded yet"}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            {hasDocument && documentUrl ? (
+              <Button variant="ghost" size="sm" onClick={() => window.open(documentUrl, "_blank")}>
+                View
+              </Button>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onUpload}
+              disabled={uploadingMembershipAsset === uploadKey}
+            >
+              {uploadingMembershipAsset === uploadKey ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  <Upload className="mr-1 h-4 w-4" />
+                  {hasDocument ? "Update Document" : "Upload Document"}
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderMembershipLogoSlot = (args: {
+    label: string;
+    logoUrl: string | null;
+    uploadKey: string;
+    onUpload: () => void;
+  }) => {
+    const { label, logoUrl, uploadKey, onUpload } = args;
+
+    return (
+      <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-white">
+              {logoUrl ? (
+                <img src={logoUrl} alt={label} className="h-full w-full object-contain" />
+              ) : (
+                <ImageIcon className="h-5 w-5 text-gray-300" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-gray-900">{label}</p>
+              <p className="text-xs text-gray-500">
+                {logoUrl ? "Logo uploaded" : "Upload the organization logo."}
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onUpload}
+            disabled={uploadingMembershipAsset === uploadKey}
+            className="shrink-0"
+          >
+            {uploadingMembershipAsset === uploadKey ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <Upload className="mr-1 h-4 w-4" />
+                {logoUrl ? "Update Logo" : "Upload Logo"}
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    );
   };
 
   const requirements = [
@@ -1527,6 +1905,272 @@ export function ProfessionalVerification() {
           </Card>
         ))}
       </div>
+
+      {/* Professional memberships — UI only (saved locally until API is available) */}
+      <Card>
+        <CardContent className="p-4 md:p-6">
+          <input
+            ref={membershipAssetInputRef}
+            type="file"
+            accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,.docx"
+            onChange={handleMembershipAssetChange}
+            className="hidden"
+          />
+          <div className="flex items-start gap-3 md:gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-indigo-100">
+              <Building2 className="h-6 w-6 text-indigo-700" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h3 className="text-lg text-[#0A1A2F]">Professional Memberships</h3>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto shrink-0"
+                  onClick={() => setMembershipFormOpen((open) => !open)}
+                >
+                  {membershipFormOpen ? (
+                    "Cancel"
+                  ) : (
+                    <>
+                      <Plus className="mr-1.5 h-4 w-4" />
+                      Add membership
+                    </>
+                  )}
+                </Button>
+              </div>
+              {/* <p className="mb-4 text-sm text-gray-600">
+                List industry bodies, associations, or organizations you belong to — for example FIA,
+                IFE, BAFE, IOSH, or event networks. Upload membership certificates and organization
+                logos where available.
+              </p> */}
+
+              {membershipFormOpen ? (
+                <div className="mb-4 space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="membership-organization">Organization*</Label>
+                    <Input
+                      id="membership-organization"
+                      list="membership-organization-suggestions"
+                      value={membershipForm.organizationName}
+                      onChange={(e) =>
+                        setMembershipForm((prev) => ({ ...prev, organizationName: e.target.value }))
+                      }
+                      placeholder="e.g. Fire Industry Association (FIA)"
+                    />
+                    <datalist id="membership-organization-suggestions">
+                      {PROFESSIONAL_MEMBERSHIP_SUGGESTIONS.map((name) => (
+                        <option key={name} value={name} />
+                      ))}
+                    </datalist>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="membership-type">Membership type</Label>
+                      <Input
+                        id="membership-type"
+                        value={membershipForm.membershipType}
+                        onChange={(e) =>
+                          setMembershipForm((prev) => ({ ...prev, membershipType: e.target.value }))
+                        }
+                        placeholder="e.g. Full Member, Associate, Registered"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="membership-id">Reference ID</Label>
+                      <Input
+                        id="membership-id"
+                        value={membershipForm.membershipId}
+                        onChange={(e) =>
+                          setMembershipForm((prev) => ({ ...prev, membershipId: e.target.value }))
+                        }
+                        placeholder="Optional membership number"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="membership-since">Member since</Label>
+                    <Input
+                      id="membership-since"
+                      value={membershipForm.memberSince}
+                      onChange={(e) =>
+                        setMembershipForm((prev) => ({ ...prev, memberSince: e.target.value }))
+                      }
+                      placeholder="e.g. 2019 or Jan 2020"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="membership-notes">Notes (optional)</Label>
+                    <Textarea
+                      id="membership-notes"
+                      value={membershipForm.notes}
+                      onChange={(e) =>
+                        setMembershipForm((prev) => ({ ...prev, notes: e.target.value }))
+                      }
+                      placeholder="e.g. Active committee member, attended FIREX 2024"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-700">Membership certificate</p>
+                    {renderMembershipDocumentSlot({
+                      label: "Membership certificate document",
+                      hasDocument: Boolean(membershipForm.documentDataUrl),
+                      uploadedOn: membershipForm.documentUploadedAt
+                        ? formatDate(membershipForm.documentUploadedAt)
+                        : null,
+                      documentUrl: membershipForm.documentDataUrl || null,
+                      uploadKey: "form-document",
+                      onUpload: () =>
+                        handleMembershipAssetClick({ kind: "document", forForm: true }),
+                    })}
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-700">Organization logo</p>
+                    {renderMembershipLogoSlot({
+                      label: "Organization logo",
+                      logoUrl: membershipForm.logoDataUrl || null,
+                      uploadKey: "form-logo",
+                      onUpload: () => handleMembershipAssetClick({ kind: "logo", forForm: true }),
+                    })}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      className="bg-red-600 hover:bg-red-700"
+                      onClick={handleAddMembership}
+                    >
+                      Save membership
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setMembershipFormOpen(false);
+                        setMembershipForm({ ...EMPTY_MEMBERSHIP_FORM });
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {memberships.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-300 bg-white px-4 py-8 text-center">
+                  <Building2 className="mx-auto mb-3 h-10 w-10 text-gray-300" />
+                  <p className="font-medium text-gray-900">No memberships added yet</p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Add professional bodies, trade associations, or recognized industry organizations you
+                    are affiliated with.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {memberships.map((membership) => (
+                    <div
+                      key={membership.id}
+                      className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 flex-1 gap-3">
+                          {membership.logoDataUrl ? (
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                              <img
+                                src={membership.logoDataUrl}
+                                alt={`${membership.organizationName} logo`}
+                                className="h-full w-full object-contain"
+                              />
+                            </div>
+                          ) : null}
+                          <div className="min-w-0 flex-1">
+                            <p className="break-words font-semibold text-[#0A1A2F]">
+                              {membership.organizationName}
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {membership.membershipType ? (
+                                <Badge
+                                  variant="outline"
+                                  className="border-indigo-200 bg-indigo-50 text-indigo-800"
+                                >
+                                  {membership.membershipType}
+                                </Badge>
+                              ) : null}
+                              {membership.memberSince ? (
+                                <Badge variant="outline" className="border-gray-200 bg-gray-50 text-gray-700">
+                                  Since {membership.memberSince}
+                                </Badge>
+                              ) : null}
+                            </div>
+                            {membership.membershipId ? (
+                              <p className="mt-2 text-sm text-gray-600">
+                                <span className="font-medium text-gray-700">ID:</span>{" "}
+                                {membership.membershipId}
+                              </p>
+                            ) : null}
+                            {membership.notes ? (
+                              <p className="mt-2 break-words text-sm text-gray-600">{membership.notes}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="shrink-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                          onClick={() => handleRemoveMembership(membership.id)}
+                          aria-label={`Remove ${membership.organizationName}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      <div className="mt-4 space-y-2">
+                        {renderMembershipDocumentSlot({
+                          label: "Membership certificate document",
+                          hasDocument: Boolean(membership.documentDataUrl),
+                          uploadedOn: membership.documentUploadedAt
+                            ? formatDate(membership.documentUploadedAt)
+                            : null,
+                          documentUrl: membership.documentDataUrl || null,
+                          uploadKey: `${membership.id}-document`,
+                          onUpload: () =>
+                            handleMembershipAssetClick({
+                              kind: "document",
+                              membershipId: membership.id,
+                            }),
+                        })}
+                        {renderMembershipLogoSlot({
+                          label: "Organization logo",
+                          logoUrl: membership.logoDataUrl || null,
+                          uploadKey: `${membership.id}-logo`,
+                          onUpload: () =>
+                            handleMembershipAssetClick({
+                              kind: "logo",
+                              membershipId: membership.id,
+                            }),
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* <p className="mt-4 text-xs text-gray-500">
+                Display only — memberships are saved on this device for now. Admin review and public profile
+                display will be connected in a future update.
+              </p> */}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Dialog open={insuranceDetailsOpen} onOpenChange={setInsuranceDetailsOpen}>
         <DialogContent className="max-w-lg">

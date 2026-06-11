@@ -496,7 +496,7 @@ export function ProfessionalSettings() {
         <p className="text-gray-600">Manage your account settings and preferences</p>
       </div>
 
-      {/* Account Settings */}
+      {/* Account Settings — hidden by request
       <Card>
         <CardHeader>
           <CardTitle className="text-[#0A1A2F] flex items-center gap-2">
@@ -562,6 +562,7 @@ export function ProfessionalSettings() {
           </Button>
         </CardContent>
       </Card>
+      */}
 
       {/* Password Change */}
       <Card>
@@ -680,7 +681,7 @@ export function ProfessionalSettings() {
 
           <Separator />
 
-          <div className="flex items-center justify-between">
+          {/* <div className="flex items-center justify-between">
             <div>
               <p className="font-medium text-gray-900">SMS Notifications</p>
               <p className="text-sm text-gray-500">Receive urgent updates via SMS</p>
@@ -704,7 +705,7 @@ export function ProfessionalSettings() {
             />
           </div>
 
-          <Separator />
+          <Separator /> */}
 
           <div className="flex items-center justify-between">
             <div>
@@ -730,7 +731,7 @@ export function ProfessionalSettings() {
             />
           </div>
 
-          <Separator />
+          {/* <Separator />
 
           <div className="flex items-center justify-between">
             <div>
@@ -741,7 +742,7 @@ export function ProfessionalSettings() {
               checked={marketingEmails}
               onCheckedChange={setMarketingEmails}
             />
-          </div>
+          </div> */}
 
           <Button
             onClick={handleSaveNotifications}
@@ -754,7 +755,7 @@ export function ProfessionalSettings() {
         </CardContent>
       </Card>
 
-      {/* Privacy Settings */}
+      {/* Privacy Settings — hidden by request
       <Card>
         <CardHeader>
           <CardTitle className="text-[#0A1A2F] flex items-center gap-2">
@@ -822,6 +823,7 @@ export function ProfessionalSettings() {
           </Button>
         </CardContent>
       </Card>
+      */}
 
       {/* Payout Settings */}
       <Card>

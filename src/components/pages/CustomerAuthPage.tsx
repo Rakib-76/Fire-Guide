@@ -1,9 +1,12 @@
 import { useNavigate } from "react-router-dom";
 import { startTransition } from "react";
+import { toast } from "sonner";
 import { useApp } from "../../contexts/AppContext";
 import { CustomerAuth } from "../CustomerAuth";
 import { setUserInfo, getUserRole } from "../../lib/auth";
 import { navigateToProfessionalHome } from "../../lib/professionalDashboardNavigation";
+import { submitPendingCustomQuoteIfAny } from "../../lib/submitPendingCustomQuote";
+import { customQuoteSuccessNavigateState } from "../../lib/customQuoteSuccessNavigation";
 
 export default function CustomerAuthPage() {
   const navigate = useNavigate();
@@ -14,6 +17,45 @@ export default function CustomerAuthPage() {
     setCustomerPayments,
     customerBookings,
   } = useApp();
+
+  const finishAuthNavigation = async (userRole: string | null) => {
+    if (userRole === "USER") {
+      const pendingResult = await submitPendingCustomQuoteIfAny();
+      startTransition(() => {
+        if (pendingResult.submitted) {
+          navigate("/customer/dashboard/quote-requests", {
+            replace: true,
+            state: customQuoteSuccessNavigateState(),
+          });
+          return;
+        }
+        if (pendingResult.hadPending && pendingResult.error) {
+          toast.error(pendingResult.error);
+          if (pendingResult.returnPath) {
+            navigate(pendingResult.returnPath, {
+              replace: true,
+              state: pendingResult.pending?.serviceName
+                ? { serviceName: pendingResult.pending.serviceName }
+                : undefined,
+            });
+            return;
+          }
+        }
+        navigate("/customer/dashboard", { replace: true });
+      });
+      return;
+    }
+
+    startTransition(() => {
+      if (userRole === "PROFESSIONAL") {
+        navigate("/professional/dashboard", { replace: true });
+      } else if (userRole === "ADMIN") {
+        navigate("/admin/dashboard", { replace: true });
+      } else {
+        navigate("/customer/dashboard", { replace: true });
+      }
+    });
+  };
 
   return (
     <CustomerAuth
@@ -145,19 +187,7 @@ export default function CustomerAuthPage() {
           setCustomerPayments(demoPayments);
         }
         
-        // Redirect immediately based on role (wrapped in startTransition to avoid suspend during sync input)
-        startTransition(() => {
-          if (userRole === "USER") {
-            navigate("/customer/dashboard", { replace: true });
-          } else if (userRole === "PROFESSIONAL") {
-            navigate("/professional/dashboard", { replace: true });
-          } else if (userRole === "ADMIN") {
-            navigate("/admin/dashboard", { replace: true });
-          } else {
-            // Fallback to customer dashboard if role is not set
-            navigate("/customer/dashboard", { replace: true });
-          }
-        });
+        void finishAuthNavigation(userRole ?? null);
       }}
       onBack={() => {
         startTransition(() => {

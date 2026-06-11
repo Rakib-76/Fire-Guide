@@ -2274,6 +2274,8 @@ export interface AdminProfessionalSingleData {
   professional_image: string | null;
   services: AdminProfessionalService[];
   certificates: AdminProfessionalCertificate[];
+  /** API returns `experience`; some payloads use `experiences`. */
+  experience?: AdminProfessionalExperience[];
   experiences?: AdminProfessionalExperience[];
   insurance?: AdminProfessionalInsuranceItem[];
   insurances?: AdminProfessionalInsuranceItem[];
@@ -2317,11 +2319,25 @@ export interface AdminProfessionalUpdateRequest {
   api_token: string;
   professional_id: number;
   name?: string;
+  business_name?: string;
   email?: string;
   number?: string;
   business_location?: string;
+  post_code?: string;
   about?: string;
   response_time?: string;
+  professional_image?: string;
+  /** When set, update is sent as multipart/form-data (same endpoint). */
+  file?: File;
+}
+
+export interface AdminProfessionalUploadImageResponse {
+  success: boolean;
+  message: string;
+  data?: {
+    professional_image?: string;
+    image_url?: string;
+  };
 }
 
 export interface AdminProfessionalUpdateResponse {
@@ -2337,18 +2353,62 @@ export interface AdminProfessionalUpdateResponse {
 export const adminProfessionalUpdate = async (
   data: AdminProfessionalUpdateRequest
 ): Promise<AdminProfessionalUpdateResponse> => {
+  if (data.file) {
+    const formData = new FormData();
+    formData.append('api_token', data.api_token);
+    formData.append('professional_id', String(data.professional_id));
+    formData.append('professional_image', data.file);
+    if (data.name != null) formData.append('name', data.name);
+    if (data.business_name != null) formData.append('business_name', data.business_name);
+    if (data.email != null) formData.append('email', data.email);
+    if (data.number != null) formData.append('number', data.number);
+    if (data.business_location != null) formData.append('business_location', data.business_location);
+    if (data.post_code != null) formData.append('post_code', data.post_code);
+    if (data.about != null) formData.append('about', data.about);
+    if (data.response_time != null) formData.append('response_time', data.response_time);
+    const response = await apiClient.post<AdminProfessionalUpdateResponse>(
+      '/admin_professional/update',
+      formData
+    );
+    return response.data;
+  }
+
   const response = await apiClient.post<AdminProfessionalUpdateResponse>(
     '/admin_professional/update',
     {
       api_token: data.api_token,
       professional_id: data.professional_id,
       ...(data.name != null && { name: data.name }),
+      ...(data.business_name != null && { business_name: data.business_name }),
       ...(data.email != null && { email: data.email }),
       ...(data.number != null && { number: data.number }),
       ...(data.business_location != null && { business_location: data.business_location }),
+      ...(data.post_code != null && { post_code: data.post_code }),
       ...(data.about != null && { about: data.about }),
       ...(data.response_time != null && { response_time: data.response_time }),
+      ...(data.professional_image != null && { professional_image: data.professional_image }),
     }
+  );
+  return response.data;
+};
+
+/**
+ * Upload / replace a professional profile image (admin)
+ * POST /admin_professional/upload-image
+ * Body: form-data — api_token, professional_id, file
+ */
+export const adminProfessionalUploadProfileImage = async (data: {
+  api_token: string;
+  professional_id: number;
+  file: File;
+}): Promise<AdminProfessionalUploadImageResponse> => {
+  const formData = new FormData();
+  formData.append('api_token', data.api_token);
+  formData.append('professional_id', String(data.professional_id));
+  formData.append('file', data.file);
+  const response = await apiClient.post<AdminProfessionalUploadImageResponse>(
+    '/admin_professional/upload-image',
+    formData
   );
   return response.data;
 };

@@ -9,6 +9,8 @@ import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
 import { fetchPropertyTypes, PropertyTypeResponse, fetchApproximatePeople, ApproximatePeopleResponse, formatPeopleOptionLabel, getPeopleOptionSortKey, fetchFloorPricing, FloorPricingItem, fetchFraDurations, FraDurationItem, fetchFireAlarmOptions, FireAlarmOptionItem, fetchExtinguisherServiceOptions, ExtinguisherServiceOptionItem, fetchEmergencyLightOptions, EmergencyLightServiceOptionItem, fetchMarshalOptions, MarshalServiceOptionItem, fetchFireConsultationOptions, ConsultationOptionItem } from "../api/servicesService";
 import { storeCustomQuoteRequest, type CustomQuoteRequestData } from "../api/customQuoteRequestsService";
+import { savePendingCustomQuote } from "../lib/pendingCustomQuote";
+import { CustomQuoteSubmittedModal } from "./CustomQuoteSubmittedModal";
 import { getApiToken, getUserFullName, getUserEmail, getUserPhone } from "../lib/auth";
 import { toast } from "sonner";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
@@ -150,6 +152,7 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
   const [fraDurations, setFraDurations] = useState<FraDurationItem[]>([]);
   const [loadingFraDurations, setLoadingFraDurations] = useState<boolean>(true);
   const [submittingCustomQuote, setSubmittingCustomQuote] = useState(false);
+  const [customQuoteSuccessModalOpen, setCustomQuoteSuccessModalOpen] = useState(false);
   const [fireAlarmDetectorsOptions, setFireAlarmDetectorsOptions] = useState<FireAlarmOptionItem[]>([]);
   const [fireAlarmCallPointsOptions, setFireAlarmCallPointsOptions] = useState<FireAlarmOptionItem[]>([]);
   const [fireAlarmFloorsOptions, setFireAlarmFloorsOptions] = useState<FireAlarmOptionItem[]>([]);
@@ -702,13 +705,18 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
     }
     if (isFireRiskAssessmentService) {
       if (currentStep === 1) return formData.propertyTypeId === "__custom__";
+      if (currentStep === 2) return showCustomPeopleInput;
       if (currentStep === 3) return isCustomFloorsOption;
       return false;
     }
     if (currentStep === 1) return formData.propertyTypeId === "__custom__";
+    if (currentStep === 2) return showCustomPeopleInput;
     if (currentStep === 3) return isCustomFloorsOption;
     return false;
   };
+
+  /** Custom-quote free-text steps require an explicit Next click (no auto-advance). */
+  const shouldBlockAutoAdvanceOnCurrentStep = (): boolean => currentStepUsesCustomTextInput();
 
   const isStepValid = () => {
     if (isFireAlarmService) {
@@ -774,7 +782,7 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
     if (isFireRiskAssessmentService) {
       switch (currentStep) {
         case 1: return formData.propertyTypeId === "__custom__" ? formData.customPropertyType.trim() !== "" : formData.propertyTypeId !== "";
-        case 2: return formData.approximatePeopleId !== "";
+        case 2: return showCustomPeopleInput ? formData.customPeopleCount.trim() !== "" : formData.approximatePeopleId !== "";
         case 3: return isCustomFloorsOption ? formData.customFloorsCount.trim() !== "" : formData.numberOfFloors !== "";
         case 4: return formData.durationId !== "";
         case 5: return formData.assessmentDate !== "";
@@ -787,7 +795,7 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
         if (formData.propertyTypeId === "__custom__") return formData.customPropertyType.trim() !== "";
         return formData.propertyTypeId !== "";
       case 2:
-        return formData.approximatePeopleId !== "";
+        return showCustomPeopleInput ? formData.customPeopleCount.trim() !== "" : formData.approximatePeopleId !== "";
       case 3:
         if (isCustomFloorsOption) return formData.customFloorsCount.trim() !== "";
         return formData.numberOfFloors !== "";
@@ -803,25 +811,15 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
   };
 
   /**
-   * When the current step becomes valid, advance the same way as the old "Next" button.
-   * - Dropdown/date: advance immediately on change.
-   * - Custom quote text fields: debounce so partial input (e.g. "8") does not skip before "82".
-   * - After Back, `wentBackRef` prevents immediately jumping forward while old answers still validate.
+   * When the current step becomes valid, advance automatically — except custom-quote text fields,
+   * which require the user to click Next after entering a value.
    */
   useEffect(() => {
     if (submittingCustomQuote) return;
     if (wentBackRef.current) return;
     if (currentStep >= totalSteps) return;
+    if (shouldBlockAutoAdvanceOnCurrentStep()) return;
     if (!isStepValid()) return;
-
-    if (currentStepUsesCustomTextInput()) {
-      const timer = window.setTimeout(() => {
-        if (submittingCustomQuote || wentBackRef.current || currentStep >= totalSteps) return;
-        if (!isStepValid()) return;
-        void handleNext();
-      }, 700);
-      return () => window.clearTimeout(timer);
-    }
 
     let cancelled = false;
     const id = requestAnimationFrame(() => {
@@ -841,6 +839,7 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
       return;
     }
     if (currentStep >= totalSteps) return;
+    if (shouldBlockAutoAdvanceOnCurrentStep()) return;
     if (!isStepValid()) return;
     let cancelled = false;
     const id = requestAnimationFrame(() => {
@@ -1001,9 +1000,20 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
       const email = getUserEmail()?.trim() ?? "";
       const phone = getUserPhone()?.trim() ?? "";
       if (!name || !email || !phone) {
-        toast.error(
-          "Sign in and add your name, email, and phone in your profile so we can submit your custom quote request."
-        );
+        const payload = buildCustomQuoteStorePayload(accessNote, {
+          propertyTypeDisplay,
+          peopleCountDisplayForComplete,
+          floorsNum,
+          durationIdNum,
+        });
+        const returnPath = `/services/${resolvedServiceId}/questionnaire`;
+        savePendingCustomQuote({
+          serviceId: resolvedServiceId,
+          requestData: payload,
+          ...(serviceName?.trim() ? { serviceName: serviceName.trim() } : {}),
+          returnPath,
+        });
+        navigate("/customer/auth", { state: { pendingCustomQuote: true } });
         return;
       }
       setSubmittingCustomQuote(true);
@@ -1015,8 +1025,7 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
           durationIdNum,
         });
         await storeCustomQuoteRequest(getApiToken(), resolvedServiceId, name, email, phone, payload);
-        toast.success("Custom quote request submitted successfully. We'll contact you soon.");
-        navigate("/services");
+        setCustomQuoteSuccessModalOpen(true);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to submit custom quote request.");
       } finally {
@@ -2369,7 +2378,7 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
             )}
           </div>
 
-          {/* Navigation: Back always; intermediate steps advance when answers validate (same as former Next). */}
+          {/* Navigation: Back always; custom-quote text steps use Next; final step uses View Results. */}
           <div className="flex justify-end gap-4">
             <Button
               onClick={handleBack}
@@ -2379,6 +2388,16 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
               <ChevronLeft className="w-5 h-5 mr-2" />
               Back
             </Button>
+            {currentStepUsesCustomTextInput() && currentStep < totalSteps && (
+              <Button
+                onClick={handleNext}
+                disabled={!isStepValid() || submittingCustomQuote}
+                className="bg-red-600 hover:bg-red-700 px-8 py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+                <ChevronRight className="w-5 h-5 ml-2" />
+              </Button>
+            )}
             {currentStep === totalSteps && (
               <Button
                 onClick={handleNext}
@@ -2395,27 +2414,6 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
                 )}
               </Button>
             )}
-            {/*
-            Former intermediate "Next" (same handler as auto-advance useEffects above):
-            <Button
-              onClick={handleNext}
-              disabled={!isStepValid() || submittingCustomQuote}
-              className="bg-red-600 hover:bg-red-700 px-8 py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {submittingCustomQuote ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                <>
-                  {currentStep === totalSteps ? "View Results" : "Next"}
-                  {currentStep < totalSteps && <ChevronRight className="w-5 h-5 ml-2" />}
-                </>
-              )}
-            </Button>
-            (Shown for every step; now only final-step View Results is rendered live.)
-            */}
           </div>
 
           {bottomContent && (
@@ -2425,6 +2423,19 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
           )}
         </div>
       </main>
+
+      <CustomQuoteSubmittedModal
+        open={customQuoteSuccessModalOpen}
+        onOpenChange={setCustomQuoteSuccessModalOpen}
+        onViewQuoteRequests={() => {
+          setCustomQuoteSuccessModalOpen(false);
+          navigate("/customer/dashboard/quote-requests");
+        }}
+        onBrowseServices={() => {
+          setCustomQuoteSuccessModalOpen(false);
+          navigate("/services");
+        }}
+      />
     </div>
   );
 }

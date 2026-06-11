@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { professionalBenefitsJoinTo } from "../lib/professionalBenefitsNavigation";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -11,6 +11,7 @@ import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png"
 import { registerUser, loginUser, sendOtp, verifyOtp, resetPassword } from "../api/authService";
 import { setAuthToken, setUserEmail, setUserInfo, setUserPhone, setUserRole, setProfessionalId } from "../lib/auth";
 import { getFacebookOAuthStartUrl, getGoogleOAuthStartUrl } from "../lib/socialAuthCallback";
+import { hasPendingCustomQuote } from "../lib/pendingCustomQuote";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
 
 interface CustomerAuthProps {
@@ -20,6 +21,10 @@ interface CustomerAuthProps {
 
 export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const pendingCustomQuote =
+    hasPendingCustomQuote() ||
+    Boolean((location.state as { pendingCustomQuote?: boolean } | null)?.pendingCustomQuote);
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isSocialLoading, setIsSocialLoading] = useState<string | null>(null);
@@ -48,6 +53,12 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
+
+  useEffect(() => {
+    if (pendingCustomQuote) {
+      setIsSignUp(true);
+    }
+  }, [pendingCustomQuote]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -558,13 +569,19 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
                     {isSignUp ? "Create Your Account" : "Welcome Back"}
                   </CardTitle>
                   <CardDescription className="text-sm md:text-base">
-                    {isSignUp 
-                      ? "Sign up to book fire safety services instantly"
-                      : "Sign in to access your bookings and dashboard"
-                    }
+                    {pendingCustomQuote
+                      ? "Sign in or create an account to submit your custom quote request."
+                      : isSignUp
+                        ? "Sign up to book fire safety services instantly"
+                        : "Sign in to access your bookings and dashboard"}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5 md:space-y-6 p-4 md:p-6 overflow-visible">
+                  {pendingCustomQuote ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+                      Your custom quote details are saved. After you sign in or register, we will submit your request automatically.
+                    </div>
+                  ) : null}
                   {/* Social login — Google /auth/google, Facebook /auth/facebook; Apple via env when configured */}
                   <div className="space-y-3">
                     <Button

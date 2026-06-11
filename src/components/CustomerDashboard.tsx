@@ -77,6 +77,8 @@ import {
   getCustomQuoteRequestDisplayRows,
   loadQuoteRequestDurationLabelMap,
 } from "./CustomQuoteRequestDetailsPanel";
+import { CustomQuoteSubmittedModal } from "./CustomQuoteSubmittedModal";
+import type { CustomQuoteSuccessLocationState } from "../lib/customQuoteSuccessNavigation";
 
 const CUSTOMER_NOTIFICATION_SEEN_KEYS = "fireguide_customer_notification_seen_keys";
 
@@ -318,6 +320,7 @@ export function CustomerDashboard({
   const currentViewRef = useRef<CustomerView>(currentView);
   currentViewRef.current = currentView;
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [customQuoteSuccessModalOpen, setCustomQuoteSuccessModalOpen] = useState(false);
 
   const [addresses, setAddresses] = useState<AddressResponse[]>([]);
   /** Set when GET /addresses mixes user_ids; we filter to getCustomerData().data.id */
@@ -357,6 +360,13 @@ export function CustomerDashboard({
       setCurrentView(currentViewFromUrl);
     }
   }, [currentViewFromUrl, isAddAddressRoute, isEditAddressRoute]);
+
+  useEffect(() => {
+    const state = location.state as CustomQuoteSuccessLocationState | null;
+    if (!state?.showCustomQuoteSuccess) return;
+    setCustomQuoteSuccessModalOpen(true);
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [location.state, location.pathname, location.search, navigate]);
 
   // Fetch addresses from API
   useEffect(() => {
@@ -2651,7 +2661,7 @@ export function CustomerDashboard({
                 { id: "booking", label: "Booking Confirmations", description: "Get notified when bookings are confirmed" },
                 { id: "reminder", label: "Service Reminders", description: "Receive reminders before scheduled services" },
                 { id: "report", label: "Report Uploads", description: "Notification when reports are available" },
-                { id: "marketing", label: "Marketing Emails", description: "Receive updates and special offers" },
+                // { id: "marketing", label: "Marketing Emails", description: "Receive updates and special offers" },
               ].map((pref) => {
                 const isChecked = getNotificationValue(pref.id);
                 const isUpdating = updatingNotification === pref.id;
@@ -4144,6 +4154,12 @@ export function CustomerDashboard({
           onClick={() => setSidebarOpen(false)}
         />
       )}
+
+      <CustomQuoteSubmittedModal
+        open={customQuoteSuccessModalOpen}
+        onOpenChange={setCustomQuoteSuccessModalOpen}
+        variant="dashboard"
+      />
     </div>
   );
 }

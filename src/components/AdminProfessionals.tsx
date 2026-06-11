@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
-import { Search, Star, MoreVertical, Mail, Phone, MapPin, CheckCircle, Clock, XCircle, Eye, Ban, Award, FileText, Download, AlertCircle, Edit2, Image, File, Loader2 } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Search, Star, MoreVertical, Mail, Phone, MapPin, CheckCircle, Clock, XCircle, Eye, Ban, Award, FileText, Download, AlertCircle, Edit2, Image, File, Loader2, Upload } from "lucide-react";
 import { getApiToken } from "../lib/auth";
 import { resolveApiBaseUrl } from "../lib/apiBaseUrl";
-import { getAdminProfessionalSummary, AdminProfessionalSummaryData, getAdminProfessionals, AdminProfessionalListItem, adminProfessionalTakeAction, AdminProfessionalStatus, getAdminProfessionalSingle, AdminProfessionalSingleData, adminProfessionalChangeCertificateStatus, adminProfessionalChangeServiceStatus, adminProfessionalChangeExperienceStatus, adminApproveInsuranceCoverage, adminRejectInsuranceCoverage, adminApproveProfessionalIdentity, adminRejectProfessionalIdentity } from "../api/adminService";
+import { getAdminProfessionalSummary, AdminProfessionalSummaryData, getAdminProfessionals, AdminProfessionalListItem, adminProfessionalTakeAction, AdminProfessionalStatus, getAdminProfessionalSingle, AdminProfessionalSingleData, AdminProfessionalExperience, adminProfessionalUpdate, adminProfessionalUploadProfileImage, adminProfessionalChangeCertificateStatus, adminProfessionalChangeServiceStatus, adminProfessionalChangeExperienceStatus, adminApproveInsuranceCoverage, adminRejectInsuranceCoverage, adminApproveProfessionalIdentity, adminRejectProfessionalIdentity } from "../api/adminService";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card, CardContent } from "./ui/card";
@@ -36,16 +36,24 @@ export function AdminProfessionals() {
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
   // const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  // const [editSaving, setEditSaving] = useState(false);
-  // const [editForm, setEditForm] = useState({
-  //   name: "",
-  //   email: "",
-  //   phone: "",
-  //   location: "",
-  //   bio: "",
-  //   responseTime: "",
-  //   status: "pending",
-  // });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editDetailLoading, setEditDetailLoading] = useState(false);
+  const [editDetail, setEditDetail] = useState<AdminProfessionalSingleData | null>(null);
+  const editImageInputRef = useRef<HTMLInputElement>(null);
+  const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
+  const [isUploadingEditImage, setIsUploadingEditImage] = useState(false);
+  const [pendingEditImageFile, setPendingEditImageFile] = useState<File | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    business_name: "",
+    email: "",
+    phone: "",
+    location: "",
+    post_code: "",
+    bio: "",
+    responseTime: "",
+    status: "pending" as "approved" | "pending" | "suspended",
+  });
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
   // const [rejectionReason, setRejectionReason] = useState("");
@@ -149,6 +157,19 @@ export function AdminProfessionals() {
     if (normalized === "verified" || normalized === "approved") return "approved";
     if (normalized === "rejected") return "rejected";
     return "pending";
+  };
+
+  const getProfessionalExperiences = (
+    data: AdminProfessionalSingleData | null | undefined
+  ): AdminProfessionalExperience[] => {
+    if (!data) return [];
+    return data.experience ?? data.experiences ?? [];
+  };
+
+  const verificationStatusLabel = (status: "approved" | "rejected" | "pending"): string => {
+    if (status === "approved") return "Verified";
+    if (status === "rejected") return "Rejected";
+    return "Pending";
   };
 
   const profileModalStatusBadgeClass = (
@@ -462,6 +483,60 @@ export function AdminProfessionals() {
     return () => { cancelled = true; };
   }, [profileModalOpen, selectedProfessional?.id]);
 
+  useEffect(() => {
+    if (!editModalOpen || !selectedProfessional?.id) {
+      setEditDetail(null);
+      setEditImagePreview(null);
+      setPendingEditImageFile(null);
+      return;
+    }
+    const token = getApiToken();
+    if (!token) return;
+    let cancelled = false;
+    setEditDetailLoading(true);
+    setEditDetail(null);
+    getAdminProfessionalSingle({ api_token: token, professional_id: selectedProfessional.id })
+      .then((res) => {
+        if (cancelled || !res.success || !res.data) return;
+        const data = res.data;
+        setEditDetail(data);
+        const uiStatus =
+          data.status === "rejected" ? "suspended" : data.status === "approved" ? "approved" : "pending";
+        setEditForm({
+          name: data.name ?? "",
+          business_name: data.business_name ?? "",
+          email: data.email ?? "",
+          phone: data.number ?? "",
+          location: data.business_location ?? "",
+          post_code: data.post_code ?? "",
+          bio: data.about ?? "",
+          responseTime: data.response_time ?? "",
+          status: uiStatus as "approved" | "pending" | "suspended",
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          toast.error("Failed to load professional details");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setEditDetailLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editModalOpen, selectedProfessional?.id]);
+
+  const refetchProfessionalsList = () => {
+    const token = getApiToken();
+    if (!token) return;
+    getAdminProfessionals({ api_token: token })
+      .then((res) => {
+        if (res.success && Array.isArray(res.data)) setProfessionalsList(res.data);
+      })
+      .catch(() => setProfessionalsList([]));
+  };
+
   const filteredProfessionals = professionals.filter((professional) => {
     const search = searchTerm.toLowerCase();
     const matchesSearch = !search ||
@@ -535,6 +610,7 @@ export function AdminProfessionals() {
 
   const handleEdit = (professional: any) => {
     setSelectedProfessional(professional);
+    setProfileModalOpen(false);
     setEditModalOpen(true);
   };
 
@@ -570,7 +646,7 @@ export function AdminProfessionals() {
           <Eye className="mr-2 h-4 w-4 shrink-0" />
           View Full Profile
         </Button>
-        {/* <Button
+        <Button
           variant="outline"
           size="sm"
           className="h-10 w-full"
@@ -578,8 +654,8 @@ export function AdminProfessionals() {
           onClick={() => handleEdit(professional)}
         >
           <Edit2 className="mr-2 h-4 w-4 shrink-0" />
-          Edit Profile
-        </Button> */}
+          Edit Professional
+        </Button>
 
         {status === "pending" && (
           <div className="grid grid-cols-2 gap-2">
@@ -690,9 +766,160 @@ export function AdminProfessionals() {
   //   setRejectionMessage("");
   // };
 
-  const saveProfileEdits = () => {
-    toast.success(`Changes to ${selectedProfessional?.name}'s profile saved successfully`);
-    setEditModalOpen(false);
+  const handleEditImageClick = () => {
+    editImageInputRef.current?.click();
+  };
+
+  const handleEditImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedProfessional?.id) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image size must be less than 5MB.");
+      return;
+    }
+
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Not authenticated");
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setEditImagePreview(previewUrl);
+    setPendingEditImageFile(file);
+    setIsUploadingEditImage(true);
+
+    try {
+      let imageUrl: string | undefined;
+      let uploaded = false;
+
+      try {
+        const uploadRes = await adminProfessionalUploadProfileImage({
+          api_token: token,
+          professional_id: selectedProfessional.id,
+          file,
+        });
+        if (uploadRes.success) {
+          uploaded = true;
+          imageUrl =
+            uploadRes.data?.professional_image?.trim() ||
+            uploadRes.data?.image_url?.trim() ||
+            undefined;
+        }
+      } catch {
+        // Fall back to multipart update when dedicated upload route is unavailable.
+      }
+
+      if (!uploaded) {
+        const updateRes = await adminProfessionalUpdate({
+          api_token: token,
+          professional_id: selectedProfessional.id,
+          file,
+        });
+        if (!updateRes.success) {
+          throw new Error(updateRes.message || "Failed to upload profile image");
+        }
+        uploaded = true;
+        imageUrl = updateRes.data?.professional_image?.trim() || undefined;
+      }
+
+      if (uploaded) {
+        if (imageUrl) {
+          setEditDetail((prev) => (prev ? { ...prev, professional_image: imageUrl } : prev));
+        }
+        setPendingEditImageFile(null);
+        setEditImagePreview(null);
+        refetchProfessionalsList();
+        toast.success("Profile image updated successfully");
+      }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+            "Failed to upload profile image";
+      toast.error(message);
+      setEditImagePreview(null);
+      setPendingEditImageFile(null);
+    } finally {
+      URL.revokeObjectURL(previewUrl);
+      setIsUploadingEditImage(false);
+      if (editImageInputRef.current) {
+        editImageInputRef.current.value = "";
+      }
+    }
+  };
+
+  const saveProfileEdits = async () => {
+    if (!selectedProfessional?.id) return;
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Not authenticated");
+      return;
+    }
+    if (!editForm.name.trim() || !editForm.email.trim()) {
+      toast.error("Name and email are required");
+      return;
+    }
+
+    setEditSaving(true);
+    try {
+      const res = await adminProfessionalUpdate({
+        api_token: token,
+        professional_id: selectedProfessional.id,
+        name: editForm.name.trim(),
+        business_name: editForm.business_name.trim(),
+        email: editForm.email.trim(),
+        number: editForm.phone.trim(),
+        business_location: editForm.location.trim(),
+        post_code: editForm.post_code.trim(),
+        about: editForm.bio.trim(),
+        response_time: editForm.responseTime.trim(),
+        ...(pendingEditImageFile ? { file: pendingEditImageFile } : {}),
+      });
+
+      if (!res.success) {
+        toast.error(res.message || "Failed to update professional");
+        return;
+      }
+
+      const currentStatus = selectedProfessional.status as string;
+      const nextStatus = editForm.status;
+      if (nextStatus !== currentStatus) {
+        const apiStatus: AdminProfessionalStatus =
+          nextStatus === "suspended" ? "rejected" : nextStatus === "approved" ? "approved" : "pending";
+        const statusRes = await adminProfessionalTakeAction({
+          api_token: token,
+          professional_id: selectedProfessional.id,
+          status: apiStatus,
+        });
+        if (!statusRes.success) {
+          toast.error(statusRes.message || "Profile saved but status update failed");
+        }
+      }
+
+      refetchProfessionalsList();
+      refetchSummary();
+      setPendingEditImageFile(null);
+      setEditImagePreview(null);
+      if (res.data?.professional_image) {
+        setEditDetail((prev) =>
+          prev ? { ...prev, professional_image: res.data!.professional_image ?? prev.professional_image } : prev
+        );
+      }
+      toast.success(`Changes to ${editForm.name.trim()}'s profile saved successfully`);
+      setEditModalOpen(false);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } }; message?: string };
+      toast.error(err?.response?.data?.message || err?.message || "Failed to update professional");
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const handleApproveEvidence = async (evidenceId: string, fileName: string) => {
@@ -1022,12 +1249,15 @@ export function AdminProfessionals() {
       const uiStatus = status === "verified" ? "approved" : "rejected";
       setExperienceStatuses((prev) => ({ ...prev, [experienceIdRaw]: uiStatus }));
       setProfileDetail((prev) => {
-        if (!prev?.experiences?.length) return prev;
+        if (!prev) return prev;
+        const patchList = (items?: AdminProfessionalExperience[]) =>
+          items?.map((exp) =>
+            Number(exp?.id) === experienceId ? { ...exp, status } : exp
+          );
         return {
           ...prev,
-          experiences: prev.experiences.map((exp: any) =>
-            Number(exp?.id) === experienceId ? { ...exp, status } : exp
-          ),
+          experience: patchList(prev.experience),
+          experiences: patchList(prev.experiences),
         };
       });
       toast.success(
@@ -1236,10 +1466,10 @@ export function AdminProfessionals() {
                             <Eye className="w-4 h-4 mr-2" />
                             View Full Profile
                           </DropdownMenuItem>
-                          {/* <DropdownMenuItem onClick={() => handleEdit(professional)}>
+                          <DropdownMenuItem onClick={() => handleEdit(professional)}>
                             <Edit2 className="w-4 h-4 mr-2" />
-                            Edit Profile
-                          </DropdownMenuItem> */}
+                            Edit Professional
+                          </DropdownMenuItem>
                           {professional.status === "pending" && (
                             <>
                               <DropdownMenuItem className="text-green-600" onClick={() => handleApprove(professional)}>
@@ -1529,125 +1759,433 @@ export function AdminProfessionals() {
       </Dialog>
       */}
 
-      {/* Edit Profile Modal */}
-      {/* <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* Edit Professional Modal */}
+      <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl text-[#0A1A2F] flex items-center gap-2">
               <Edit2 className="w-6 h-6 text-blue-600" />
-              Edit Professional Profile
+              Edit Professional
             </DialogTitle>
             <DialogDescription>
-              Make changes to {selectedProfessional?.name}&apos;s profile information
+              Update profile details for {editDetail?.name ?? selectedProfessional?.name ?? "professional"}
             </DialogDescription>
           </DialogHeader>
 
-          {profileDetailLoading && editModalOpen ? (
-            <div className="py-12 text-center text-gray-500">Loading profile...</div>
+          {editDetailLoading ? (
+            <div className="py-12 text-center text-gray-500 flex items-center justify-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Loading profile...
+            </div>
           ) : (
-            <div className="space-y-4 py-4">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="edit-name">Full Name</Label>
-                  <Input
-                    id="edit-name"
-                    defaultValue={selectedProfessional?.name}
-                    className="mt-2"
-                  />
+            <div className="space-y-6 py-4">
+              {editDetail ? (
+                <div className="flex items-start gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex shrink-0 flex-col items-center gap-2">
+                    <div className="relative h-20 w-20 overflow-hidden rounded-lg bg-gray-200">
+                      <img
+                        src={editImagePreview || editDetail.professional_image || DEFAULT_AVATAR}
+                        alt={editDetail.name}
+                        className="h-full w-full object-cover"
+                      />
+                      {isUploadingEditImage ? (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                          <Loader2 className="h-5 w-5 animate-spin text-white" />
+                        </div>
+                      ) : null}
+                    </div>
+                    <input
+                      ref={editImageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => void handleEditImageChange(e)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={handleEditImageClick}
+                      disabled={isUploadingEditImage || editSaving}
+                    >
+                      <Upload className="mr-1.5 h-3.5 w-3.5" />
+                      Change Photo
+                    </Button>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-xl font-semibold text-[#0A1A2F]">{editDetail.name}</h3>
+                      <Badge
+                        className={profileModalStatusBadgeClass(
+                          editDetail.status === "approved"
+                            ? "approved"
+                            : editDetail.status === "pending"
+                              ? "pending"
+                              : "rejected"
+                        )}
+                      >
+                        {editDetail.status === "rejected" ? "suspended" : editDetail.status}
+                      </Badge>
+                    </div>
+                    {editDetail.business_name ? (
+                      <p className="mt-1 text-sm font-medium text-gray-700">{editDetail.business_name}</p>
+                    ) : null}
+                    <div className="mt-2 space-y-1 text-sm text-gray-600">
+                      <p className="flex items-center gap-2">
+                        <Mail className="h-4 w-4 shrink-0" />
+                        {editDetail.email}
+                      </p>
+                      <p className="flex items-center gap-2">
+                        <Phone className="h-4 w-4 shrink-0" />
+                        {editDetail.number || "—"}
+                      </p>
+                      <p className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 shrink-0" />
+                        {[editDetail.business_location, editDetail.post_code].filter(Boolean).join(", ") || "—"}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <Label htmlFor="edit-email">Email Address</Label>
-                  <Input
-                    id="edit-email"
-                    type="email"
-                    defaultValue={selectedProfessional?.email}
-                    className="mt-2"
-                  />
-                </div>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="edit-phone">Phone Number</Label>
-                  <Input
-                    id="edit-phone"
-                    defaultValue={selectedProfessional?.phone}
-                    className="mt-2"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="edit-location">Location</Label>
-                  <Input
-                    id="edit-location"
-                    defaultValue={selectedProfessional?.location}
-                    className="mt-2"
-                  />
-                </div>
-              </div>
-
-              <Separator />
+              ) : null}
 
               <div>
-                <Label htmlFor="edit-bio">Bio / Description</Label>
-                <Textarea
-                  id="edit-bio"
-                  defaultValue="Experienced fire safety professional with over 10 years in the industry..."
-                  className="mt-2"
-                  rows={4}
-                />
+                <h4 className="mb-3 font-semibold text-gray-900">Profile Information</h4>
+                <div className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="edit-name">Full Name</Label>
+                      <Input
+                        id="edit-name"
+                        value={editForm.name}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                        className="mt-2"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-business-name">Business Name</Label>
+                      <Input
+                        id="edit-business-name"
+                        value={editForm.business_name}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, business_name: e.target.value }))}
+                        className="mt-2"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="edit-email">Email Address</Label>
+                      <Input
+                        id="edit-email"
+                        type="email"
+                        value={editForm.email}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
+                        className="mt-2"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-phone">Phone Number</Label>
+                      <Input
+                        id="edit-phone"
+                        value={editForm.phone}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+                        className="mt-2"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="edit-location">Business Location</Label>
+                      <Input
+                        id="edit-location"
+                        value={editForm.location}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, location: e.target.value }))}
+                        className="mt-2"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-post-code">Post Code</Label>
+                      <Input
+                        id="edit-post-code"
+                        value={editForm.post_code}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, post_code: e.target.value }))}
+                        className="mt-2"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="edit-bio">About</Label>
+                    <Textarea
+                      id="edit-bio"
+                      value={editForm.bio}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, bio: e.target.value }))}
+                      className="mt-2"
+                      rows={4}
+                    />
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="edit-status">Account Status</Label>
+                      <Select
+                        value={editForm.status}
+                        onValueChange={(value: "approved" | "pending" | "suspended") =>
+                          setEditForm((prev) => ({ ...prev, status: value }))
+                        }
+                      >
+                        <SelectTrigger id="edit-status" className="mt-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="approved">Approved</SelectItem>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="suspended">Suspended</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-response-time">Response Time</Label>
+                      <Input
+                        id="edit-response-time"
+                        value={editForm.responseTime}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, responseTime: e.target.value }))}
+                        placeholder="e.g. 4 hours"
+                        className="mt-2"
+                      />
+                    </div>
+                  </div>
+
+                  {editDetail ? (
+                    <div className="grid gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm md:grid-cols-3">
+                      <div>
+                        <p className="text-gray-600">Rating</p>
+                        <p className="mt-1 font-medium text-gray-900">{editDetail.rating ?? "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Reviews</p>
+                        <p className="mt-1 font-medium text-gray-900">{editDetail.review ?? "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Member Since</p>
+                        <p className="mt-1 font-medium text-gray-900">{formatJoinDate(editDetail.created_at)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Latitude</p>
+                        <p className="mt-1 font-medium text-gray-900">{editDetail.latitude ?? "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Longitude</p>
+                        <p className="mt-1 font-medium text-gray-900">{editDetail.longitude ?? "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Last Updated</p>
+                        <p className="mt-1 font-medium text-gray-900">{formatJoinDate(editDetail.updated_at)}</p>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
 
-              <Separator />
+              {editDetail ? (
+                <>
+                  <Separator />
 
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="edit-status">Account Status</Label>
-                  <Select defaultValue={selectedProfessional?.status}>
-                    <SelectTrigger className="mt-2">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="approved">Approved</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="suspended">Suspended</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="edit-response-time">Response Time</Label>
-                  <Input
-                    id="edit-response-time"
-                    defaultValue={selectedProfessional?.responseTime}
-                    className="mt-2"
-                  />
-                </div>
-              </div>
+                  <div>
+                    <h4 className="mb-3 font-semibold text-gray-900">Registered Services</h4>
+                    {editDetail.services?.length ? (
+                      <div className="space-y-2">
+                        {editDetail.services.map((service) => (
+                          <div
+                            key={service.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 p-3"
+                          >
+                            <span className="font-medium text-gray-900">{service.name}</span>
+                            <Badge className={profileModalStatusBadgeClass(mapVerificationUiStatus(service.status))}>
+                              {verificationStatusLabel(mapVerificationUiStatus(service.status))}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No services registered</p>
+                    )}
+                  </div>
 
-              <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+                  <div>
+                    <h4 className="mb-3 font-semibold text-gray-900">Certificates</h4>
+                    {editDetail.certificates?.length ? (
+                      <div className="space-y-2">
+                        {editDetail.certificates.map((cert) => (
+                          <div
+                            key={cert.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 p-3"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-medium text-gray-900">{cert.name}</p>
+                              {cert.evidence ? (
+                                <a
+                                  href={resolveEvidenceUrl(cert.evidence) ?? cert.evidence}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-blue-600 hover:underline"
+                                >
+                                  View evidence
+                                </a>
+                              ) : null}
+                            </div>
+                            <Badge className={profileModalStatusBadgeClass(mapVerificationUiStatus(cert.status))}>
+                              {verificationStatusLabel(mapVerificationUiStatus(cert.status))}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No certificates uploaded</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <h4 className="mb-3 font-semibold text-gray-900">Experience</h4>
+                    {getProfessionalExperiences(editDetail).length ? (
+                      <div className="space-y-2">
+                        {getProfessionalExperiences(editDetail).map((exp) => (
+                          <div
+                            key={exp.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 p-3"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-medium text-gray-900">{exp.experience_name ?? "Experience"}</p>
+                              {exp.evidence ? (
+                                <a
+                                  href={resolveEvidenceUrl(exp.evidence) ?? exp.evidence}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-blue-600 hover:underline"
+                                >
+                                  View evidence
+                                </a>
+                              ) : null}
+                            </div>
+                            <Badge className={profileModalStatusBadgeClass(mapVerificationUiStatus(exp.status))}>
+                              {verificationStatusLabel(mapVerificationUiStatus(exp.status))}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No experience records</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <h4 className="mb-3 font-semibold text-gray-900">Insurance</h4>
+                    {(editDetail.insurance ?? editDetail.insurances ?? editDetail.insurance_coverages ?? []).length ? (
+                      <div className="space-y-2">
+                        {(editDetail.insurance ?? editDetail.insurances ?? editDetail.insurance_coverages ?? []).map(
+                          (item) => (
+                            <div key={item.id} className="rounded-lg border border-gray-200 p-3">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="font-medium text-gray-900">{item.title ?? "Insurance"}</p>
+                                  <p className="mt-1 text-xs text-gray-500">
+                                    Provider: {item.provider_name ?? "—"}
+                                    {item.price ? ` · Amount: ${item.price}` : ""}
+                                    {item.expire_date
+                                      ? ` · Expires: ${new Date(item.expire_date).toLocaleDateString("en-GB")}`
+                                      : ""}
+                                  </p>
+                                  {item.document ? (
+                                    <a
+                                      href={resolveEvidenceUrl(item.document) ?? item.document}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs text-blue-600 hover:underline"
+                                    >
+                                      View document
+                                    </a>
+                                  ) : null}
+                                </div>
+                                <Badge className={profileModalStatusBadgeClass(mapVerificationUiStatus(item.status))}>
+                                  {verificationStatusLabel(mapVerificationUiStatus(item.status))}
+                                </Badge>
+                              </div>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No insurance records</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <h4 className="mb-3 font-semibold text-gray-900">Identity</h4>
+                    {(editDetail.identity ?? editDetail.identities ?? []).length ? (
+                      <div className="space-y-2">
+                        {(editDetail.identity ?? editDetail.identities ?? []).map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 p-3"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-medium text-gray-900">Identity Document</p>
+                              {item.file ? (
+                                <a
+                                  href={resolveEvidenceUrl(item.file) ?? item.file}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-blue-600 hover:underline"
+                                >
+                                  View file
+                                </a>
+                              ) : null}
+                            </div>
+                            <Badge className={profileModalStatusBadgeClass(mapVerificationUiStatus(item.status))}>
+                              {verificationStatusLabel(mapVerificationUiStatus(item.status))}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No identity documents</p>
+                    )}
+                  </div>
+                </>
+              ) : null}
+
+              <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
                 <p className="text-sm text-blue-700">
-                  Changes will be saved immediately and the professional will be notified of major changes via email.
+                  Profile fields above can be edited and saved. Services, certificates, insurance, and identity are shown from the API and managed via verification actions in View Full Profile.
                 </p>
               </div>
             </div>
           )}
 
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setEditModalOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setEditModalOpen(false)} disabled={editSaving}>
               Cancel
             </Button>
             <Button
               className="bg-blue-600 hover:bg-blue-700"
-              onClick={saveProfileEdits}
+              onClick={() => void saveProfileEdits()}
+              disabled={editSaving || editDetailLoading}
             >
-              Save Changes
+              {editSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog> */}
+      </Dialog>
 
       {/* View Profile Modal */}
       <Dialog open={profileModalOpen} onOpenChange={setProfileModalOpen}>
@@ -1688,6 +2226,9 @@ export function AdminProfessionals() {
                         {(profileDetail?.status ?? selectedProfessional?.status) === "rejected" ? "suspended" : (profileDetail?.status ?? selectedProfessional?.status)}
                       </Badge>
                     </div>
+                    {profileDetail?.business_name ? (
+                      <p className="mb-2 text-lg font-medium text-gray-700">{profileDetail.business_name}</p>
+                    ) : null}
                     <div className="space-y-1 text-sm text-gray-600">
                       <p className="flex items-center gap-2">
                         <Mail className="w-4 h-4" />
@@ -1699,13 +2240,25 @@ export function AdminProfessionals() {
                       </p>
                       <p className="flex items-center gap-2">
                         <MapPin className="w-4 h-4" />
-                        {profileDetail?.business_location ?? selectedProfessional?.location}
+                        {[profileDetail?.business_location ?? selectedProfessional?.location, profileDetail?.post_code]
+                          .filter(Boolean)
+                          .join(", ") || "—"}
                       </p>
                     </div>
                   </div>
                 </div>
 
                 <Separator />
+
+                {profileDetail?.about ? (
+                  <>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2">About</h4>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{profileDetail.about}</p>
+                    </div>
+                    <Separator />
+                  </>
+                ) : null}
 
                 {/* Performance Stats */}
                 <div>
@@ -1885,6 +2438,7 @@ export function AdminProfessionals() {
                       id: String(item.id ?? `insurance-${idx}`),
                       title,
                       provider: item.provider_name ?? "—",
+                      price: item.price ?? "",
                       expireDate: item.expire_date
                         ? new Date(item.expire_date).toLocaleDateString("en-GB")
                         : "—",
@@ -1924,6 +2478,9 @@ export function AdminProfessionals() {
                                   <div className="min-w-0">
                                     <p className="font-medium text-gray-900 break-words">{insurance.title}</p>
                                     <p className="text-xs text-gray-500 mt-1">Provider: {insurance.provider}</p>
+                                    {insurance.price ? (
+                                      <p className="text-xs text-gray-500">Amount: {insurance.price}</p>
+                                    ) : null}
                                     <p className="text-xs text-gray-500">Valid until: {insurance.expireDate}</p>
                                   </div>
                                   <Badge
@@ -2138,16 +2695,10 @@ export function AdminProfessionals() {
                   );
                 })()}
 
-                {/* Experience Submitted - from API experiences */}
+                {/* Experience Submitted - from API experience / experiences */}
                 {(() => {
-                  const raw = (profileDetail as unknown as { experiences?: any[]; experience?: any[]; professional_experiences?: any[] } | null);
-                  const source =
-                    raw?.experiences ??
-                    raw?.experience ??
-                    raw?.professional_experiences ??
-                    [];
-                  const experienceList = Array.isArray(source)
-                    ? source.map((exp: any, idx: number) => {
+                  const source = getProfessionalExperiences(profileDetail);
+                  const experienceList = source.map((exp, idx) => {
                       const status = String(exp?.status ?? "pending").toLowerCase();
                       const uiStatus =
                         status === "verified" || status === "approved"
@@ -2165,8 +2716,7 @@ export function AdminProfessionals() {
                         status: uiStatus,
                         evidenceUrl: resolveEvidenceUrl(exp?.evidence),
                       };
-                    })
-                    : [];
+                    });
                   if (experienceList.length === 0) return null;
                   return (
                     <>
@@ -2276,35 +2826,39 @@ export function AdminProfessionals() {
                   );
                 })()}
 
-                {/* Qualifications */}
-                <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-3">Certificates</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {(profileDetail
-                      ? profileDetail.certificates ?? []
-                      : selectedProfessional?.certificateNames ?? []
-                    ).map((qual: string | { id: number; name: string }, index: number) => (
-                      <Badge key={index} variant="outline" className="bg-blue-50 text-blue-700 h-9 px-3 flex items-center gap-2">
-                        <Award className="w-4 h-4" />
-                        {typeof qual === "string" ? qual : qual.name}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-
-                <Separator />
-
                 {/* Account Details */}
                 <div>
                   <h4 className="font-semibold text-gray-900 mb-3">Account Details</h4>
                   <div className="grid md:grid-cols-2 gap-4 text-sm">
                     <div>
+                      <p className="text-gray-600">Business Name</p>
+                      <p className="font-medium text-gray-900 mt-1">{profileDetail?.business_name ?? "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Post Code</p>
+                      <p className="font-medium text-gray-900 mt-1">{profileDetail?.post_code ?? "—"}</p>
+                    </div>
+                    <div>
                       <p className="text-gray-600">Join Date</p>
                       <p className="font-medium text-gray-900 mt-1">{profileDetail ? formatJoinDate(profileDetail.created_at) : selectedProfessional?.joinDate}</p>
                     </div>
                     <div>
+                      <p className="text-gray-600">Last Updated</p>
+                      <p className="font-medium text-gray-900 mt-1">
+                        {profileDetail?.updated_at ? formatJoinDate(profileDetail.updated_at) : "—"}
+                      </p>
+                    </div>
+                    <div>
                       <p className="text-gray-600">Total Reviews</p>
                       <p className="font-medium text-gray-900 mt-1">{profileDetail?.review ?? selectedProfessional?.reviewCount ?? "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Coordinates</p>
+                      <p className="font-medium text-gray-900 mt-1">
+                        {profileDetail?.latitude != null && profileDetail?.longitude != null
+                          ? `${profileDetail.latitude}, ${profileDetail.longitude}`
+                          : "—"}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -2482,7 +3036,7 @@ export function AdminProfessionals() {
             >
               Close
             </Button>
-            {/* <Button
+            <Button
               className="bg-blue-600 hover:bg-blue-700"
               onClick={() => {
                 setProfileModalOpen(false);
@@ -2490,8 +3044,8 @@ export function AdminProfessionals() {
               }}
             >
               <Edit2 className="w-4 h-4 mr-2" />
-              Edit Profile
-            </Button> */}
+              Edit Professional
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

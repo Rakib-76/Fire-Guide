@@ -726,23 +726,27 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
       {/* Stats Cards */}
       <div className="grid md:grid-cols-3 gap-6 mb-8">
         {stats.map((stat, index) => {
-          // Determine click handler based on card type
           const getClickHandler = () => {
             if (stat.title === "Upcoming Jobs") {
               return () => handleViewChange("bookings");
-            } else if (stat.title === "Total Earnings") {
+            }
+            if (stat.title === "Total Earnings") {
               return () => handleViewChange("payments");
-            } else if (stat.title === "All Reports") {
-              return onNavigateToReports;
             }
             return undefined;
           };
 
+          const clickHandler = getClickHandler();
+
           return (
-            <Card 
-              key={index} 
-              className="border-0 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer active:scale-[0.98]"
-              onClick={getClickHandler()}
+            <Card
+              key={index}
+              className={`border-0 shadow-md transition-all duration-200 ${
+                clickHandler
+                  ? "cursor-pointer hover:shadow-lg active:scale-[0.98]"
+                  : ""
+              }`}
+              onClick={clickHandler}
             >
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
