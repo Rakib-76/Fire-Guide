@@ -12,7 +12,9 @@ import type {
   FilterProfessionalForFraItem,
   FilterProfessionalCertificateItem,
   FilterProfessionalExperienceItem,
+  FilterProfessionalMembershipItem,
 } from "../api/servicesService";
+import { getMembershipMediaUrlCandidates } from "../api/membershipService";
 import { toast } from "sonner";
 
 interface Professional {
@@ -28,6 +30,8 @@ interface Professional {
   qualifications: string[];
   /** From filter API: certificates then experience — qualification pills when present. */
   qualificationBadges?: { key: string; label: string }[];
+  /** From filter API membership[] — organization logos below qualification badges. */
+  membershipLogos?: { id: number; logoPath: string; organizationName?: string }[];
   responseTime: string;
   /** From filter-professional/for-fra (e.g. "From £1351 per assessment") */
   price_label?: string;
@@ -43,6 +47,57 @@ interface Professional {
 interface ComparisonResultsProps {
   onViewProfile: (professional: Professional) => void;
   onBookNow: (professional: Professional) => void;
+}
+
+function MembershipLogoImage({
+  logoPath,
+  alt,
+  className,
+}: {
+  logoPath: string;
+  alt: string;
+  className?: string;
+}) {
+  const urls = React.useMemo(() => getMembershipMediaUrlCandidates(logoPath), [logoPath]);
+  const [urlIndex, setUrlIndex] = React.useState(0);
+  const src = urls[urlIndex] ?? "";
+
+  React.useEffect(() => {
+    setUrlIndex(0);
+  }, [logoPath]);
+
+  if (!src) return null;
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      title={alt}
+      className={className}
+      onError={() => {
+        setUrlIndex((current) => (current < urls.length - 1 ? current + 1 : current));
+      }}
+    />
+  );
+}
+
+function buildMembershipLogos(
+  membership: FilterProfessionalMembershipItem[] | undefined
+): { id: number; logoPath: string; organizationName?: string }[] {
+  if (!membership?.length) return [];
+  const seen = new Set<number>();
+  const out: { id: number; logoPath: string; organizationName?: string }[] = [];
+  for (const item of membership) {
+    const logoPath = item.logo?.trim();
+    if (!logoPath || seen.has(item.id)) continue;
+    seen.add(item.id);
+    out.push({
+      id: item.id,
+      logoPath,
+      organizationName: item.organization_name?.trim() || undefined,
+    });
+  }
+  return out;
 }
 
 function formatPreferredDate(value: string): string {
@@ -187,8 +242,11 @@ function mapFilterItemToProfessional(
       total_price?: number;
       professional_certificates?: FilterProfessionalCertificateItem[];
       professional_experience?: FilterProfessionalExperienceItem[];
+      membership?: FilterProfessionalMembershipItem[];
+      memberships?: FilterProfessionalMembershipItem[];
     }
 ): Professional {
+  const fraItem = item as FilterProfessionalForFraItem;
   const servicePrice = item.service_price ?? item.price ?? 0;
   return {
     id: item.id,
@@ -202,9 +260,10 @@ function mapFilterItemToProfessional(
     nextAvailable: "",
     qualifications: [],
     qualificationBadges: buildQualificationBadges(
-      (item as FilterProfessionalForFraItem).professional_certificates,
-      (item as FilterProfessionalForFraItem).professional_experience
+      fraItem.professional_certificates,
+      fraItem.professional_experience
     ),
+    membershipLogos: buildMembershipLogos(fraItem.membership ?? fraItem.memberships),
     responseTime: item.response_time ?? "Responds within 2 hours",
     price_label: (item as FilterProfessionalForFraItem).price_label,
     location: item.location,
@@ -684,7 +743,7 @@ export function ComparisonResults({ onViewProfile, onBookNow }: ComparisonResult
 
                             {/* Qualification badges — certificates + experience from filter API, or list fallback */}
                             {qualificationBadges.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mb-4">
+                              <div className="flex flex-wrap gap-2 mb-3">
                                 {qualificationBadges.map((b) => (
                                   <Badge
                                     key={`${professional.id}-${b.key}`}
@@ -694,6 +753,24 @@ export function ComparisonResults({ onViewProfile, onBookNow }: ComparisonResult
                                     <Award className="w-3.5 h-3.5 mr-1 shrink-0 text-blue-700" aria-hidden />
                                     {b.label}
                                   </Badge>
+                                ))}
+                              </div>
+                            )}
+
+                            {professional.membershipLogos && professional.membershipLogos.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-2 mb-4">
+                                {professional.membershipLogos.map((membership) => (
+                                  <div
+                                    key={`${professional.id}-membership-logo-${membership.id}`}
+                                    className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white p-1"
+                                    title={membership.organizationName || "Professional membership"}
+                                  >
+                                    <MembershipLogoImage
+                                      logoPath={membership.logoPath}
+                                      alt={membership.organizationName || "Membership logo"}
+                                      className="h-full w-full object-contain"
+                                    />
+                                  </div>
                                 ))}
                               </div>
                             )}

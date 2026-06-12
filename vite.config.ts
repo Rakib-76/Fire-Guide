@@ -76,6 +76,12 @@ export default defineConfig({
         changeOrigin: true,
         secure: true,
       },
+      // Membership and insurance assets are served from /image on the API host (incl. ?path=...&api_token=...).
+      '/image': {
+        target: 'https://firesafety-backend.fireguide.co.uk',
+        changeOrigin: true,
+        secure: true,
+      },
     },
   },
   optimizeDeps: {

@@ -26,6 +26,15 @@ import {
   updateInsuranceCoverage,
 } from "../api/insuranceService";
 import { getApiToken, getProfessionalId } from "../lib/auth";
+import {
+  createMembership,
+  encodeImageFileAsBase64DataUrl,
+  buildMembershipEvidenceViewUrls,
+  getMembershipMediaUrl,
+  isMembershipImageFile,
+  resolveMembershipEntryMedia,
+  type ProfessionalMembershipApiItem,
+} from "../api/membershipService";
 import { resolveApiBaseUrl } from "../lib/apiBaseUrl";
 import { toast } from "sonner";
 
@@ -41,6 +50,9 @@ type ProfessionalMembershipEntry = {
   membershipId: string;
   memberSince: string;
   notes: string;
+  /** Raw path from API e.g. membership/123_evidence.jpeg */
+  evidencePath?: string;
+  logoPath?: string;
   documentFileName?: string;
   documentDataUrl?: string;
   documentUploadedAt?: string;
@@ -74,12 +86,15 @@ function loadStoredMemberships(): ProfessionalMembershipEntry[] {
         membershipId: (item.membershipId ?? "").trim(),
         memberSince: (item.memberSince ?? "").trim(),
         notes: (item.notes ?? "").trim(),
+        evidencePath: (item.evidencePath ?? "").trim() || undefined,
+        logoPath: (item.logoPath ?? "").trim() || undefined,
         documentFileName: (item.documentFileName ?? "").trim() || undefined,
         documentDataUrl: (item.documentDataUrl ?? "").trim() || undefined,
         documentUploadedAt: (item.documentUploadedAt ?? "").trim() || undefined,
         logoFileName: (item.logoFileName ?? "").trim() || undefined,
         logoDataUrl: (item.logoDataUrl ?? "").trim() || undefined,
       }))
+      .map((item) => resolveMembershipEntryMedia(item))
       .filter((item) => item.organizationName.length > 0);
   } catch {
     return [];
@@ -269,8 +284,14 @@ export function ProfessionalVerification() {
   const [memberships, setMemberships] = useState<ProfessionalMembershipEntry[]>([]);
   const [membershipForm, setMembershipForm] = useState({ ...EMPTY_MEMBERSHIP_FORM });
   const [membershipFormOpen, setMembershipFormOpen] = useState(false);
+  const [isSavingMembership, setIsSavingMembership] = useState(false);
   const [membershipUploadTarget, setMembershipUploadTarget] = useState<MembershipUploadTarget | null>(null);
   const [uploadingMembershipAsset, setUploadingMembershipAsset] = useState<string | null>(null);
+  const [membershipEvidencePreview, setMembershipEvidencePreview] = useState<{
+    title: string;
+    urls: string[];
+  } | null>(null);
+  const [membershipEvidencePreviewIndex, setMembershipEvidencePreviewIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const membershipAssetInputRef = useRef<HTMLInputElement>(null);
 
@@ -718,41 +739,117 @@ export function ProfessionalVerification() {
     return allDates.length > 0 ? formatDate(allDates[0]) : null;
   };
 
-  const handleAddMembership = () => {
+  const mapApiMembershipToEntry = (
+    item: ProfessionalMembershipApiItem,
+    preview?: { documentDataUrl?: string; logoDataUrl?: string }
+  ): ProfessionalMembershipEntry => {
+    const evidencePath = item.evidence?.trim() || undefined;
+    const logoPath = item.logo?.trim() || undefined;
+    const documentPreview = preview?.documentDataUrl?.trim();
+    const logoPreview = preview?.logoDataUrl?.trim();
+
+    return resolveMembershipEntryMedia({
+      id: String(item.id),
+      organizationName: (item.organization_name ?? "").trim(),
+      membershipType: (item.membership_type ?? "").trim(),
+      membershipId: (item.reference_id ?? "").trim(),
+      memberSince: (item.member_since ?? "").trim(),
+      notes: (item.note ?? "").trim(),
+      evidencePath,
+      logoPath,
+      ...(evidencePath || documentPreview
+        ? {
+            documentFileName: "Membership certificate",
+            documentDataUrl:
+              documentPreview?.startsWith("data:") ? documentPreview : undefined,
+            documentUploadedAt: item.created_at ?? new Date().toISOString(),
+          }
+        : {}),
+      ...(logoPath || logoPreview
+        ? {
+            logoFileName: "Organization logo",
+            logoDataUrl: logoPreview?.startsWith("data:") ? logoPreview : undefined,
+          }
+        : {}),
+    });
+  };
+
+  const handleAddMembership = async () => {
     const organizationName = membershipForm.organizationName.trim();
     if (!organizationName) {
       toast.error("Please enter the organization or body name.");
       return;
     }
 
-    const entry: ProfessionalMembershipEntry = {
-      id: `membership-${Date.now()}`,
-      organizationName,
-      membershipType: membershipForm.membershipType.trim(),
-      membershipId: membershipForm.membershipId.trim(),
-      memberSince: membershipForm.memberSince.trim(),
-      notes: membershipForm.notes.trim(),
-      ...(membershipForm.documentDataUrl
-        ? {
-            documentFileName: membershipForm.documentFileName.trim() || "Membership document",
-            documentDataUrl: membershipForm.documentDataUrl,
-            documentUploadedAt: membershipForm.documentUploadedAt || new Date().toISOString(),
-          }
-        : {}),
-      ...(membershipForm.logoDataUrl
-        ? {
-            logoFileName: membershipForm.logoFileName.trim() || "Organization logo",
-            logoDataUrl: membershipForm.logoDataUrl,
-          }
-        : {}),
-    };
+    const apiToken = getApiToken();
+    if (!apiToken) {
+      toast.error("Please log in to save membership.");
+      return;
+    }
 
-    const next = [...memberships, entry];
-    setMemberships(next);
-    persistMemberships(next);
-    setMembershipForm({ ...EMPTY_MEMBERSHIP_FORM });
-    setMembershipFormOpen(false);
-    toast.success("Membership added.");
+    setIsSavingMembership(true);
+    try {
+      const response = await createMembership({
+        api_token: apiToken,
+        organization_name: organizationName,
+        membership_type: membershipForm.membershipType.trim() || undefined,
+        reference_id: membershipForm.membershipId.trim() || undefined,
+        member_since: membershipForm.memberSince.trim() || undefined,
+        note: membershipForm.notes.trim() || undefined,
+        evidence: membershipForm.documentDataUrl.trim() || undefined,
+        logo: membershipForm.logoDataUrl.trim() || undefined,
+      });
+
+      const ok =
+        response.status === true ||
+        response.status === "success" ||
+        response.success === true ||
+        Boolean(response.data?.id);
+
+      if (!ok) {
+        toast.error(response.message || response.error || "Failed to save membership.");
+        return;
+      }
+
+      const entry = response.data
+        ? mapApiMembershipToEntry(response.data, {
+            documentDataUrl: membershipForm.documentDataUrl.trim() || undefined,
+            logoDataUrl: membershipForm.logoDataUrl.trim() || undefined,
+          })
+        : resolveMembershipEntryMedia({
+            id: `membership-${Date.now()}`,
+            organizationName,
+            membershipType: membershipForm.membershipType.trim(),
+            membershipId: membershipForm.membershipId.trim(),
+            memberSince: membershipForm.memberSince.trim(),
+            notes: membershipForm.notes.trim(),
+            ...(membershipForm.documentDataUrl
+              ? {
+                  documentFileName: membershipForm.documentFileName.trim() || "Membership document",
+                  documentDataUrl: membershipForm.documentDataUrl,
+                  documentUploadedAt:
+                    membershipForm.documentUploadedAt || new Date().toISOString(),
+                }
+              : {}),
+            ...(membershipForm.logoDataUrl
+              ? {
+                  logoFileName: membershipForm.logoFileName.trim() || "Organization logo",
+                  logoDataUrl: membershipForm.logoDataUrl,
+                }
+              : {}),
+          });
+
+      const next = [...memberships, entry];
+      setMemberships(next);
+      persistMemberships(next);
+      setMembershipForm({ ...EMPTY_MEMBERSHIP_FORM });
+      setMembershipFormOpen(false);
+      toast.success(response.message || "Membership saved successfully.");
+    } catch {
+      toast.error("Failed to save membership. Please try again.");
+    } finally {
+      setIsSavingMembership(false);
+    }
   };
 
   const handleRemoveMembership = (id: string) => {
@@ -761,14 +858,6 @@ export function ProfessionalVerification() {
     persistMemberships(next);
     toast.success("Membership removed.");
   };
-
-  const readFileAsDataUrl = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(new Error("Failed to read file"));
-      reader.readAsDataURL(file);
-    });
 
   const handleMembershipAssetClick = (target: MembershipUploadTarget) => {
     setMembershipUploadTarget(target);
@@ -828,39 +917,21 @@ export function ProfessionalVerification() {
     if (!file || !target) return;
 
     const isLogo = target.kind === "logo";
-    const imageTypes = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
-    const documentTypes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
-    const fileExtension = file.name.split(".").pop()?.toLowerCase() || "";
-    const validDocExtensions = ["jpg", "jpeg", "png", "gif", "webp", "pdf", "doc", "docx"];
+    const maxSize = isLogo ? 3 * 1024 * 1024 : 5 * 1024 * 1024;
 
-    if (isLogo) {
-      if (!file.type.startsWith("image/") && !["jpg", "jpeg", "png", "gif", "webp"].includes(fileExtension)) {
-        toast.error("Please select an image file for the organization logo.");
-        e.target.value = "";
-        setMembershipUploadTarget(null);
-        return;
-      }
-      if (file.size > 3 * 1024 * 1024) {
-        toast.error("Logo image must be less than 3MB.");
-        e.target.value = "";
-        setMembershipUploadTarget(null);
-        return;
-      }
-    } else if (
-      !imageTypes.includes(file.type) &&
-      !documentTypes.includes(file.type) &&
-      !validDocExtensions.includes(fileExtension)
-    ) {
-      toast.error("Please select an image or PDF/Word document.");
+    if (!isMembershipImageFile(file)) {
+      toast.error(
+        isLogo
+          ? "Please select an image file (JPEG, PNG, GIF, or WebP) for the logo."
+          : "Please select an image file (JPEG, PNG, GIF, or WebP) for the membership certificate."
+      );
       e.target.value = "";
       setMembershipUploadTarget(null);
       return;
-    } else if (file.size > 5 * 1024 * 1024) {
-      toast.error("Document must be less than 5MB.");
+    }
+
+    if (file.size > maxSize) {
+      toast.error(isLogo ? "Logo image must be less than 3MB." : "Certificate image must be less than 5MB.");
       e.target.value = "";
       setMembershipUploadTarget(null);
       return;
@@ -872,7 +943,7 @@ export function ProfessionalVerification() {
     setUploadingMembershipAsset(uploadKey);
 
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const dataUrl = await encodeImageFileAsBase64DataUrl(file);
       if (target.forForm) {
         applyMembershipAssetToForm(target.kind, file, dataUrl);
         toast.success(
@@ -895,6 +966,22 @@ export function ProfessionalVerification() {
     }
   };
 
+  const openMembershipEvidencePreview = (
+    title: string,
+    entry: Pick<ProfessionalMembershipEntry, "evidencePath" | "documentDataUrl">
+  ) => {
+    const urls = buildMembershipEvidenceViewUrls({
+      evidencePath: entry.evidencePath,
+      documentDataUrl: entry.documentDataUrl,
+    });
+    if (urls.length === 0) {
+      toast.error("No membership certificate is available to view.");
+      return;
+    }
+    setMembershipEvidencePreviewIndex(0);
+    setMembershipEvidencePreview({ title, urls });
+  };
+
   const renderMembershipDocumentSlot = (args: {
     label: string;
     hasDocument: boolean;
@@ -902,8 +989,9 @@ export function ProfessionalVerification() {
     documentUrl: string | null;
     uploadKey: string;
     onUpload: () => void;
+    onView?: () => void;
   }) => {
-    const { label, hasDocument, uploadedOn, documentUrl, uploadKey, onUpload } = args;
+    const { label, hasDocument, uploadedOn, documentUrl, uploadKey, onUpload, onView } = args;
     const slotSurfaceClass = hasDocument
       ? "bg-green-50 border-green-200"
       : "bg-gray-50 border-gray-100";
@@ -925,8 +1013,18 @@ export function ProfessionalVerification() {
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            {hasDocument && documentUrl ? (
-              <Button variant="ghost" size="sm" onClick={() => window.open(documentUrl, "_blank")}>
+            {hasDocument && (onView || documentUrl) ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (onView) {
+                    onView();
+                    return;
+                  }
+                  if (documentUrl) window.open(documentUrl, "_blank", "noopener,noreferrer");
+                }}
+              >
                 View
               </Button>
             ) : null}
@@ -937,7 +1035,7 @@ export function ProfessionalVerification() {
               disabled={uploadingMembershipAsset === uploadKey}
             >
               {uploadingMembershipAsset === uploadKey ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <>
                   <Upload className="mr-1 h-4 w-4" />
@@ -1912,7 +2010,7 @@ export function ProfessionalVerification() {
           <input
             ref={membershipAssetInputRef}
             type="file"
-            accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,.docx"
+            accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp"
             onChange={handleMembershipAssetChange}
             className="hidden"
           />
@@ -2028,6 +2126,12 @@ export function ProfessionalVerification() {
                       uploadKey: "form-document",
                       onUpload: () =>
                         handleMembershipAssetClick({ kind: "document", forForm: true }),
+                      onView: membershipForm.documentDataUrl
+                        ? () =>
+                            openMembershipEvidencePreview("Membership certificate preview", {
+                              documentDataUrl: membershipForm.documentDataUrl,
+                            })
+                        : undefined,
                     })}
                   </div>
 
@@ -2045,9 +2149,17 @@ export function ProfessionalVerification() {
                     <Button
                       type="button"
                       className="bg-red-600 hover:bg-red-700"
-                      onClick={handleAddMembership}
+                      onClick={() => void handleAddMembership()}
+                      disabled={isSavingMembership}
                     >
-                      Save membership
+                      {isSavingMembership ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        "Save membership"
+                      )}
                     </Button>
                     <Button
                       type="button"
@@ -2135,7 +2247,7 @@ export function ProfessionalVerification() {
                       <div className="mt-4 space-y-2">
                         {renderMembershipDocumentSlot({
                           label: "Membership certificate document",
-                          hasDocument: Boolean(membership.documentDataUrl),
+                          hasDocument: Boolean(membership.documentDataUrl || membership.evidencePath),
                           uploadedOn: membership.documentUploadedAt
                             ? formatDate(membership.documentUploadedAt)
                             : null,
@@ -2146,6 +2258,11 @@ export function ProfessionalVerification() {
                               kind: "document",
                               membershipId: membership.id,
                             }),
+                          onView: () =>
+                            openMembershipEvidencePreview(
+                              `${membership.organizationName} — membership certificate`,
+                              membership
+                            ),
                         })}
                         {renderMembershipLogoSlot({
                           label: "Organization logo",
@@ -2163,14 +2280,78 @@ export function ProfessionalVerification() {
                 </div>
               )}
 
-              {/* <p className="mt-4 text-xs text-gray-500">
-                Display only — memberships are saved on this device for now. Admin review and public profile
-                display will be connected in a future update.
+              {/*               <p className="mt-4 text-xs text-gray-500">
+                Membership certificate and organization logo must be image files. They are converted to
+                base64 and sent with your membership details when you save.
               </p> */}
             </div>
           </div>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={membershipEvidencePreview !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setMembershipEvidencePreview(null);
+            setMembershipEvidencePreviewIndex(0);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-xl text-[#0A1A2F]">
+              {membershipEvidencePreview?.title ?? "Membership certificate"}
+            </DialogTitle>
+            <DialogDescription>
+              Preview of your uploaded membership certificate evidence.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-auto py-2">
+            {membershipEvidencePreview?.urls[membershipEvidencePreviewIndex] ? (
+              <img
+                src={membershipEvidencePreview.urls[membershipEvidencePreviewIndex]}
+                alt={membershipEvidencePreview.title}
+                className="mx-auto max-h-[70vh] w-full object-contain rounded-lg border border-gray-200 bg-gray-50"
+                onError={() => {
+                  setMembershipEvidencePreviewIndex((current) => {
+                    const max = (membershipEvidencePreview?.urls.length ?? 1) - 1;
+                    if (current >= max) {
+                      toast.error("Unable to load membership certificate. Please try again later.");
+                      return current;
+                    }
+                    return current + 1;
+                  });
+                }}
+              />
+            ) : (
+              <p className="text-sm text-gray-500 text-center py-8">
+                No certificate preview available.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:justify-between">
+            {membershipEvidencePreview?.urls[membershipEvidencePreviewIndex] &&
+            !membershipEvidencePreview.urls[membershipEvidencePreviewIndex].startsWith("data:") ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  const url = membershipEvidencePreview?.urls[membershipEvidencePreviewIndex];
+                  if (url) window.open(url, "_blank", "noopener,noreferrer");
+                }}
+              >
+                Open in new tab
+              </Button>
+            ) : (
+              <span />
+            )}
+            <Button type="button" onClick={() => setMembershipEvidencePreview(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={insuranceDetailsOpen} onOpenChange={setInsuranceDetailsOpen}>
         <DialogContent className="max-w-lg">

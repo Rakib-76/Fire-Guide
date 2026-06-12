@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Search, Calendar, MapPin, Clock, User, ChevronRight, Filter, X, CheckCircle, AlertCircle, Phone, Mail, Home, FileText, Navigation, Loader2, Upload, XCircle, Wallet, RefreshCw } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -44,6 +44,10 @@ import {
 } from "../lib/professionalRenewalRequestLocal";
 import { toast } from "sonner";
 import { buildProfessionalBookingServiceDetails } from "../lib/bookingServiceDetails";
+import {
+  getCustomQuoteRequestDisplayRows,
+  loadQuoteRequestDurationLabelMap,
+} from "./CustomQuoteRequestDetailsPanel";
 
 interface ProfessionalBookingsProps {
   onViewDetails: (bookingId: number) => void;
@@ -70,6 +74,7 @@ interface Booking {
   floors?: number;
   accessInstructions?: string;
   serviceDetails: Array<{ label: string; value: string }>;
+  customQuoteRequestData?: string | Record<string, unknown>;
 }
 
 // Helper function to format date
@@ -152,6 +157,18 @@ const mapApiResponseToBooking = (apiBooking: ProfessionalBookingItem): Booking =
     .filter(Boolean)
     .join(", ");
 
+  const selectedServiceDetails = buildProfessionalBookingServiceDetails(apiBooking);
+  const customQuoteRequestData = apiBooking.custom_quote_details?.request_data;
+  const serviceDetails =
+    selectedServiceDetails.length > 0
+      ? selectedServiceDetails
+      : customQuoteRequestData
+        ? getCustomQuoteRequestDisplayRows(customQuoteRequestData).map(({ label, value }) => ({
+            label,
+            value,
+          }))
+        : [];
+
   return {
     id: apiBooking.id,
     reference: apiBooking.ref_code || `FG-${apiBooking.id}`,
@@ -180,7 +197,11 @@ const mapApiResponseToBooking = (apiBooking: ProfessionalBookingItem): Booking =
     accessInstructions:
       (typeof apiBooking.access_note === "string" && apiBooking.access_note.trim()) ||
       undefined,
-    serviceDetails: buildProfessionalBookingServiceDetails(apiBooking),
+    serviceDetails,
+    customQuoteRequestData:
+      selectedServiceDetails.length === 0 && customQuoteRequestData
+        ? customQuoteRequestData
+        : undefined,
   };
 };
 
@@ -211,6 +232,28 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
   const [showUploadReportModal, setShowUploadReportModal] = useState(false);
   const [uploadReportBooking, setUploadReportBooking] = useState<UploadReportBookingData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fraDurationLabels, setFraDurationLabels] = useState<ReadonlyMap<number, string>>(
+    () => new Map()
+  );
+
+  useEffect(() => {
+    loadQuoteRequestDurationLabelMap().then(setFraDurationLabels);
+  }, []);
+
+  const selectedBookingServiceDetails = useMemo(() => {
+    if (!selectedBooking) return [];
+    if (selectedBooking.customQuoteRequestData) {
+      return getCustomQuoteRequestDisplayRows(
+        selectedBooking.customQuoteRequestData,
+        fraDurationLabels
+      );
+    }
+    return (selectedBooking.serviceDetails ?? []).map((row, index) => ({
+      id: `service-${index}`,
+      label: row.label,
+      value: row.value,
+    }));
+  }, [selectedBooking, fraDurationLabels]);
 
   const [bookingsData, setBookingsData] = useState<Booking[]>([]);
   const [allBookingsData, setAllBookingsData] = useState<Booking[]>([]); // For stats calculation
@@ -1236,10 +1279,10 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
                   <Home className="w-5 h-5 shrink-0" />
                   Service details
                 </h3>
-                {selectedBooking.serviceDetails.length > 0 ? (
+                {selectedBookingServiceDetails.length > 0 ? (
                   <div className="bg-gray-50 p-4 rounded-lg space-y-1.5 text-sm text-gray-600">
-                    {selectedBooking.serviceDetails.map((row) => (
-                      <p key={row.label}>
+                    {selectedBookingServiceDetails.map((row) => (
+                      <p key={row.id}>
                         {row.label}: <span className="text-gray-900">{row.value}</span>
                       </p>
                     ))}

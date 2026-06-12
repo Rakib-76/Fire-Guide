@@ -1497,6 +1497,15 @@ export interface CustomerAllBookingItem {
     type?: string;
     data?: Record<string, { id?: number; value?: string } | string | number | null>;
   } | null;
+  /** Set when booking was created from an accepted custom quote. */
+  custom_id?: string | number | null;
+  custom_quote_details?: {
+    id?: number;
+    service_id?: number;
+    request_data?: string | Record<string, unknown>;
+    status?: string;
+    [key: string]: unknown;
+  } | null;
   user: {
     id: number;
     full_name?: string | null;

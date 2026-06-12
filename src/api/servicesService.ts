@@ -2170,6 +2170,14 @@ export interface FilterProfessionalExperienceItem {
   experience_name?: string | null;
 }
 
+/** Membership row from filter-professional responses */
+export interface FilterProfessionalMembershipItem {
+  id: number;
+  organization_name?: string | null;
+  logo?: string | null;
+  status?: string | null;
+}
+
 /** Single professional from POST /filter-professional/for-fra response */
 export interface FilterProfessionalForFraItem {
   id: number;
@@ -2190,6 +2198,8 @@ export interface FilterProfessionalForFraItem {
   total_price?: number;
   professional_certificates?: FilterProfessionalCertificateItem[];
   professional_experience?: FilterProfessionalExperienceItem[];
+  membership?: FilterProfessionalMembershipItem[];
+  memberships?: FilterProfessionalMembershipItem[];
 }
 
 export interface FilterProfessionalForFraResponse {

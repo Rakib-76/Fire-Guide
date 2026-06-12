@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { Search, Star, MoreVertical, Mail, Phone, MapPin, CheckCircle, Clock, XCircle, Eye, Ban, Award, FileText, Download, AlertCircle, Edit2, Image, File, Loader2, Upload } from "lucide-react";
 import { getApiToken } from "../lib/auth";
 import { resolveApiBaseUrl } from "../lib/apiBaseUrl";
-import { getAdminProfessionalSummary, AdminProfessionalSummaryData, getAdminProfessionals, AdminProfessionalListItem, adminProfessionalTakeAction, AdminProfessionalStatus, getAdminProfessionalSingle, AdminProfessionalSingleData, AdminProfessionalExperience, adminProfessionalUpdate, adminProfessionalUploadProfileImage, adminProfessionalChangeCertificateStatus, adminProfessionalChangeServiceStatus, adminProfessionalChangeExperienceStatus, adminApproveInsuranceCoverage, adminRejectInsuranceCoverage, adminApproveProfessionalIdentity, adminRejectProfessionalIdentity } from "../api/adminService";
+import { getAdminProfessionalSummary, AdminProfessionalSummaryData, getAdminProfessionals, AdminProfessionalListItem, adminProfessionalTakeAction, AdminProfessionalStatus, getAdminProfessionalSingle, AdminProfessionalSingleData, AdminProfessionalExperience, AdminProfessionalMembershipItem, adminProfessionalUpdate, adminProfessionalUploadProfileImage, adminProfessionalChangeCertificateStatus, adminProfessionalChangeServiceStatus, adminProfessionalChangeExperienceStatus, adminApproveInsuranceCoverage, adminRejectInsuranceCoverage, adminApproveProfessionalIdentity, adminRejectProfessionalIdentity, adminApproveMembership, adminRejectMembership } from "../api/adminService";
+import { buildMembershipEvidenceViewUrls, buildMembershipLogoViewUrls, getMembershipMediaUrlCandidates } from "../api/membershipService";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card, CardContent } from "./ui/card";
@@ -26,6 +27,48 @@ import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Separator } from "./ui/separator";
 import { toast } from "sonner";
+
+function MembershipMediaImage({
+  path,
+  alt,
+  className,
+  onExhausted,
+}: {
+  path: string;
+  alt: string;
+  className?: string;
+  onExhausted?: () => void;
+}) {
+  const urls = React.useMemo(() => getMembershipMediaUrlCandidates(path), [path]);
+  const [urlIndex, setUrlIndex] = React.useState(0);
+  const [failed, setFailed] = React.useState(false);
+  const src = urls[urlIndex] ?? "";
+
+  React.useEffect(() => {
+    setUrlIndex(0);
+    setFailed(false);
+  }, [path]);
+
+  if (!src || failed) return null;
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      onError={() => {
+        setUrlIndex((current) => {
+          if (current >= urls.length - 1) {
+            setFailed(true);
+            onExhausted?.();
+            return current;
+          }
+          return current + 1;
+        });
+      }}
+    />
+  );
+}
 
 export function AdminProfessionals() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -66,6 +109,8 @@ export function AdminProfessionals() {
   const [serviceReuploadNote, setServiceReuploadNote] = useState("");
   const [filePreviewModalOpen, setFilePreviewModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [filePreviewUrlIndex, setFilePreviewUrlIndex] = useState(0);
+  const [filePreviewFailed, setFilePreviewFailed] = useState(false);
   const [evidenceStatuses, setEvidenceStatuses] = useState<{ [key: string]: string }>({});
   const [professionalSummary, setProfessionalSummary] = useState<AdminProfessionalSummaryData | null>(null);
   const [professionalSummaryLoading, setProfessionalSummaryLoading] = useState(false);
@@ -81,6 +126,8 @@ export function AdminProfessionals() {
   const [insuranceUpdatingId, setInsuranceUpdatingId] = useState<string | null>(null);
   const [identityStatuses, setIdentityStatuses] = useState<{ [key: string]: string }>({});
   const [identityUpdatingId, setIdentityUpdatingId] = useState<string | null>(null);
+  const [membershipStatuses, setMembershipStatuses] = useState<{ [key: string]: string }>({});
+  const [membershipUpdatingId, setMembershipUpdatingId] = useState<string | null>(null);
   const [serviceUpdatingId, setServiceUpdatingId] = useState<number | string | null>(null);
 
   useEffect(() => {
@@ -164,6 +211,24 @@ export function AdminProfessionals() {
   ): AdminProfessionalExperience[] => {
     if (!data) return [];
     return data.experience ?? data.experiences ?? [];
+  };
+
+  const getProfessionalMemberships = (
+    data: AdminProfessionalSingleData | null | undefined
+  ): AdminProfessionalMembershipItem[] => {
+    if (!data) return [];
+    return data.membership ?? data.memberships ?? [];
+  };
+
+  const formatMemberSince = (value: string | null | undefined): string => {
+    if (!value?.trim()) return "—";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime()) || parsed.getFullYear() < 1971) return "—";
+    return parsed.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
   };
 
   const verificationStatusLabel = (status: "approved" | "rejected" | "pending"): string => {
@@ -999,6 +1064,8 @@ export function AdminProfessionals() {
   };
 
   const handleViewFile = (file: any) => {
+    setFilePreviewUrlIndex(0);
+    setFilePreviewFailed(false);
     setSelectedFile(file);
     setFilePreviewModalOpen(true);
   };
@@ -1086,8 +1153,13 @@ export function AdminProfessionals() {
   };
 
   const handleDownloadEvidence = async () => {
-    if (!selectedFile?.evidenceUrl) return;
-    const url = selectedFile.evidenceUrl;
+    const previewUrls: string[] = Array.isArray(selectedFile?.evidenceUrls)
+      ? selectedFile.evidenceUrls.filter(Boolean)
+      : selectedFile?.evidenceUrl
+        ? [selectedFile.evidenceUrl]
+        : [];
+    const url = previewUrls[filePreviewUrlIndex] ?? previewUrls[0];
+    if (!url) return;
     let filename = selectedFile.fileName;
     try {
       const pathname = new URL(url).pathname;
@@ -1218,6 +1290,52 @@ export function AdminProfessionals() {
       toast.error(e?.response?.data?.message || e?.message || "Failed to update identity status");
     } finally {
       setIdentityUpdatingId(null);
+    }
+  };
+
+  const handleUpdateMembershipStatus = async (
+    membershipIdRaw: string,
+    membershipTitle: string,
+    action: "approved" | "rejected"
+  ) => {
+    const token = getApiToken();
+    const membershipId = Number(membershipIdRaw);
+    if (!token || !Number.isFinite(membershipId)) {
+      toast.error("Unable to update membership status");
+      return;
+    }
+    setMembershipUpdatingId(membershipIdRaw);
+    try {
+      const res =
+        action === "approved"
+          ? await adminApproveMembership({ api_token: token, membership_id: membershipId })
+          : await adminRejectMembership({ api_token: token, membership_id: membershipId });
+      if (!isAdminActionSuccess(res)) {
+        toast.error(res?.message || "Failed to update membership status");
+        return;
+      }
+      const uiStatus = action === "approved" ? "approved" : "rejected";
+      const apiStatus = action === "approved" ? "verified" : "rejected";
+      setMembershipStatuses((prev) => ({ ...prev, [membershipIdRaw]: uiStatus }));
+      setProfileDetail((prev) => {
+        if (!prev) return prev;
+        const patch = (items?: AdminProfessionalMembershipItem[]) =>
+          items?.map((item) => (item.id === membershipId ? { ...item, status: apiStatus } : item));
+        return {
+          ...prev,
+          membership: patch(prev.membership),
+          memberships: patch(prev.memberships),
+        };
+      });
+      toast.success(
+        action === "approved"
+          ? `${membershipTitle} marked as approved`
+          : `${membershipTitle} marked as rejected`
+      );
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || e?.message || "Failed to update membership status");
+    } finally {
+      setMembershipUpdatingId(null);
     }
   };
 
@@ -2826,6 +2944,194 @@ export function AdminProfessionals() {
                   );
                 })()}
 
+                {/* Professional Memberships - from API membership */}
+                {(() => {
+                  const membershipList = getProfessionalMemberships(profileDetail).map((item, idx) => {
+                    const evidencePath = item.evidence ?? "";
+                    const logoPath = item.logo ?? "";
+                    const isPdf = /\.pdf(\?.*)?$/i.test(evidencePath);
+                    const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i.test(evidencePath);
+                    const evidenceUrls = buildMembershipEvidenceViewUrls({ evidencePath });
+                    const logoUrls = buildMembershipLogoViewUrls({ logoPath });
+                    return {
+                      id: String(item.id ?? `membership-${idx}`),
+                      organizationName: item.organization_name || "Professional membership",
+                      membershipType: item.membership_type ?? "",
+                      referenceId: item.reference_id ?? "",
+                      memberSince: formatMemberSince(item.member_since),
+                      note: item.note ?? "",
+                      uploadDate: item.created_at
+                        ? new Date(item.created_at).toLocaleDateString("en-GB")
+                        : "—",
+                      status: mapVerificationUiStatus(item.status),
+                      evidencePath,
+                      logoPath,
+                      evidenceUrls,
+                      logoUrls,
+                      evidenceUrl: evidenceUrls[0] ?? null,
+                      logoUrl: logoUrls[0] ?? null,
+                      fileName: evidencePath || "Membership certificate",
+                      fileType: isPdf ? "pdf" : isImage ? "image" : "document",
+                    };
+                  });
+                  if (membershipList.length === 0) return null;
+                  return (
+                    <>
+                      <div>
+                        <div className="mb-3">
+                          <h4 className="text-lg font-medium text-gray-900">Professional Memberships</h4>
+                          <p className="text-sm text-gray-600 mt-1">
+                            Membership certificates submitted by the professional for verification
+                          </p>
+                        </div>
+
+                        {membershipList.every(
+                          (item) => (membershipStatuses[item.id] || item.status) === "approved"
+                        ) && (
+                          <div className="mb-4 flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <CheckCircle className="w-5 h-5 text-green-600" />
+                            <span className="text-sm font-medium text-green-900">
+                              All memberships verified
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="space-y-3">
+                          {membershipList.map((membership) => {
+                            const currentStatus = membershipStatuses[membership.id] || membership.status;
+                            const isApproved = currentStatus === "approved";
+                            const isPending = currentStatus === "pending";
+                            const isRejected = currentStatus === "rejected";
+
+                            return (
+                              <div
+                                key={membership.id}
+                                className={`p-4 border rounded-lg transition-all ${
+                                  isApproved
+                                    ? "bg-green-50 border-green-200"
+                                    : isRejected
+                                      ? "bg-red-50 border-red-200"
+                                      : "bg-white border-gray-200"
+                                }`}
+                              >
+                                <div className="flex items-start gap-3 mb-3">
+                                  <div className="relative flex-shrink-0 w-12 h-12 rounded overflow-hidden bg-gray-100">
+                                    <div className="absolute inset-0 flex items-center justify-center bg-blue-100">
+                                      <Award className="w-6 h-6 text-blue-600" />
+                                    </div>
+                                    {membership.logoPath ? (
+                                      <MembershipMediaImage
+                                        path={membership.logoPath}
+                                        alt={membership.organizationName}
+                                        className="relative z-10 w-full h-full object-cover"
+                                      />
+                                    ) : null}
+                                  </div>
+
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-medium text-gray-900 break-words">
+                                      {membership.organizationName}
+                                    </p>
+                                    {membership.membershipType ? (
+                                      <p className="text-sm text-gray-700 mt-0.5">{membership.membershipType}</p>
+                                    ) : null}
+                                    <div className="mt-1 space-y-0.5 text-xs text-gray-500">
+                                      {membership.referenceId ? (
+                                        <p>Reference ID: {membership.referenceId}</p>
+                                      ) : null}
+                                      {membership.memberSince !== "—" ? (
+                                        <p>Member since: {membership.memberSince}</p>
+                                      ) : null}
+                                      {membership.note ? (
+                                        <p className="text-gray-600 break-words">{membership.note}</p>
+                                      ) : null}
+                                      <p>Uploaded: {membership.uploadDate}</p>
+                                    </div>
+                                  </div>
+
+                                  <Badge
+                                    className={profileModalStatusBadgeClass(
+                                      isApproved ? "approved" : isPending ? "pending" : "rejected"
+                                    )}
+                                  >
+                                    {isApproved ? "Verified" : isPending ? "Not Verified" : "Rejected"}
+                                  </Badge>
+                                </div>
+
+                                <div className={verificationActionsClass}>
+                                  {membership.evidenceUrls.length > 0 && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() =>
+                                        handleViewFile({
+                                          id: membership.id,
+                                          fileName: membership.fileName,
+                                          fileType: membership.fileType,
+                                          uploadDate: membership.uploadDate,
+                                          status: currentStatus,
+                                          evidenceUrl: membership.evidenceUrls[0],
+                                          evidenceUrls: membership.evidenceUrls,
+                                        })
+                                      }
+                                      className={verificationActionBtnClass}
+                                    >
+                                      <Eye className="w-4 h-4 mr-2 shrink-0" />
+                                      View
+                                    </Button>
+                                  )}
+                                  {!isApproved && (
+                                    <Button
+                                      size="sm"
+                                      className={`bg-green-600 hover:bg-green-700 ${verificationActionBtnClass}`}
+                                      disabled={membershipUpdatingId === membership.id}
+                                      onClick={() => {
+                                        void handleUpdateMembershipStatus(
+                                          membership.id,
+                                          membership.organizationName,
+                                          "approved"
+                                        );
+                                      }}
+                                    >
+                                      <CheckCircle className="w-4 h-4 mr-2 shrink-0" />
+                                      Approve
+                                    </Button>
+                                  )}
+                                  {!isRejected && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className={`border-red-600 text-red-600 hover:bg-red-50 ${verificationActionBtnClass}`}
+                                      disabled={membershipUpdatingId === membership.id}
+                                      onClick={() => {
+                                        void handleUpdateMembershipStatus(
+                                          membership.id,
+                                          membership.organizationName,
+                                          "rejected"
+                                        );
+                                      }}
+                                    >
+                                      <XCircle className="w-4 h-4 mr-2" />
+                                      Reject
+                                    </Button>
+                                  )}
+                                  {!membership.evidenceUrls.length && isPending && (
+                                    <p className="text-xs text-gray-500 flex items-center">
+                                      No certificate attached
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <Separator />
+                    </>
+                  );
+                })()}
+
                 {/* Account Details */}
                 <div>
                   <h4 className="font-semibold text-gray-900 mb-3">Account Details</h4>
@@ -3183,45 +3489,84 @@ export function AdminProfessionals() {
       </Dialog> */}
 
       {/* File Preview Modal */}
-      <Dialog open={filePreviewModalOpen} onOpenChange={setFilePreviewModalOpen}>
+      <Dialog
+        open={filePreviewModalOpen}
+        onOpenChange={(open) => {
+          setFilePreviewModalOpen(open);
+          if (!open) {
+            setFilePreviewUrlIndex(0);
+            setFilePreviewFailed(false);
+          }
+        }}
+      >
         <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-2xl text-[#0A1A2F]">Document Preview</DialogTitle>
           </DialogHeader>
 
           <div className="py-4 flex-1 min-h-0 overflow-auto">
-            {selectedFile?.evidenceUrl ? (
-              (
-                selectedFile?.fileType === 'pdf' ||
-                (/\.pdf(\?.*)?$/i.test(selectedFile?.evidenceUrl || ""))
-              ) ? (
+            {(() => {
+              const previewUrls: string[] = Array.isArray(selectedFile?.evidenceUrls)
+                ? selectedFile.evidenceUrls.filter(Boolean)
+                : selectedFile?.evidenceUrl
+                  ? [selectedFile.evidenceUrl]
+                  : [];
+              const activePreviewUrl = previewUrls[filePreviewUrlIndex] ?? previewUrls[0] ?? "";
+              const isPdfPreview =
+                selectedFile?.fileType === "pdf" ||
+                /\.pdf(\?.*)?$/i.test(activePreviewUrl || "") ||
+                /\.pdf(\?.*)?$/i.test(selectedFile?.fileName || "");
+              const isImagePreview =
+                selectedFile?.fileType === "image" ||
+                /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i.test(activePreviewUrl || "") ||
+                /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i.test(selectedFile?.fileName || "") ||
+                /path=[^&]*\.(png|jpg|jpeg|gif|webp|bmp|svg)/i.test(activePreviewUrl || "");
+
+              if (!activePreviewUrl) {
+                return (
+                  <div className="bg-gray-100 rounded-lg p-8 text-center min-h-[200px] flex flex-col items-center justify-center">
+                    <FileText className="w-24 h-24 text-gray-400 mb-4" />
+                    <p className="text-lg font-medium text-gray-900 mb-2">{filePreviewDisplayName(selectedFile?.fileName)}</p>
+                    <p className="text-sm text-gray-600">File URL not available for preview or download</p>
+                  </div>
+                );
+              }
+
+              return isPdfPreview ? (
                 <div className="space-y-4">
                   <div className="bg-gray-100 rounded-lg overflow-hidden min-h-[400px]">
                     <iframe
-                      src={`${selectedFile.evidenceUrl}#toolbar=1`}
+                      src={`${activePreviewUrl}#toolbar=1`}
                       title={filePreviewDisplayName(selectedFile.fileName)}
                       className="w-full h-[500px] border-0"
                     />
                   </div>
                 </div>
-              ) : (
-                selectedFile?.fileType === 'image' ||
-                (/\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i.test(selectedFile?.evidenceUrl || ""))
-              ) ? (
+              ) : isImagePreview ? (
                 <div className="bg-gray-100 rounded-lg p-4 min-h-[200px] flex items-center justify-center">
-                  <img
-                    src={selectedFile.evidenceUrl}
-                    alt={filePreviewDisplayName(selectedFile.fileName)}
-                    className="max-w-full max-h-[500px] object-contain rounded shadow-lg"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                      (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                    }}
-                  />
-                  <div className="hidden text-center p-4">
-                    <FileText className="w-16 h-16 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">Unable to load image preview</p>
-                  </div>
+                  {filePreviewFailed ? (
+                    <div className="text-center p-4">
+                      <FileText className="w-16 h-16 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500">Unable to load image preview</p>
+                    </div>
+                  ) : (
+                    <img
+                      key={activePreviewUrl}
+                      src={activePreviewUrl}
+                      alt={filePreviewDisplayName(selectedFile.fileName)}
+                      className="max-w-full max-h-[500px] object-contain rounded shadow-lg"
+                      onError={() => {
+                        setFilePreviewUrlIndex((current) => {
+                          const max = previewUrls.length - 1;
+                          if (current >= max) {
+                            setFilePreviewFailed(true);
+                            return current;
+                          }
+                          return current + 1;
+                        });
+                      }}
+                    />
+                  )}
                 </div>
               ) : (
                 <div className="bg-gray-100 rounded-lg p-8 text-center min-h-[200px] flex flex-col items-center justify-center">
@@ -3233,14 +3578,8 @@ export function AdminProfessionals() {
                     Download
                   </Button>
                 </div>
-              )
-            ) : (
-              <div className="bg-gray-100 rounded-lg p-8 text-center min-h-[200px] flex flex-col items-center justify-center">
-                <FileText className="w-24 h-24 text-gray-400 mb-4" />
-                <p className="text-lg font-medium text-gray-900 mb-2">{filePreviewDisplayName(selectedFile?.fileName)}</p>
-                <p className="text-sm text-gray-600">File URL not available for preview or download</p>
-              </div>
-            )}
+              );
+            })()}
 
             {/* File Information */}
             <div className="mt-6 p-4 bg-gray-50 rounded-lg">
@@ -3272,7 +3611,7 @@ export function AdminProfessionals() {
             <Button variant="outline" className="transition-colors hover:bg-gray-100 hover:text-gray-900" onClick={() => setFilePreviewModalOpen(false)}>
               Close
             </Button>
-            {selectedFile?.evidenceUrl && (
+            {(selectedFile?.evidenceUrl || (Array.isArray(selectedFile?.evidenceUrls) && selectedFile.evidenceUrls.length > 0)) && (
               <Button className="bg-blue-600 text-white transition-colors hover:bg-blue-700 hover:text-white" onClick={handleDownloadEvidence}>
                 <Download className="w-4 h-4 mr-2" />
                 Download

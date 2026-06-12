@@ -268,6 +268,67 @@ export const fetchProfessionalProfileDetails = async (
 };
 
 /**
+ * Customer professional profile — consolidated details page data.
+ * POST /professional/details-page/get-all
+ * Body: { professional_id }
+ */
+export interface ProfessionalDetailsPageMembershipItem {
+  id: number;
+  organization_name: string;
+  membership_type?: string | null;
+  reference_id?: string | null;
+  member_since?: string | null;
+  note?: string | null;
+  logo?: string | null;
+  evidence?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ProfessionalDetailsPageGetAllData {
+  membership?: ProfessionalDetailsPageMembershipItem[];
+  memberships?: ProfessionalDetailsPageMembershipItem[];
+  [key: string]: unknown;
+}
+
+export interface ProfessionalDetailsPageGetAllResponse {
+  status?: boolean | string;
+  success?: boolean;
+  message?: string;
+  total?: number;
+  /** API returns membership rows as a direct array, or nested under membership/memberships. */
+  data?: ProfessionalDetailsPageMembershipItem[] | ProfessionalDetailsPageGetAllData;
+}
+
+export const fetchProfessionalDetailsPageGetAll = async (
+  professionalId: number
+): Promise<ProfessionalDetailsPageMembershipItem[] | ProfessionalDetailsPageGetAllData> => {
+  const response = await apiClient.post<ProfessionalDetailsPageGetAllResponse>(
+    '/professional/details-page/get-all',
+    { professional_id: professionalId }
+  );
+  const payload = response.data;
+  const data = payload?.data;
+  const isSuccess =
+    payload?.status === true ||
+    payload?.success === true ||
+    String(payload?.status ?? "").toLowerCase() === "success";
+  if (data != null && (isSuccess || Array.isArray(data))) {
+    return data;
+  }
+  throw new Error(payload?.message || 'Failed to fetch professional profile details');
+};
+
+export function getProfessionalDetailsPageMemberships(
+  data: ProfessionalDetailsPageMembershipItem[] | ProfessionalDetailsPageGetAllData | null | undefined
+): ProfessionalDetailsPageMembershipItem[] {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  return data.membership ?? data.memberships ?? [];
+}
+
+/**
  * Professional profile pricing — called when View Profile is clicked.
  * POST https://fireguide.attoexasolutions.com/api/professional-profile/pricing
  * Body: { professional_id } — use the professional ID from the Professional List API.

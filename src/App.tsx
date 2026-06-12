@@ -44,6 +44,8 @@ export interface Booking {
   customerEmail?: string;
   /** Rows from API `selected_service.data` for details modal. */
   serviceDetails?: Array<{ label: string; value: string }>;
+  /** Raw custom quote `request_data` when booking came from an accepted custom quote. */
+  customQuoteRequestData?: string | Record<string, unknown>;
 }
 
 export interface Payment {

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Search, Calendar, MoreVertical, Eye, XCircle, CheckCircle, Clock, AlertCircle, MapPin, User, Briefcase, Mail, Phone, FileText, RefreshCw, Loader2 } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { Search, Calendar, MoreVertical, Eye, XCircle, CheckCircle, Clock, AlertCircle, MapPin, User, Briefcase, Mail, Phone, FileText, RefreshCw, Loader2, Home } from "lucide-react";
 import { getApiToken } from "../lib/auth";
 import {
   getAdminBookings,
@@ -34,6 +34,11 @@ import {
   getBookingPaymentStatusKey,
   getBookingPaymentStatusLabel,
 } from "../lib/bookingPaymentStatus";
+import { buildBookingServiceDetailsFromApiSelectedService } from "../lib/bookingServiceDetails";
+import {
+  getCustomQuoteRequestDisplayRows,
+  loadQuoteRequestDurationLabelMap,
+} from "./CustomQuoteRequestDetailsPanel";
 
 type BookingDisplay = {
   id: number;
@@ -57,6 +62,8 @@ type BookingDisplay = {
   createdAt: string;
   paymentStatus: string;
   notes: string;
+  serviceDetails: Array<{ label: string; value: string }>;
+  customQuoteRequestData?: string | Record<string, unknown>;
 };
 
 function formatBookingDate(iso: string): string {
@@ -116,6 +123,28 @@ export function AdminBookings() {
   } | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [cancellingBookingId, setCancellingBookingId] = useState<number | null>(null);
+  const [fraDurationLabels, setFraDurationLabels] = useState<ReadonlyMap<number, string>>(
+    () => new Map()
+  );
+
+  useEffect(() => {
+    loadQuoteRequestDurationLabelMap().then(setFraDurationLabels);
+  }, []);
+
+  const selectedBookingServiceDetails = useMemo(() => {
+    if (!selectedBooking) return [];
+    if (selectedBooking.customQuoteRequestData) {
+      return getCustomQuoteRequestDisplayRows(
+        selectedBooking.customQuoteRequestData,
+        fraDurationLabels
+      );
+    }
+    return (selectedBooking.serviceDetails ?? []).map((row, index) => ({
+      id: `service-${index}`,
+      label: row.label,
+      value: row.value,
+    }));
+  }, [selectedBooking, fraDurationLabels]);
 
   const loadBookings = async () => {
     const token = getApiToken();
@@ -178,6 +207,20 @@ export function AdminBookings() {
 
   const mapApiToDisplay = (b: AdminBookingListItem): BookingDisplay => {
     const { date, time } = formatAppointmentDisplay(b.selected_date, b.selected_time);
+    const selectedServiceDetails = buildBookingServiceDetailsFromApiSelectedService(
+      b.selected_service ?? null
+    );
+    const customQuoteRequestData = b.custom_quote_details?.request_data;
+    const serviceDetails =
+      selectedServiceDetails.length > 0
+        ? selectedServiceDetails
+        : customQuoteRequestData
+          ? getCustomQuoteRequestDisplayRows(customQuoteRequestData).map(({ label, value }) => ({
+              label,
+              value,
+            }))
+          : [];
+
     return {
       id: b.id,
       reference: b.ref_code ?? "—",
@@ -208,6 +251,11 @@ export function AdminBookings() {
         ? getBookingPaymentStatusKey({ payment_status: b.payment_status })
         : "",
       notes: "",
+      serviceDetails,
+      customQuoteRequestData:
+        selectedServiceDetails.length === 0 && customQuoteRequestData
+          ? customQuoteRequestData
+          : undefined,
     };
   };
 
@@ -720,6 +768,27 @@ export function AdminBookings() {
                   <p className="text-gray-900 mt-1">{selectedBooking?.notes}</p>
                 </div>
               </div>
+            </div>
+
+            <Separator />
+
+            {/* Service details */}
+            <div>
+              <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <Home className="w-5 h-5 shrink-0" />
+                Service details
+              </h4>
+              {selectedBookingServiceDetails.length > 0 ? (
+                <div className="bg-gray-50 p-4 rounded-lg space-y-1.5 text-sm text-gray-600">
+                  {selectedBookingServiceDetails.map((row) => (
+                    <p key={row.id}>
+                      {row.label}: <span className="text-gray-900">{row.value}</span>
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">No additional service details.</p>
+              )}
             </div>
 
             <Separator />

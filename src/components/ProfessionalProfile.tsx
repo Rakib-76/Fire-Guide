@@ -22,12 +22,16 @@ import { fetchProfessionalProfileAvailableDates, ProfessionalProfileAvailableDat
 import {
   fetchProfessionalProfileDetails,
   fetchProfessionalProfilePricing,
+  fetchProfessionalDetailsPageGetAll,
+  getProfessionalDetailsPageMemberships,
   fetchForUserWorkingHours,
   sendProfessionalMail,
   type ProfessionalProfileDetailsData,
   type ProfessionalProfilePricingItem,
+  type ProfessionalDetailsPageMembershipItem,
   type WorkingDayHourRecord,
 } from "../api/professionalsService";
+import { getMembershipMediaUrlCandidates } from "../api/membershipService";
 import {
   resolveProfessionalDisplayPhone,
   copyTextToClipboard,
@@ -46,6 +50,54 @@ interface ProfessionalProfileProps {
   backLabel?: string;
   /** When true, breadcrumb is Home → profile (no compare step) */
   fromFeatured?: boolean;
+}
+
+function MembershipLogoImage({
+  logoPath,
+  alt,
+  className,
+}: {
+  logoPath: string;
+  alt: string;
+  className?: string;
+}) {
+  const urls = React.useMemo(() => getMembershipMediaUrlCandidates(logoPath), [logoPath]);
+  const [urlIndex, setUrlIndex] = React.useState(0);
+  const src = urls[urlIndex] ?? "";
+
+  React.useEffect(() => {
+    setUrlIndex(0);
+  }, [logoPath]);
+
+  if (!src) return null;
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      title={alt}
+      className={className}
+      onError={() => {
+        setUrlIndex((current) => (current < urls.length - 1 ? current + 1 : current));
+      }}
+    />
+  );
+}
+
+function formatMembershipSince(value: string | null | undefined): string | null {
+  if (!value?.trim()) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime()) || parsed.getFullYear() < 1971) return null;
+  return parsed.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function isMembershipVerified(status: string | null | undefined): boolean {
+  const normalized = String(status ?? "").toLowerCase().trim();
+  return normalized === "verified" || normalized === "approved";
 }
 
 export function ProfessionalProfile({
@@ -68,6 +120,8 @@ export function ProfessionalProfile({
   const [isLoadingInsurance, setIsLoadingInsurance] = useState(true);
   const [profileExperience, setProfileExperience] = useState<ProfessionalProfileExperienceData | null>(null);
   const [isLoadingExperiences, setIsLoadingExperiences] = useState(true);
+  const [profileMemberships, setProfileMemberships] = useState<ProfessionalDetailsPageMembershipItem[]>([]);
+  const [isLoadingMemberships, setIsLoadingMemberships] = useState(true);
   const [reviews, setReviews] = useState<ProfessionalProfileReviewItem[]>([]);
   const [isLoadingReviews, setIsLoadingReviews] = useState(true);
   const [availableDatesData, setAvailableDatesData] = useState<ProfessionalProfileAvailableDateItem[]>([]);
@@ -241,6 +295,34 @@ export function ProfessionalProfile({
       }
     };
     loadExperience();
+    return () => { cancelled = true; };
+  }, [professionalIdNum]);
+
+  // Fetch memberships for this professional (professional/details-page/get-all)
+  useEffect(() => {
+    if (professionalIdNum == null) {
+      setProfileMemberships([]);
+      setIsLoadingMemberships(false);
+      return;
+    }
+    let cancelled = false;
+    const loadMemberships = async () => {
+      try {
+        setIsLoadingMemberships(true);
+        const data = await fetchProfessionalDetailsPageGetAll(professionalIdNum);
+        if (!cancelled) {
+          setProfileMemberships(getProfessionalDetailsPageMemberships(data));
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setProfileMemberships([]);
+          console.error("Failed to load professional memberships:", error);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingMemberships(false);
+      }
+    };
+    loadMemberships();
     return () => { cancelled = true; };
   }, [professionalIdNum]);
 
@@ -635,6 +717,11 @@ export function ProfessionalProfile({
       .slice(0, 3);
   }, [profileCertifications]);
 
+  const displayMemberships = useMemo(
+    () => profileMemberships.filter((item) => isMembershipVerified(item.status)),
+    [profileMemberships]
+  );
+
   const isCertificationVerified = (status: string | undefined | null): boolean => {
     const normalized = (status ?? "").toLowerCase().trim();
     return normalized === "verified" || normalized === "approved";
@@ -979,6 +1066,76 @@ export function ProfessionalProfile({
                     <div className="text-center py-8 text-gray-500">
                       <Briefcase className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                       <p className="text-sm">No experience data available</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Professional memberships — professional/details-page/get-all API */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-[#0A1A2F] flex items-center gap-2">
+                    <Award className="w-5 h-5" />
+                    Professional Memberships ({displayMemberships.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {isLoadingMemberships ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin text-red-600 mr-2" />
+                      <span className="text-gray-600">Loading memberships...</span>
+                    </div>
+                  ) : displayMemberships.length > 0 ? (
+                    <div className="space-y-3">
+                      {displayMemberships.map((membership) => {
+                        const memberSince = formatMembershipSince(membership.member_since);
+                        return (
+                          <div
+                            key={membership.id}
+                            className="flex items-start gap-3 rounded-lg border border-gray-200 p-4"
+                          >
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-white p-1">
+                              {membership.logo?.trim() ? (
+                                <MembershipLogoImage
+                                  logoPath={membership.logo.trim()}
+                                  alt={`${membership.organization_name} logo`}
+                                  className="h-full w-full object-contain"
+                                />
+                              ) : (
+                                <Award className="h-6 w-6 text-blue-600" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <p className="font-medium text-gray-900 break-words">
+                                  {membership.organization_name}
+                                </p>
+                                <Badge className="border border-green-200 bg-green-100 text-green-700 hover:bg-green-100 shrink-0">
+                                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                                  Verified
+                                </Badge>
+                              </div>
+                              {membership.membership_type ? (
+                                <p className="text-sm text-gray-700 mt-1">{membership.membership_type}</p>
+                              ) : null}
+                              <div className="mt-1 space-y-0.5 text-sm text-gray-500">
+                                {membership.reference_id ? (
+                                  <p>Reference: {membership.reference_id}</p>
+                                ) : null}
+                                {memberSince ? <p>Member since: {memberSince}</p> : null}
+                                {membership.note ? (
+                                  <p className="text-gray-600 break-words">{membership.note}</p>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <Award className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                      <p>No verified professional memberships available</p>
                     </div>
                   )}
                 </CardContent>

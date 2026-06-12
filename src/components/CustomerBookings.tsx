@@ -58,6 +58,10 @@ import { createReview, updateReview, showReview, fetchReviews } from "../api/rev
 import { RescheduleCalendarPicker } from "./RescheduleCalendarPicker";
 import { buildBookingServiceDetailsFromApiSelectedService } from "../lib/bookingServiceDetails";
 import {
+  getCustomQuoteRequestDisplayRows,
+  loadQuoteRequestDurationLabelMap,
+} from "./CustomQuoteRequestDetailsPanel";
+import {
   getBookingPaymentStatusKey,
   getBookingPaymentStatusLabel,
   isBookingPaymentPaid,
@@ -251,6 +255,20 @@ const transformApiBooking = (apiBooking: CustomerAllBookingItem): Booking => {
     (prof?.number != null && String(prof.number).trim()) ||
     "";
 
+  const selectedServiceDetails = buildBookingServiceDetailsFromApiSelectedService(
+    apiBooking.selected_service ?? null
+  );
+  const customQuoteRequestData = apiBooking.custom_quote_details?.request_data;
+  const serviceDetails =
+    selectedServiceDetails.length > 0
+      ? selectedServiceDetails
+      : customQuoteRequestData
+        ? getCustomQuoteRequestDisplayRows(customQuoteRequestData).map(({ label, value }) => ({
+            label,
+            value,
+          }))
+        : [];
+
   return {
     id: apiBooking.id.toString(),
     service: serviceName,
@@ -278,9 +296,11 @@ const transformApiBooking = (apiBooking: CustomerAllBookingItem): Booking => {
     hasReview: parseApiBookingHasReview(apiBooking),
     canReview: parseApiBookingCanReview(apiBooking),
     customerEmail: typeof apiBooking.email === "string" ? apiBooking.email.trim() : "",
-    serviceDetails: buildBookingServiceDetailsFromApiSelectedService(
-      apiBooking.selected_service ?? null
-    ),
+    serviceDetails,
+    customQuoteRequestData:
+      selectedServiceDetails.length === 0 && customQuoteRequestData
+        ? customQuoteRequestData
+        : undefined,
   };
 };
 
@@ -560,6 +580,28 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
     time: '',
     reason: ''
   });
+  const [fraDurationLabels, setFraDurationLabels] = useState<ReadonlyMap<number, string>>(
+    () => new Map()
+  );
+
+  useEffect(() => {
+    loadQuoteRequestDurationLabelMap().then(setFraDurationLabels);
+  }, []);
+
+  const selectedBookingServiceDetails = useMemo(() => {
+    if (!selectedBooking) return [];
+    if (selectedBooking.customQuoteRequestData) {
+      return getCustomQuoteRequestDisplayRows(
+        selectedBooking.customQuoteRequestData,
+        fraDurationLabels
+      );
+    }
+    return (selectedBooking.serviceDetails ?? []).map((row, index) => ({
+      id: `service-${index}`,
+      label: row.label,
+      value: row.value,
+    }));
+  }, [selectedBooking, fraDurationLabels]);
 
   const fetchBookingsFromApi = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
@@ -1658,12 +1700,12 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
                 </Badge>
               </div>
 
-              {selectedBooking.serviceDetails && selectedBooking.serviceDetails.length > 0 && (
+              {selectedBookingServiceDetails.length > 0 && (
                 <div className="rounded-lg border border-gray-100 bg-gray-50/80 p-4 sm:p-5">
                   <p className="text-sm text-gray-500 mb-3">Service details</p>
                   <div className="space-y-1.5 text-sm text-gray-600">
-                    {selectedBooking.serviceDetails.map((row) => (
-                      <p key={row.label}>
+                    {selectedBookingServiceDetails.map((row) => (
+                      <p key={row.id}>
                         {row.label}: <span className="text-gray-900">{row.value}</span>
                       </p>
                     ))}

@@ -624,6 +624,15 @@ export interface ProfessionalBookingItem {
     payment_status?: string | null;
     price?: string | number | null;
   } | null;
+  /** Set when booking was created from an accepted custom quote. */
+  custom_id?: string | number | null;
+  custom_quote_details?: {
+    id?: number;
+    service_id?: number;
+    request_data?: string | Record<string, unknown>;
+    status?: string;
+    [key: string]: unknown;
+  } | null;
 }
 
 export const getProfessionalBookingCustomerName = (

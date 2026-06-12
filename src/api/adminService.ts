@@ -2254,6 +2254,20 @@ export interface AdminProfessionalIdentityItem {
   updated_at?: string | null;
 }
 
+export interface AdminProfessionalMembershipItem {
+  id: number;
+  organization_name: string;
+  membership_type?: string | null;
+  reference_id?: string | null;
+  member_since?: string | null;
+  note?: string | null;
+  evidence?: string | null;
+  logo?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface AdminProfessionalSingleData {
   id: number;
   name: string;
@@ -2283,6 +2297,8 @@ export interface AdminProfessionalSingleData {
   identity?: AdminProfessionalIdentityItem[];
   identities?: AdminProfessionalIdentityItem[];
   professional_identity?: AdminProfessionalIdentityItem | AdminProfessionalIdentityItem[];
+  membership?: AdminProfessionalMembershipItem[];
+  memberships?: AdminProfessionalMembershipItem[];
   created_at: string;
   updated_at: string;
 }
@@ -2601,6 +2617,46 @@ export const adminRejectInsuranceCoverage = async (
   return response.data;
 };
 
+export interface AdminMembershipStatusActionRequest {
+  api_token: string;
+  membership_id: number;
+}
+
+export interface AdminMembershipStatusActionResponse {
+  success?: boolean;
+  status?: boolean | string;
+  message?: string;
+  data?: unknown;
+}
+
+/** POST /admin/approved/membership — body: api_token, membership_id */
+export const adminApproveMembership = async (
+  data: AdminMembershipStatusActionRequest
+): Promise<AdminMembershipStatusActionResponse> => {
+  const response = await apiClient.post<AdminMembershipStatusActionResponse>(
+    '/admin/approved/membership',
+    {
+      api_token: data.api_token,
+      membership_id: data.membership_id,
+    }
+  );
+  return response.data;
+};
+
+/** POST /admin/reject/membership — body: api_token, membership_id */
+export const adminRejectMembership = async (
+  data: AdminMembershipStatusActionRequest
+): Promise<AdminMembershipStatusActionResponse> => {
+  const response = await apiClient.post<AdminMembershipStatusActionResponse>(
+    '/admin/reject/membership',
+    {
+      api_token: data.api_token,
+      membership_id: data.membership_id,
+    }
+  );
+  return response.data;
+};
+
 export interface AdminIdentityStatusActionRequest {
   api_token: string;
   identity_id: number;
@@ -2664,6 +2720,18 @@ export interface AdminBookingListItem {
   payment_status?: string | null;
   platform_commission?: string | number | null;
   professional_payout?: string | number | null;
+  selected_service?: {
+    type?: string;
+    data?: Record<string, { id?: number; value?: string } | string | number | null>;
+  } | null;
+  custom_id?: string | number | null;
+  custom_quote_details?: {
+    id?: number;
+    service_id?: number;
+    request_data?: string | Record<string, unknown>;
+    status?: string;
+    [key: string]: unknown;
+  } | null;
 }
 
 export interface AdminBookingListResponse {
