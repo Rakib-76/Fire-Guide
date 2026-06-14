@@ -8,10 +8,9 @@ import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
 import { fetchPropertyTypes, PropertyTypeResponse, fetchApproximatePeople, ApproximatePeopleResponse, formatPeopleOptionLabel, getPeopleOptionSortKey, fetchFloorPricing, FloorPricingItem, fetchFraDurations, FraDurationItem, fetchFireAlarmOptions, FireAlarmOptionItem, fetchExtinguisherServiceOptions, ExtinguisherServiceOptionItem, fetchEmergencyLightOptions, EmergencyLightServiceOptionItem, fetchMarshalOptions, MarshalServiceOptionItem, fetchFireConsultationOptions, ConsultationOptionItem } from "../api/servicesService";
-import { storeCustomQuoteRequest, type CustomQuoteRequestData } from "../api/customQuoteRequestsService";
-import { savePendingCustomQuote } from "../lib/pendingCustomQuote";
-import { CustomQuoteSubmittedModal } from "./CustomQuoteSubmittedModal";
-import { getApiToken, getUserFullName, getUserEmail, getUserPhone } from "../lib/auth";
+import { type CustomQuoteRequestData } from "../api/customQuoteRequestsService";
+import { customQuoteDetailsPath, savePendingCustomQuote } from "../lib/pendingCustomQuote";
+import { getApiToken } from "../lib/auth";
 import { toast } from "sonner";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 
@@ -151,8 +150,6 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
   const [loadingFloorPricing, setLoadingFloorPricing] = useState<boolean>(true);
   const [fraDurations, setFraDurations] = useState<FraDurationItem[]>([]);
   const [loadingFraDurations, setLoadingFraDurations] = useState<boolean>(true);
-  const [submittingCustomQuote, setSubmittingCustomQuote] = useState(false);
-  const [customQuoteSuccessModalOpen, setCustomQuoteSuccessModalOpen] = useState(false);
   const [fireAlarmDetectorsOptions, setFireAlarmDetectorsOptions] = useState<FireAlarmOptionItem[]>([]);
   const [fireAlarmCallPointsOptions, setFireAlarmCallPointsOptions] = useState<FireAlarmOptionItem[]>([]);
   const [fireAlarmFloorsOptions, setFireAlarmFloorsOptions] = useState<FireAlarmOptionItem[]>([]);
@@ -512,9 +509,18 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
 
   const isFireMarshalCustomQuote = isFireMarshalTrainingService && showCustomTrainingPeopleInput;
 
+  const isCustomQuoteFlow =
+    isFireAlarmCustomQuote ||
+    isExtinguisherCustomQuote ||
+    isEmergencyLightingCustomQuote ||
+    (isFireSafetyConsultationService && showCustomConsultationHoursInput) ||
+    isFireMarshalCustomQuote ||
+    formData.propertyTypeId === "__custom__" ||
+    isMoreThan500People(formData.approximatePeopleId) ||
+    showCustomFloorsInput;
+
   /** Full payload for POST /custom-quote-requests/store — only used from handleComplete after all steps. */
   const buildCustomQuoteStorePayload = (
-    accessNote: string,
     ctx: {
       propertyTypeDisplay: string;
       peopleCountDisplayForComplete: string;
@@ -524,7 +530,7 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
   ): CustomQuoteRequestData => {
     const { propertyTypeDisplay, peopleCountDisplayForComplete, floorsNum, durationIdNum } = ctx;
     const preferred_date = formData.assessmentDate?.trim() || undefined;
-    const access_note = accessNote?.trim() || undefined;
+    const access_note = formData.accessNotes?.trim() || undefined;
     const durationEligible =
       isFireRiskAssessmentService ||
       (!isFireAlarmService &&
@@ -815,7 +821,6 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
    * which require the user to click Next after entering a value.
    */
   useEffect(() => {
-    if (submittingCustomQuote) return;
     if (wentBackRef.current) return;
     if (currentStep >= totalSteps) return;
     if (shouldBlockAutoAdvanceOnCurrentStep()) return;
@@ -833,7 +838,6 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
   }, [formData]);
 
   useEffect(() => {
-    if (submittingCustomQuote) return;
     if (wentBackRef.current) {
       wentBackRef.current = false;
       return;
@@ -996,41 +1000,22 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
     const hasDurationStep = isFireRiskAssessmentService || (!isFireAlarmService && !isFireExtinguisherService && !isEmergencyLightingService && !isFireSafetyConsultationService && !isFireMarshalTrainingService);
 
     if (isCustomQuote && resolvedServiceId) {
-      const name = getUserFullName()?.trim() ?? "";
-      const email = getUserEmail()?.trim() ?? "";
-      const phone = getUserPhone()?.trim() ?? "";
-      if (!name || !email || !phone) {
-        const payload = buildCustomQuoteStorePayload(accessNote, {
-          propertyTypeDisplay,
-          peopleCountDisplayForComplete,
-          floorsNum,
-          durationIdNum,
-        });
-        const returnPath = `/services/${resolvedServiceId}/questionnaire`;
-        savePendingCustomQuote({
-          serviceId: resolvedServiceId,
-          requestData: payload,
-          ...(serviceName?.trim() ? { serviceName: serviceName.trim() } : {}),
-          returnPath,
-        });
-        navigate("/customer/auth", { state: { pendingCustomQuote: true } });
-        return;
-      }
-      setSubmittingCustomQuote(true);
-      try {
-        const payload = buildCustomQuoteStorePayload(accessNote, {
-          propertyTypeDisplay,
-          peopleCountDisplayForComplete,
-          floorsNum,
-          durationIdNum,
-        });
-        await storeCustomQuoteRequest(getApiToken(), resolvedServiceId, name, email, phone, payload);
-        setCustomQuoteSuccessModalOpen(true);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to submit custom quote request.");
-      } finally {
-        setSubmittingCustomQuote(false);
-      }
+      const payload = buildCustomQuoteStorePayload({
+        propertyTypeDisplay,
+        peopleCountDisplayForComplete,
+        floorsNum,
+        durationIdNum,
+      });
+      const detailsPath = customQuoteDetailsPath(resolvedServiceId);
+      savePendingCustomQuote({
+        serviceId: resolvedServiceId,
+        requestData: payload,
+        ...(serviceName?.trim() ? { serviceName: serviceName.trim() } : {}),
+        returnPath: detailsPath,
+      });
+      navigate(detailsPath, {
+        state: serviceName?.trim() ? { serviceName: serviceName.trim() } : undefined,
+      });
       return;
     }
 
@@ -2391,7 +2376,7 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
             {currentStepUsesCustomTextInput() && currentStep < totalSteps && (
               <Button
                 onClick={handleNext}
-                disabled={!isStepValid() || submittingCustomQuote}
+                disabled={!isStepValid()}
                 className="bg-red-600 hover:bg-red-700 px-8 py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Next
@@ -2401,17 +2386,10 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
             {currentStep === totalSteps && (
               <Button
                 onClick={handleNext}
-                disabled={!isStepValid() || submittingCustomQuote}
+                disabled={!isStepValid()}
                 className="bg-red-600 hover:bg-red-700 px-8 py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {submittingCustomQuote ? (
-                  <>
-                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                    Submitting...
-                  </>
-                ) : (
-                  <>View Results</>
-                )}
+                {isCustomQuoteFlow ? <>Continue</> : <>View Results</>}
               </Button>
             )}
           </div>
@@ -2423,19 +2401,6 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
           )}
         </div>
       </main>
-
-      <CustomQuoteSubmittedModal
-        open={customQuoteSuccessModalOpen}
-        onOpenChange={setCustomQuoteSuccessModalOpen}
-        onViewQuoteRequests={() => {
-          setCustomQuoteSuccessModalOpen(false);
-          navigate("/customer/dashboard/quote-requests");
-        }}
-        onBrowseServices={() => {
-          setCustomQuoteSuccessModalOpen(false);
-          navigate("/services");
-        }}
-      />
     </div>
   );
 }

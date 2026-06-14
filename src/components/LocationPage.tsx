@@ -291,7 +291,7 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
               </div>
 
               {/* Radius Selection */}
-              <div className="space-y-3">
+              {/* <div className="space-y-3">
                 <Label className="text-base">Search radius</Label>
                 <div className="flex flex-wrap gap-3">
                   {radiusOptions.map((option) => (
@@ -314,7 +314,7 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
                     : `We'll search within ${radiusOptions.find(o => o.value === selectedRadius)?.label} of your postcode`
                   }
                 </p>
-              </div>
+              </div> */}
 
               {/* Error Message */}
               {error && (

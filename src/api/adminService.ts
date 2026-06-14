@@ -3750,3 +3750,47 @@ export const getAdminProfessionalNoticePeriods = async (
   const ok = body?.status === true || body?.success === true;
   return { ok, data: list, message: body?.message };
 };
+
+export interface AdminRadiusUpdateRequest {
+  api_token: string;
+  radius: number;
+}
+
+export interface AdminRadiusGetResponse {
+  status: boolean;
+  message?: string;
+  radius?: number;
+}
+
+export interface AdminRadiusUpdateResponse {
+  status: boolean;
+  message?: string;
+  radius?: number;
+}
+
+/**
+ * Get platform default search/service radius (miles).
+ * POST /radius/get
+ */
+export const getAdminRadius = async (
+  api_token: string
+): Promise<AdminRadiusGetResponse> => {
+  const response = await apiClient.post<AdminRadiusGetResponse>('/radius/get', {
+    api_token,
+  });
+  return response.data;
+};
+
+/**
+ * Update platform default search/service radius (miles).
+ * POST /radius/update
+ */
+export const updateAdminRadius = async (
+  data: AdminRadiusUpdateRequest
+): Promise<AdminRadiusUpdateResponse> => {
+  const response = await apiClient.post<AdminRadiusUpdateResponse>('/radius/update', {
+    api_token: data.api_token,
+    radius: Number(data.radius),
+  });
+  return response.data;
+};

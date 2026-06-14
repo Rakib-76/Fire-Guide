@@ -1,5 +1,13 @@
 import axios from 'axios';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
+import {
+  normalizeCustomQuoteRequestDataField,
+  parseCustomQuoteRequestData,
+  type ParsedCustomQuoteRequestData,
+} from '../lib/parseCustomQuoteRequestData';
+
+export type { ParsedCustomQuoteRequestData };
+export { parseCustomQuoteRequestData, normalizeCustomQuoteRequestDataField };
 
 const apiClient = axios.create({
   baseURL: resolveApiBaseUrl(),
@@ -32,6 +40,10 @@ export interface CustomQuoteRequestData {
   fra_assessment_type?: string;
   consultation_mode?: string;
   consultation_hours?: string;
+  /** Property location collected on the custom-quote details step */
+  property_address?: string;
+  city?: string;
+  post_code?: string;
 }
 
 export interface CustomQuoteStoreResponse {
@@ -44,7 +56,7 @@ export interface CustomQuoteStoreResponse {
     customer_name: string;
     customer_email: string;
     customer_phone: string;
-    request_data: string;
+    request_data: ParsedCustomQuoteRequestData;
     status: string;
     created_at: string;
     updated_at: string;
@@ -59,7 +71,7 @@ export interface MyQuoteRequestItem {
   customer_name: string;
   customer_email: string;
   customer_phone: string;
-  request_data: string;
+  request_data: ParsedCustomQuoteRequestData;
   status: string;
   created_at: string;
   updated_at: string;
@@ -102,7 +114,7 @@ export interface AdminQuoteRequestItem {
   customer_name: string;
   customer_email: string;
   customer_phone: string;
-  request_data: string;
+  request_data: ParsedCustomQuoteRequestData;
   status: string;
   created_at: string;
   updated_at: string;
@@ -117,6 +129,52 @@ export interface AdminQuoteRequestSingleResponse {
   status: boolean;
   message: string;
   data: AdminQuoteRequestItem;
+}
+
+function normalizeAdminQuoteResponse(
+  data: AdminQuoteRequestSingleResponse
+): AdminQuoteRequestSingleResponse {
+  if (!data?.data) return data;
+  return {
+    ...data,
+    data: normalizeCustomQuoteRequestDataField(data.data),
+  };
+}
+
+function normalizeAdminQuotesListResponse(
+  data: AdminQuoteRequestsResponse
+): AdminQuoteRequestsResponse {
+  if (!Array.isArray(data?.data)) return data;
+  return {
+    ...data,
+    data: data.data.map((row) => normalizeCustomQuoteRequestDataField(row)),
+  };
+}
+
+function normalizeMyQuotesResponse(data: MyQuoteRequestsResponse): MyQuoteRequestsResponse {
+  if (!Array.isArray(data?.data)) return data;
+  return {
+    ...data,
+    data: data.data.map((row) => normalizeCustomQuoteRequestDataField(row)),
+  };
+}
+
+function normalizeProfessionalQuotesResponse(
+  data: ProfessionalCustomQuoteResponse
+): ProfessionalCustomQuoteResponse {
+  if (!Array.isArray(data?.requests)) return data;
+  return {
+    ...data,
+    requests: data.requests.map((row) => normalizeCustomQuoteRequestDataField(row)),
+  };
+}
+
+function normalizeStoreQuoteResponse(data: CustomQuoteStoreResponse): CustomQuoteStoreResponse {
+  if (!data?.data) return data;
+  return {
+    ...data,
+    data: normalizeCustomQuoteRequestDataField(data.data),
+  };
 }
 
 /**
@@ -137,7 +195,7 @@ export const getSingleCustomQuoteRequest = async (
     if (!data?.status) {
       throw new Error((data as { message?: string })?.message || 'Fetch failed');
     }
-    return data;
+    return normalizeAdminQuoteResponse(data);
   } catch (err: unknown) {
     if (axios.isAxiosError(err)) {
       const msg = err.response?.data?.message ?? err.response?.data?.error ?? err.message;
@@ -168,7 +226,7 @@ export const getAllCustomQuoteRequests = async (apiToken: string): Promise<Admin
     if (!data?.status) {
       throw new Error((data as { message?: string })?.message || 'Fetch failed');
     }
-    return data;
+    return normalizeAdminQuotesListResponse(data);
   } catch (err: unknown) {
     if (axios.isAxiosError(err)) {
       const msg = err.response?.data?.message ?? err.response?.data?.error ?? err.message;
@@ -191,7 +249,7 @@ export interface ProfessionalQuoteRequestItem {
   customer_name: string;
   customer_email: string;
   customer_phone: string;
-  request_data: string | Record<string, unknown>;
+  request_data: ParsedCustomQuoteRequestData;
   status: string;
   created_at: string;
   updated_at: string;
@@ -224,7 +282,7 @@ export const getProfessionalCustomQuoteRequests = async (
     if (!data?.status) {
       throw new Error((data as { message?: string })?.message || 'Fetch failed');
     }
-    return data;
+    return normalizeProfessionalQuotesResponse(data);
   } catch (err: unknown) {
     if (axios.isAxiosError(err)) {
       const msg = err.response?.data?.message ?? err.response?.data?.error ?? err.message;
@@ -249,7 +307,7 @@ export const getMyQuoteRequests = async (apiToken: string): Promise<MyQuoteReque
     if (!data?.status) {
       throw new Error((data as { message?: string })?.message || 'Fetch failed');
     }
-    return data;
+    return normalizeMyQuotesResponse(data);
   } catch (err: unknown) {
     if (axios.isAxiosError(err)) {
       const msg = err.response?.data?.message ?? err.response?.data?.error ?? err.message;
@@ -295,6 +353,9 @@ export const storeCustomQuoteRequest = async (
         ...(requestData.fra_assessment_type != null && requestData.fra_assessment_type !== "" && { fra_assessment_type: requestData.fra_assessment_type }),
         ...(requestData.consultation_mode != null && requestData.consultation_mode !== "" && { consultation_mode: requestData.consultation_mode }),
         ...(requestData.consultation_hours != null && requestData.consultation_hours !== "" && { consultation_hours: requestData.consultation_hours }),
+        ...(requestData.property_address != null && requestData.property_address !== "" && { property_address: requestData.property_address }),
+        ...(requestData.city != null && requestData.city !== "" && { city: requestData.city }),
+        ...(requestData.post_code != null && requestData.post_code !== "" && { post_code: requestData.post_code }),
       },
     };
     if (apiToken) {
@@ -308,7 +369,7 @@ export const storeCustomQuoteRequest = async (
   if (!data?.status) {
     throw new Error((data as { message?: string })?.message || 'Submit failed');
   }
-  return data;
+  return normalizeStoreQuoteResponse(data);
   } catch (err: unknown) {
     if (axios.isAxiosError(err)) {
       const msg = err.response?.data?.message ?? err.response?.data?.error ?? err.message;
@@ -342,7 +403,7 @@ export const updateQuoteRequestStatus = async (
     if (!ok) {
       throw new Error((data as { message?: string })?.message || 'Update failed');
     }
-    return data;
+    return normalizeAdminQuoteResponse(data);
   } catch (err: unknown) {
     if (axios.isAxiosError(err)) {
       const msg = err.response?.data?.message ?? err.response?.data?.error ?? err.message;
@@ -370,7 +431,7 @@ export const markQuoteRequestAsCompleted = async (
     if (!data?.status) {
       throw new Error((data as { message?: string })?.message || 'Mark completed failed');
     }
-    return data;
+    return normalizeAdminQuoteResponse(data);
   } catch (err: unknown) {
     if (axios.isAxiosError(err)) {
       const msg = err.response?.data?.message ?? err.response?.data?.error ?? err.message;
@@ -400,7 +461,7 @@ export const assignProfessionalToQuoteRequest = async (
     if (!data?.status) {
       throw new Error((data as { message?: string })?.message || 'Assign failed');
     }
-    return data;
+    return normalizeAdminQuoteResponse(data);
   } catch (err: unknown) {
     if (axios.isAxiosError(err)) {
       const msg = err.response?.data?.message ?? err.response?.data?.error ?? err.message;

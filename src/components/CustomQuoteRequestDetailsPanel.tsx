@@ -1,20 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Building2 } from "lucide-react";
 import { fetchFraDurations } from "../api/servicesService";
+import { parseCustomQuoteRequestData } from "../lib/parseCustomQuoteRequestData";
 
 type RequestDataInput = string | Record<string, unknown> | null | undefined;
 
 function parseRequestDataJson(requestData: RequestDataInput): Record<string, unknown> {
-  try {
-    if (requestData && typeof requestData === "object" && !Array.isArray(requestData)) {
-      return requestData;
-    }
-    if (typeof requestData !== "string") return {};
-    const parsed: unknown = JSON.parse(requestData);
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
+  return parseCustomQuoteRequestData(requestData);
 }
 
 function formatVal(v: unknown): string | undefined {
@@ -52,6 +44,14 @@ function jsonKeyToLabel(key: string): string {
     training_people_count: "Training people count",
     duration_id: "Duration",
     fra_assessment_type: "Assessment type",
+    emergency_light: "Emergency lights",
+    consultation_mode: "Consultation type",
+    consultation_hours: "Hours needed",
+    access_note: "Access notes",
+    address: "Property address",
+    city: "City",
+    post_code: "Postcode",
+    postcode: "Postcode",
   };
   if (map[key]) return map[key];
   return key
@@ -116,117 +116,66 @@ function enrichRowsWithConsultationLabelsFromJson(
   });
 }
 
-/**
- * `request_data` keys to show even when `access_note` / `extra_access_notes` drives the grid,
- * because they are usually omitted from that prose (e.g. `duration_id`).
- */
-const JSON_KEYS_MERGED_WITH_ACCESS_NOTE: readonly string[] = ["duration_id"];
-
-/**
- * Split on sentence boundaries and treat each `Label: value` segment as one row.
- * Segments without `:` become free-text for Notes.
- */
-function parseAccessNoteClauses(text: string): { rows: InternalRow[]; unmatched: string[] } {
-  const trimmed = text.trim();
-  if (!trimmed) return { rows: [], unmatched: [] };
-
-  // Some payloads omit the space after "." between clauses ("...visit.Hours needed: 8") — restore so split works.
-  const clauseBoundaryLabels =
-    "Hours needed|Preferred date|Consultation type|Property type|People count|Floors|Detectors|Manual call points|Fire alarm panels|Alarm system|Last serviced|Fire extinguishers|Extinguisher type|Emergency lights|Lighting type|Test frequency|Assessment type|People for training|Training location|Building type|Staff training before";
-  const normalizedClauses = trimmed.replace(
-    new RegExp(`\\.(${clauseBoundaryLabels})`, "gi"),
-    ". $1"
-  );
-
-  const segments = normalizedClauses
-    .split(/\.\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-
-  const raw: InternalRow[] = [];
-  const unmatched: string[] = [];
-  let seq = 0;
-
-  for (const seg of segments) {
-    const cleanedSeg = seg.replace(/^[a-z]\.\s*/i, "").trim();
-    const m = /^(.+?):\s*(.+)$/s.exec(cleanedSeg);
-    if (m) {
-      const label = m[1].trim().replace(/\s+/g, " ");
-      const value = m[2].trim();
-      if (!label || !isMeaningfulDisplayValue(value)) continue;
-      const norm = normalizeLabelKey(label);
-      raw.push({
-        id: `clause-${seq++}`,
-        label,
-        value,
-        norm,
-      });
-    } else if (cleanedSeg.length > 1 && isMeaningfulDisplayValue(cleanedSeg)) {
-      unmatched.push(cleanedSeg);
-    }
-  }
-
-  const seen = new Set<string>();
-  const rows: InternalRow[] = [];
-  for (const r of raw) {
-    if (seen.has(r.norm)) continue;
-    seen.add(r.norm);
-    rows.push(r);
-  }
-
-  return { rows, unmatched };
+function formatPreferredDateValue(s: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}/.test(s.trim())) return s;
+  const d = Date.parse(s.trim());
+  if (Number.isNaN(d)) return s;
+  return new Date(d).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function buildDetailRows(rd: Record<string, unknown>): InternalRow[] {
-  const accessStr =
-    (typeof rd.extra_access_notes === "string" && rd.extra_access_notes.trim()) ||
-    (typeof rd.access_note === "string" && rd.access_note.trim()) ||
-    "";
-
-  // When access narrative exists, rows come from parsed clauses first, then a small set of JSON keys
-  // that are not normally included in the prose (e.g. `duration_id`). Other top-level keys stay hidden
-  // to avoid duplicating or contradicting the access note (e.g. default `floors: 1`).
-  if (accessStr) {
-    const { rows: fromNote, unmatched } = parseAccessNoteClauses(accessStr);
-    const out: InternalRow[] = [...fromNote];
-    const seenNorm = new Set(fromNote.map((r) => r.norm));
-
-    const notesText = unmatched.map((s) => s.trim()).filter(Boolean).join(". ");
-    if (notesText && isMeaningfulDisplayValue(notesText) && !seenNorm.has("notes")) {
-      out.push({ id: "notes-free", label: "Notes", value: notesText, norm: "notes" });
-      seenNorm.add("notes");
-    }
-
-    let mergeSeq = 0;
-    for (const key of JSON_KEYS_MERGED_WITH_ACCESS_NOTE) {
-      if (!(key in rd)) continue;
-      const s = formatVal(rd[key]);
-      if (!s || !isMeaningfulDisplayValue(s)) continue;
-      const label = jsonKeyToLabel(key);
-      const norm = normalizeLabelKey(label);
-      if (seenNorm.has(norm)) continue;
-      seenNorm.add(norm);
-      out.push({ id: `json-with-access-${mergeSeq++}-${key}`, label, value: s, norm });
-    }
-
-    return out;
-  }
-
-  const skip = new Set(["access_note", "extra_access_notes"]);
+  const skip = new Set(["extra_access_notes"]);
   const entries = Object.entries(rd)
     .filter(([k]) => !skip.has(k))
     .map(([k, v]) => {
-      const s = formatVal(v);
-      return s && isMeaningfulDisplayValue(s) ? ([k, s] as const) : null;
+      let s = formatVal(v);
+      if (!s || !isMeaningfulDisplayValue(s)) return null;
+      if (k === "preferred_date") s = formatPreferredDateValue(s);
+      return [k, s] as const;
     })
     .filter((x): x is readonly [string, string] => x != null)
-    .sort(([a], [b]) => a.localeCompare(b));
+    .sort(([a], [b]) => {
+      const order = [
+        "building_type",
+        "people_count",
+        "people",
+        "floors",
+        "smoke_detectors",
+        "call_point",
+        "panels",
+        "extinguisher",
+        "emergency_light",
+        "preferred_date",
+        "property_address",
+        "city",
+        "post_code",
+        "postcode",
+        "fra_assessment_type",
+        "duration_id",
+        "consultation_mode",
+        "consultation_hours",
+        "access_note",
+      ];
+      const ai = order.indexOf(a);
+      const bi = order.indexOf(b);
+      if (ai !== -1 || bi !== -1) {
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      }
+      return a.localeCompare(b);
+    });
 
   const seenNorm = new Set<string>();
   const out: InternalRow[] = [];
   let j = 0;
   for (const [key, s] of entries) {
-    const label = jsonKeyToLabel(key);
+    let label = jsonKeyToLabel(key);
+    if (key === "people_count" && rd.emergency_light != null) {
+      label = "Test frequency";
+    }
     const norm = normalizeLabelKey(label);
     if (seenNorm.has(norm)) continue;
     seenNorm.add(norm);
@@ -241,8 +190,7 @@ export type CustomQuoteRequestDetailsPanelProps = {
 };
 
 /**
- * Request details: if `extra_access_notes` or `access_note` is set, rows come from that string (`Label: value` clauses + Notes),
- * plus selected JSON fields such as `duration_id` when present. If there is no access narrative, all meaningful `request_data` fields are shown.
+ * Request details: all meaningful `request_data` fields (structured JSON from the API).
  */
 export function CustomQuoteRequestDetailsPanel({ requestData }: CustomQuoteRequestDetailsPanelProps) {
   const [durationById, setDurationById] = useState<ReadonlyMap<number, string>>(() => new Map());
@@ -306,6 +254,16 @@ export function CustomQuoteRequestDetailsPanel({ requestData }: CustomQuoteReque
 /** One-line preview for table/card when `extra_access_notes` / `access_note` exists; else building • people. */
 export function customQuoteRequestListSubtitle(requestData: RequestDataInput): string | null {
   const rd = parseRequestDataJson(requestData);
+  const parts = [
+    rd.building_type,
+    rd.emergency_light != null ? rd.emergency_light : null,
+    rd.people ?? rd.people_count,
+    rd.floors != null && String(rd.floors) !== "" ? rd.floors : null,
+    rd.property_address,
+    rd.city,
+    rd.post_code ?? rd.postcode,
+  ].filter((x) => x != null && String(x).trim() !== "");
+  if (parts.length) return parts.map(String).join(" • ");
   const accessStr =
     (typeof rd.extra_access_notes === "string" && rd.extra_access_notes.trim()) ||
     (typeof rd.access_note === "string" && rd.access_note.trim()) ||
@@ -314,13 +272,7 @@ export function customQuoteRequestListSubtitle(requestData: RequestDataInput): s
     const single = accessStr.replace(/\s+/g, " ");
     return single.length > 120 ? `${single.slice(0, 117)}…` : single;
   }
-  const parts = [
-    rd.building_type,
-    rd.people ?? rd.people_count,
-    rd.floors != null && String(rd.floors) !== "" ? rd.floors : null,
-    rd.training_people_count,
-  ].filter((x) => x != null && String(x).trim() !== "");
-  return parts.length ? parts.map(String).join(" • ") : null;
+  return null;
 }
 
 /** Same row model as the admin/customer details panel, for list cards (parsed clauses + JSON fallback). */

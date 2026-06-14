@@ -142,6 +142,191 @@ export function getProfessionalNotificationDedupeKey(item: NotificationApiItem):
   return `h:${item.created_at}|${head}`;
 }
 
+function extractBookingReference(...parts: string[]): string | null {
+  for (const part of parts) {
+    const value = part.trim();
+    if (!value) continue;
+    const match =
+      value.match(/#?\b(FG-\d{4}-\d+)\b/i) ||
+      value.match(/quote request\s*#?(\d+)/i) ||
+      value.match(/booking\s*#?(\d+)/i);
+    if (match?.[1]) return match[1].startsWith("FG-") ? match[1] : match[1];
+    if (match?.[0]) return match[0].replace(/^#/, "");
+  }
+  return null;
+}
+
+/** Booking was cancelled — used for icon and clearer copy on the professional feed. */
+export function isBookingCancellationNotification(title: string, content: string): boolean {
+  const combined = `${title} ${content}`.toLowerCase();
+  return /\bcancel(l)?ed\b/.test(combined) && /\bbook(ing)?\b/.test(combined);
+}
+
+/** Approved / verified / success notifications — green styling in the professional feed. */
+export function isApprovalNotification(title: string, content: string): boolean {
+  const combined = `${title} ${content}`.toLowerCase();
+  if (isNegativeNotification(title, content)) return false;
+  return (
+    /\bapprov(ed|al)?\b/.test(combined) ||
+    /\bverified\b/.test(combined) ||
+    /\bsuccess(ful(ly)?)?\b/.test(combined)
+  );
+}
+
+/** Cancelled, rejected, declined, or invalid — AlertCircle icon in the professional feed. */
+export function isNegativeNotification(title: string, content: string): boolean {
+  if (isBookingCancellationNotification(title, content)) return true;
+  const combined = `${title} ${content}`.toLowerCase();
+  return (
+    /\bcancel(l)?ed\b/.test(combined) ||
+    /\breject(ed|ion)?\b/.test(combined) ||
+    /\bdeclin(ed|e)?\b/.test(combined) ||
+    /\binvalid\b/.test(combined) ||
+    /\bdenied\b/.test(combined)
+  );
+}
+
+export type ProfessionalNotificationTone = "approve" | "negative" | "default";
+
+export function getProfessionalNotificationTone(
+  title: string,
+  content: string
+): ProfessionalNotificationTone {
+  if (isApprovalNotification(title, content)) return "approve";
+  if (isNegativeNotification(title, content)) return "negative";
+  return "default";
+}
+
+/** Booking date/time changed — distinct icon from new booking and cancellation. */
+export function isBookingRescheduleNotification(title: string, content: string): boolean {
+  if (isBookingCancellationNotification(title, content)) return false;
+  const combined = `${title} ${content}`.toLowerCase();
+  return /\breschedule(d)?\b/.test(combined) || /\bre-?scheduled\b/.test(combined);
+}
+
+export function formatProfessionalNotificationTitle(title: string, content: string): string {
+  const raw = title.trim() || "Notification";
+  const lower = raw.toLowerCase();
+
+  if (isBookingCancellationNotification(raw, content)) {
+    if (lower.includes("admin")) return "Booking cancelled by admin";
+    if (lower.includes("customer") || lower.includes("client")) return "Booking cancelled by customer";
+    if (lower.includes("professional")) return "Booking cancelled by professional";
+    return "Booking cancelled";
+  }
+
+  if (isBookingRescheduleNotification(raw, content)) {
+    if (lower.includes("customer") || lower.includes("client")) return "Booking rescheduled by customer";
+    if (lower.includes("professional")) return "Booking rescheduled by professional";
+    if (lower.includes("admin")) return "Booking rescheduled by admin";
+    return "Booking rescheduled";
+  }
+
+  if (lower.includes("created") && lower.includes("booking")) {
+    return "New booking received";
+  }
+
+  return raw;
+}
+
+export function formatProfessionalNotificationContent(title: string, content: string): string {
+  const raw = content.trim();
+  const lowerTitle = title.toLowerCase();
+  const lowerContent = raw.toLowerCase();
+  const bookingRef = extractBookingReference(title, raw);
+
+  if (
+    lowerContent === "booking has cancelled the booking." ||
+    lowerContent === "booking has cancelled the booking" ||
+    /^booking has cancelled the booking\.?$/i.test(raw)
+  ) {
+    if (lowerTitle.includes("admin")) {
+      return bookingRef
+        ? `Booking ${bookingRef} was cancelled by the Fire Guide admin team.`
+        : "A booking was cancelled by the Fire Guide admin team.";
+    }
+    if (lowerTitle.includes("customer") || lowerTitle.includes("client")) {
+      return bookingRef
+        ? `The customer cancelled booking ${bookingRef}.`
+        : "The customer cancelled this booking.";
+    }
+    return bookingRef
+      ? `Booking ${bookingRef} has been cancelled.`
+      : "This booking has been cancelled.";
+  }
+
+  if (isBookingCancellationNotification(title, raw)) {
+    const customerMatch = raw.match(/^([A-Za-z][A-Za-z\s'.-]{1,40})\s+has cancelled the booking\.?$/i);
+    if (customerMatch?.[1] && !/^booking$/i.test(customerMatch[1].trim())) {
+      return bookingRef
+        ? `${customerMatch[1].trim()} cancelled booking ${bookingRef}.`
+        : `${customerMatch[1].trim()} cancelled this booking.`;
+    }
+
+    if (lowerTitle.includes("admin")) {
+      return bookingRef
+        ? `Booking ${bookingRef} was cancelled by the Fire Guide admin team.`
+        : "A booking was cancelled by the Fire Guide admin team.";
+    }
+
+    if (lowerTitle.includes("customer") || lowerTitle.includes("client")) {
+      return bookingRef
+        ? `The customer cancelled booking ${bookingRef}.`
+        : "The customer cancelled this booking.";
+    }
+
+    return bookingRef
+      ? `Booking ${bookingRef} has been cancelled.`
+      : raw || "This booking has been cancelled.";
+  }
+
+  if (isBookingRescheduleNotification(title, raw)) {
+    const customerMatch = raw.match(/^([A-Za-z][A-Za-z\s'.-]{1,40})\s+(?:has\s+)?requested\s+(?:a\s+)?reschedule/i);
+    if (customerMatch?.[1]) {
+      return bookingRef
+        ? `${customerMatch[1].trim()} requested to reschedule booking ${bookingRef}.`
+        : `${customerMatch[1].trim()} requested to reschedule this booking.`;
+    }
+
+    if (lowerTitle.includes("customer") || lowerTitle.includes("client")) {
+      return bookingRef
+        ? `The customer rescheduled booking ${bookingRef}.`
+        : "The customer rescheduled this booking.";
+    }
+
+    if (lowerTitle.includes("professional")) {
+      return bookingRef
+        ? `You rescheduled booking ${bookingRef}.`
+        : "You rescheduled this booking.";
+    }
+
+    return bookingRef
+      ? `Booking ${bookingRef} was rescheduled.`
+      : raw || "This booking was rescheduled.";
+  }
+
+  if (lowerContent.startsWith("your booking")) {
+    if (lowerContent.includes("created")) {
+      return bookingRef
+        ? `You received a new booking (${bookingRef}).`
+        : "You received a new booking.";
+    }
+    if (lowerContent.includes("reschedule")) {
+      return bookingRef
+        ? `Booking ${bookingRef} was rescheduled.`
+        : "A booking was rescheduled.";
+    }
+  }
+
+  if (lowerContent.includes("created successfully") && lowerContent.includes("booking")) {
+    return bookingRef
+      ? `Booking ${bookingRef} was created successfully.`
+      : raw;
+  }
+
+  return raw || "No additional details.";
+}
+
 export interface MarkAllAsReadRequest {
   api_token: string;
 }

@@ -51,6 +51,7 @@ import {
   isProfileFullyComplete,
 } from "../lib/professionalProfileReminder";
 import { resolveAndStoreProfessionalId } from "../lib/resolveProfessionalId";
+import { ProfessionalMembershipSection } from "./ProfessionalMembershipSection";
 
 /** API expects plain numeric strings e.g. `"100"`, not `£100.00`. */
 function formatServicePriceForApi(raw: string | number | null | undefined): string {
@@ -1291,6 +1292,132 @@ export function ProfessionalProfileContent() {
   const showProfilePreviewNudge =
     completionPercentage < 100 || !hasProfilePhotoForPreview;
 
+  const renderProfilePreviewCard = (cardClassName: string) => (
+    <Card className={cardClassName}>
+      <CardHeader className="p-4 sm:p-6 pb-3 sm:pb-4">
+        <CardTitle className="text-sm sm:text-base">Profile Preview</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 sm:space-y-4 p-4 sm:p-6 pt-0">
+        <div className="text-center">
+          <div
+            className="relative mx-auto mb-2 flex h-20 w-20 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-gray-200 transition-opacity hover:opacity-90 sm:mb-3 sm:h-24 sm:w-24"
+            onClick={handleImageClick}
+          >
+            {profileImageUrl || imagePreview ? (
+              <img
+                src={imagePreview || profileImageUrl || ""}
+                alt="Profile"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <User className="h-10 w-10 text-gray-400 sm:h-12 sm:w-12" />
+            )}
+            {isUploadingImage && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                <Loader2 className="h-5 w-5 animate-spin text-white sm:h-6 sm:w-6" />
+              </div>
+            )}
+          </div>
+          <Button variant="outline" size="sm" onClick={handleImageClick} disabled={isUploadingImage}>
+            {isUploadingImage ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Uploading...
+              </>
+            ) : profileImageUrl ? (
+              <>
+                <Upload className="mr-2 h-4 w-4" />
+                Change Photo
+              </>
+            ) : (
+              <>
+                <Upload className="mr-2 h-4 w-4" />
+                Upload Photo
+              </>
+            )}
+          </Button>
+        </div>
+
+        <div>
+          <h3 className="mb-1 break-words text-sm font-semibold text-gray-900 sm:text-base">
+            {formData.name}
+          </h3>
+          <p className="mb-2 break-words text-xs text-gray-600 sm:text-sm">{formData.businessName}</p>
+          <div className="flex flex-wrap items-center gap-1 text-xs text-gray-500 sm:text-sm">
+            <MapPin className="h-3 w-3 shrink-0 sm:h-4 sm:w-4" />
+            <span className="break-words">{formData.postcode}</span>
+          </div>
+          {formData.responseTime.trim() ? (
+            <div className="mt-1 flex items-center gap-1 text-xs text-green-700 sm:text-sm">
+              <Clock className="h-3 w-3 shrink-0 sm:h-4 sm:w-4" />
+              <span className="break-words">{formData.responseTime.trim()}</span>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="border-t pt-3 sm:pt-4">
+          <div className="mb-2 flex items-center justify-between text-xs sm:text-sm">
+            <span className="text-gray-600">Services</span>
+            <span className="font-semibold text-gray-900">{selectedServices.length}</span>
+          </div>
+          <div className="mb-2 flex items-center justify-between text-xs sm:text-sm">
+            <span className="text-gray-600">Service Radius</span>
+            <span className="font-semibold text-gray-900">{formData.serviceRadius[0]} mi</span>
+          </div>
+          <div className="mb-2 flex items-center justify-between text-xs sm:text-sm">
+            <span className="text-gray-600">Certifications</span>
+            <span className="font-semibold text-gray-900">
+              {hasAttemptedFetch ? certifications.length : 0}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-xs sm:text-sm">
+            <span className="text-gray-600">Experience</span>
+            <span className="font-semibold text-gray-900">
+              {hasAttemptedFetchExperiences ? experiences.length : 0}
+            </span>
+          </div>
+        </div>
+
+        {showProfilePreviewNudge && (
+          <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-2 sm:p-3">
+            <div className="flex gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600 sm:h-5 sm:w-5" />
+              <div className="min-w-0 flex-1">
+                <p className="mb-1 break-words text-xs font-medium text-yellow-900 sm:text-sm">
+                  {hasProfilePhotoForPreview ? "Strengthen your profile" : "Complete your profile"}
+                </p>
+                <p className="break-words text-xs text-yellow-800 sm:text-sm">
+                  {hasProfilePhotoForPreview
+                    ? "Finish the sections above and add certifications where you can — complete profiles get more bookings."
+                    : "Add a photo and more certifications to increase booking chances."}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  const renderProfileTipsCard = () => (
+    <Card className="min-w-0 overflow-hidden border-0 bg-blue-50 shadow-md">
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex gap-2 sm:gap-3">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 sm:h-5 sm:w-5" />
+          <div className="min-w-0 flex-1">
+            <p className="mb-1 text-sm font-medium text-blue-900 sm:text-base">Profile Tips</p>
+            <ul className="space-y-0.5 text-xs text-blue-800 sm:space-y-1 sm:text-sm">
+              <li>• Complete profiles get 3x more bookings</li>
+              <li>• Add a professional photo</li>
+              <li>• List all your certifications</li>
+              <li>• Write a detailed bio</li>
+            </ul>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
   return (
     <div className="min-w-0 w-full max-w-full">
       <Dialog open={completeProfileIntroModalOpen} onOpenChange={setCompleteProfileIntroModalOpen}>
@@ -1386,6 +1513,20 @@ export function ProfessionalProfileContent() {
           </div>
         </CardContent>
       </Card>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleImageChange}
+        className="hidden"
+      />
+
+      {/* Profile Preview + Tips — mobile/tablet only, directly below completion bar */}
+      <div className="mb-4 space-y-4 min-w-0 sm:mb-6 sm:space-y-6 lg:hidden">
+        {renderProfilePreviewCard("min-w-0 overflow-hidden border-0 shadow-md")}
+        {renderProfileTipsCard()}
+      </div>
 
       <div className="grid lg:grid-cols-3 gap-4 sm:gap-6 min-w-0">
         {/* Main Form - Takes 2 columns on desktop */}
@@ -2168,145 +2309,16 @@ export function ProfessionalProfileContent() {
               )}
             </CardContent>
           </Card>
+
+          <ProfessionalMembershipSection mode="manage" />
         </div>
 
-        {/* Sidebar - Takes 1 column on desktop */}
-        <div className="space-y-6 min-w-0">
-          {/* Profile Preview */}
-          <Card className="border-0 shadow-md sticky top-4 sm:top-6 min-w-0 overflow-hidden lg:static">
-            <CardHeader className="p-4 sm:p-6 pb-3 sm:pb-4">
-              <CardTitle className="text-sm sm:text-base">Profile Preview</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 sm:space-y-4 p-4 sm:p-6 pt-0">
-              <div className="text-center">
-                <div 
-                  className="w-20 h-20 sm:w-24 sm:h-24 bg-gray-200 rounded-full mx-auto mb-2 sm:mb-3 flex items-center justify-center overflow-hidden relative cursor-pointer hover:opacity-90 transition-opacity"
-                  onClick={handleImageClick}
-                >
-                  {(profileImageUrl || imagePreview) ? (
-                    <img 
-                      src={imagePreview || profileImageUrl || ""} 
-                      alt="Profile" 
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <User className="w-10 h-10 sm:w-12 sm:h-12 text-gray-400" />
-                  )}
-                  {isUploadingImage && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                      <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 text-white animate-spin" />
-                    </div>
-                  )}
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="hidden"
-                />
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={handleImageClick}
-                  disabled={isUploadingImage}
-                >
-                  {isUploadingImage ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Uploading...
-                    </>
-                  ) : profileImageUrl ? (
-                    <>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Change Photo
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload Photo
-                    </>
-                  )}
-                </Button>
-              </div>
-
-
-
-              <div>
-                <h3 className="font-semibold text-sm sm:text-base text-gray-900 mb-1 break-words">{formData.name}</h3>
-                <p className="text-xs sm:text-sm text-gray-600 mb-2 break-words">{formData.businessName}</p>
-                <div className="flex items-center gap-1 text-xs sm:text-sm text-gray-500 flex-wrap">
-                  <MapPin className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                  <span className="break-words">{formData.postcode}</span>
-                </div>
-                {formData.responseTime.trim() ? (
-                  <div className="flex items-center gap-1 text-xs sm:text-sm text-green-700 mt-1">
-                    <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                    <span className="break-words">{formData.responseTime.trim()}</span>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="pt-3 sm:pt-4 border-t">
-                <div className="flex items-center justify-between text-xs sm:text-sm mb-2">
-                  <span className="text-gray-600">Services</span>
-                  <span className="font-semibold text-gray-900">{selectedServices.length}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs sm:text-sm mb-2">
-                  <span className="text-gray-600">Service Radius</span>
-                  <span className="font-semibold text-gray-900">{formData.serviceRadius[0]} mi</span>
-                </div>
-                <div className="flex items-center justify-between text-xs sm:text-sm mb-2">
-                  <span className="text-gray-600">Certifications</span>
-                  <span className="font-semibold text-gray-900">
-                    {hasAttemptedFetch ? certifications.length : 0}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs sm:text-sm">
-                  <span className="text-gray-600">Experience</span>
-                  <span className="font-semibold text-gray-900">
-                    {hasAttemptedFetchExperiences ? experiences.length : 0}
-                  </span>
-                </div>
-              </div>
-
-              {showProfilePreviewNudge && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 sm:p-3">
-                  <div className="flex gap-2">
-                    <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs sm:text-sm font-medium text-yellow-900 mb-1 break-words">
-                        {hasProfilePhotoForPreview ? "Strengthen your profile" : "Complete your profile"}
-                      </p>
-                      <p className="text-xs sm:text-sm text-yellow-800 break-words">
-                        {hasProfilePhotoForPreview
-                          ? "Finish the sections above and add certifications where you can — complete profiles get more bookings."
-                          : "Add a photo and more certifications to increase booking chances."}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Help Card */}
-          <Card className="border-0 shadow-md bg-blue-50 min-w-0 overflow-hidden">
-            <CardContent className="p-3 sm:p-4">
-              <div className="flex gap-2 sm:gap-3">
-                <Info className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm sm:text-base text-blue-900 mb-1">Profile Tips</p>
-                  <ul className="text-xs sm:text-sm text-blue-800 space-y-0.5 sm:space-y-1">
-                    <li>• Complete profiles get 3x more bookings</li>
-                    <li>• Add a professional photo</li>
-                    <li>• List all your certifications</li>
-                    <li>• Write a detailed bio</li>
-                  </ul>
-                </div>
-               </div>
-            </CardContent>
-          </Card>
+        {/* Sidebar - large screens only */}
+        <div className="hidden min-w-0 space-y-6 lg:block">
+          {renderProfilePreviewCard(
+            "sticky top-4 min-w-0 overflow-hidden border-0 shadow-md sm:top-6 lg:static"
+          )}
+          {renderProfileTipsCard()}
         </div>
       </div>
 

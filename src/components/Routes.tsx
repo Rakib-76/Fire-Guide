@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react";
 const LandingPage = lazyWithRetry(() => import("./pages/LandingPage"));
 const ServiceSelectionPage = lazyWithRetry(() => import("./pages/ServiceSelectionPage"));
 const QuestionnairePage = lazyWithRetry(() => import("./pages/QuestionnairePage"));
+const CustomQuoteDetailsPage = lazyWithRetry(() => import("./pages/CustomQuoteDetailsPage"));
 const LocationPage = lazyWithRetry(() => import("./pages/LocationPage"));
 const ComparisonPage = lazyWithRetry(() => import("./pages/ComparisonPage"));
 const ProfilePage = lazyWithRetry(() => import("./pages/ProfilePage"));
@@ -111,6 +112,7 @@ export default function Routes() {
       <Route path="/about" element={<Suspense fallback={<PageLoader />}><AboutContactPage /></Suspense>} />
       <Route path="/services" element={<Suspense fallback={<PageLoader />}><ServiceSelectionPage /></Suspense>} />
       <Route path="/services/:serviceId/questionnaire" element={<Suspense fallback={<PageLoader />}><QuestionnairePage /></Suspense>} />
+      <Route path="/services/:serviceId/custom-quote/details" element={<Suspense fallback={<PageLoader />}><CustomQuoteDetailsPage /></Suspense>} />
       <Route path="/services/:serviceId/location" element={<Suspense fallback={<PageLoader />}><LocationPage /></Suspense>} />
       <Route path="/professionals/compare" element={<Suspense fallback={<PageLoader />}><ComparisonPage /></Suspense>} />
       <Route path="/professionals/:professionalId" element={<Suspense fallback={<PageLoader />}><ProfilePage /></Suspense>} />

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Bell, Users, DollarSign, AlertCircle, CheckCircle, Info, Trash2, Send, Loader2 } from "lucide-react";
+import { Bell, User, Briefcase, Calendar, CalendarClock, CreditCard, Star, Settings, AlertCircle, CheckCircle, Info, Trash2, Send, Loader2 } from "lucide-react";
 import { getApiToken } from "../lib/auth";
 import {
   getAdminNotificationsSummary,
@@ -11,6 +11,12 @@ import {
   AdminNotificationItem,
   type AdminNotificationCards,
 } from "../api/adminService";
+import {
+  isApprovalNotification,
+  isNegativeNotification,
+  isBookingRescheduleNotification,
+  isBookingCancellationNotification,
+} from "../api/notificationsService";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -57,13 +63,115 @@ const NOTIFICATION_FILTER_TABS = [
 const notificationTabTriggerClass =
   "flex shrink-0 items-center justify-center gap-1.5 min-w-[72px] whitespace-nowrap rounded-md px-3 text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm";
 
-function categoryToType(category: string): "user" | "professional" | "payment" | "system" | "alert" {
-  const c = (category || "").toLowerCase();
-  if (c.includes("payment")) return "payment";
-  if (c.includes("professional")) return "professional";
-  if (c.includes("review") || c.includes("user")) return "user";
-  if (c.includes("system")) return "system";
-  return "alert";
+type AdminNotificationKind =
+  | "approval"
+  | "alert"
+  | "booking"
+  | "payment"
+  | "review"
+  | "user"
+  | "professional"
+  | "system"
+  | "general";
+
+function resolveAdminNotificationKind(
+  category: string,
+  title: string,
+  message: string
+): AdminNotificationKind {
+  const cat = (category || "").toLowerCase().trim();
+  const combined = `${title} ${message} ${category}`.toLowerCase();
+
+  if (isApprovalNotification(title, message)) return "approval";
+  if (isNegativeNotification(title, message) || isBookingCancellationNotification(title, message)) {
+    return "alert";
+  }
+  if (
+    cat.includes("booking") ||
+    /\bbook(ing)?\b/.test(combined) ||
+    isBookingRescheduleNotification(title, message)
+  ) {
+    return "booking";
+  }
+  if (
+    cat.includes("payment") ||
+    cat.includes("payout") ||
+    cat.includes("refund") ||
+    /\bpayment\b/.test(combined) ||
+    /\bpayout\b/.test(combined) ||
+    /\brefund\b/.test(combined)
+  ) {
+    return "payment";
+  }
+  if (cat.includes("review") || /\breview\b/.test(combined) || /\brating\b/.test(combined)) {
+    return "review";
+  }
+  if (
+    cat.includes("professional") ||
+    /\bprofessional\b/.test(combined) ||
+    /\bverif(y|ication)\b/.test(combined) ||
+    /\bcertif/.test(combined)
+  ) {
+    return "professional";
+  }
+  if (
+    cat.includes("user") ||
+    cat.includes("customer") ||
+    cat.includes("client") ||
+    /\bcustomer\b/.test(combined) ||
+    /\buser\b/.test(combined)
+  ) {
+    return "user";
+  }
+  if (
+    cat.includes("system") ||
+    /\bsystem\b/.test(combined) ||
+    /\bmaintenance\b/.test(combined) ||
+    /\bplatform\b/.test(combined)
+  ) {
+    return "system";
+  }
+  if (cat.includes("alert") || /\burgent\b/.test(combined) || /\bcritical\b/.test(combined)) {
+    return "alert";
+  }
+  return "general";
+}
+
+function getAdminNotificationIcon(
+  category: string,
+  title: string,
+  message: string
+): React.ReactNode {
+  const kind = resolveAdminNotificationKind(category, title, message);
+
+  if (kind === "approval") {
+    return <CheckCircle className="h-5 w-5 text-green-600" />;
+  }
+  if (kind === "alert") {
+    return <AlertCircle className="h-5 w-5 text-orange-600" />;
+  }
+  if (kind === "booking") {
+    if (isBookingRescheduleNotification(title, message)) {
+      return <CalendarClock className="h-5 w-5 text-amber-600" />;
+    }
+    return <Calendar className="h-5 w-5 text-blue-600" />;
+  }
+  if (kind === "payment") {
+    return <CreditCard className="h-5 w-5 text-green-600" />;
+  }
+  if (kind === "review") {
+    return <Star className="h-5 w-5 text-purple-600" />;
+  }
+  if (kind === "user") {
+    return <User className="h-5 w-5 text-blue-600" />;
+  }
+  if (kind === "professional") {
+    return <Briefcase className="h-5 w-5 text-indigo-600" />;
+  }
+  if (kind === "system") {
+    return <Settings className="h-5 w-5 text-gray-600" />;
+  }
+  return <Bell className="h-5 w-5 text-gray-500" />;
 }
 
 export function AdminNotifications() {
@@ -156,22 +264,8 @@ export function AdminNotifications() {
   const [recipientType, setRecipientType] = useState("all_users");
   const [notificationPriority, setNotificationPriority] = useState("medium");
 
-  const getNotificationIcon = (type: string) => {
-    switch (type) {
-      case "user":
-        return <Users className="w-5 h-5 text-blue-600" />;
-      case "professional":
-        return <Users className="w-5 h-5 text-purple-600" />;
-      case "payment":
-        return <DollarSign className="w-5 h-5 text-green-600" />;
-      case "alert":
-        return <AlertCircle className="w-5 h-5 text-red-600" />;
-      case "system":
-        return <Info className="w-5 h-5 text-gray-600" />;
-      default:
-        return <Bell className="w-5 h-5 text-gray-600" />;
-    }
-  };
+  const getNotificationIcon = (notification: AdminNotificationItem) =>
+    getAdminNotificationIcon(notification.category, notification.title, notification.message);
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -445,32 +539,52 @@ export function AdminNotifications() {
             )} */}
           </div>
 
-          {/* 3. STATS CARDS - Clean vertical stack, NO floating icons, 12px spacing */}
+          {/* 3. STATS CARDS - contextual icons per notification type */}
           <div className="flex flex-col gap-3 md:grid md:grid-cols-4 md:gap-4">
             <Card className="w-full border-gray-200 shadow-sm rounded-lg">
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 mb-1">Total Notifications</p>
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">
+                    <Bell className="h-4 w-4 text-slate-600" />
+                  </div>
+                  <p className="text-xs text-gray-500">Total Notifications</p>
+                </div>
                 <p className="text-3xl font-semibold text-[#0A1A2F]">{stats.total}</p>
               </CardContent>
             </Card>
 
             <Card className="w-full border-gray-200 shadow-sm rounded-lg">
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 mb-1">Unread</p>
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50">
+                    <Bell className="h-4 w-4 text-red-600" />
+                  </div>
+                  <p className="text-xs text-gray-500">Unread</p>
+                </div>
                 <p className="text-3xl font-semibold text-[#0A1A2F]">{stats.unread}</p>
               </CardContent>
             </Card>
 
             <Card className="w-full border-gray-200 shadow-sm rounded-lg">
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 mb-1">Payments</p>
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-50">
+                    <CreditCard className="h-4 w-4 text-green-600" />
+                  </div>
+                  <p className="text-xs text-gray-500">Payments</p>
+                </div>
                 <p className="text-3xl font-semibold text-[#0A1A2F]">{stats.payments}</p>
               </CardContent>
             </Card>
 
             <Card className="w-full border-gray-200 shadow-sm rounded-lg">
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 mb-1">System</p>
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100">
+                    <Settings className="h-4 w-4 text-gray-600" />
+                  </div>
+                  <p className="text-xs text-gray-500">System</p>
+                </div>
                 <p className="text-3xl font-semibold text-[#0A1A2F]">{stats.systemAlerts}</p>
               </CardContent>
             </Card>
@@ -553,7 +667,7 @@ export function AdminNotifications() {
                           {/* Icon + Title Row */}
                           <div className="flex items-start gap-2 mb-2">
                             <div className="flex-shrink-0 mt-0.5">
-                              {getNotificationIcon(categoryToType(notification.category))}
+                              {getNotificationIcon(notification)}
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-2">

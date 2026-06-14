@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { getApiToken } from "../lib/auth";
-import { getAdminSeoSettings, saveAdminSeoSettings, getAdminNotificationSettings, saveAdminNotificationSettings, getAdminSystemSettings, saveAdminSystemSettings, getAdminSecuritySettings, saveAdminSecuritySettings } from "../api/adminService";
-import { Save, Globe, Search, Zap, Bell, Shield } from "lucide-react";
+import { getAdminSeoSettings, saveAdminSeoSettings, getAdminNotificationSettings, saveAdminNotificationSettings, getAdminSystemSettings, saveAdminSystemSettings, getAdminSecuritySettings, saveAdminSecuritySettings, getAdminRadius, updateAdminRadius } from "../api/adminService";
+import { Save, Globe, Search, Zap, Bell, Shield, MapPin } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Label } from "./ui/label";
 import { Separator } from "./ui/separator";
 import { Switch } from "./ui/switch";
+import { Slider } from "./ui/slider";
 import { toast } from "sonner";
 
 export function AdminSettings() {
@@ -71,6 +72,23 @@ export function AdminSettings() {
   const [sessionTimeout, setSessionTimeout] = useState("30");
   const [maxLoginAttempts, setMaxLoginAttempts] = useState("5");
   const [securitySaving, setSecuritySaving] = useState(false);
+  const [serviceRadius, setServiceRadius] = useState([25]);
+  const [radiusSaving, setRadiusSaving] = useState(false);
+
+  useEffect(() => {
+    const token = getApiToken();
+    if (!token) return;
+    getAdminRadius(token)
+      .then((res) => {
+        if (res.status && res.radius != null) {
+          const miles = Number(res.radius);
+          if (!Number.isNaN(miles)) {
+            setServiceRadius([miles]);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const token = getApiToken();
@@ -198,6 +216,33 @@ export function AdminSettings() {
       toast.error(e?.response?.data?.message || e?.message || "Failed to save security settings");
     } finally {
       setSecuritySaving(false);
+    }
+  };
+
+  const handleSaveRadius = async () => {
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Not authenticated");
+      return;
+    }
+    setRadiusSaving(true);
+    try {
+      const res = await updateAdminRadius({
+        api_token: token,
+        radius: serviceRadius[0],
+      });
+      if (res.status) {
+        if (res.radius != null) {
+          setServiceRadius([Number(res.radius)]);
+        }
+        toast.success(res.message || "Radius updated successfully.");
+      } else {
+        toast.error(res.message || "Failed to update radius");
+      }
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || e?.message || "Failed to update radius");
+    } finally {
+      setRadiusSaving(false);
     }
   };
 
@@ -387,6 +432,50 @@ export function AdminSettings() {
           <Button onClick={() => void handleSaveSystem()} disabled={systemSaving} className="bg-red-600 hover:bg-red-700">
             <Save className="w-4 h-4 mr-2" />
             {systemSaving ? "Saving..." : "Save System Settings"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Service Area */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-[#0A1A2F]">
+            <MapPin className="h-5 w-5 text-red-600" />
+            Service Area
+          </CardTitle>
+          <CardDescription className="text-gray-600">
+            Define how far professionals can be matched within the platform search radius
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <Label className="text-base text-gray-900">Service Radius</Label>
+              <span className="whitespace-nowrap text-base font-semibold text-red-600">
+                {serviceRadius[0]} miles
+              </span>
+            </div>
+            <Slider
+              value={serviceRadius}
+              onValueChange={setServiceRadius}
+              min={5}
+              max={100}
+              step={5}
+              className="py-4"
+            />
+            <div className="mt-2 flex justify-between text-xs text-gray-500">
+              <span>5 miles</span>
+              <span>100 miles</span>
+            </div>
+          </div>
+
+          <Button
+            onClick={() => void handleSaveRadius()}
+            disabled={radiusSaving}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            <Save className="mr-2 h-4 w-4" />
+            {radiusSaving ? "Saving..." : "Save Service Area"}
           </Button>
         </CardContent>
       </Card>

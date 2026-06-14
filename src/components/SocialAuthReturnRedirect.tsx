@@ -10,7 +10,6 @@ import {
 } from "../lib/socialAuthCallback";
 import { navigateToProfessionalHome } from "../lib/professionalDashboardNavigation";
 import { submitPendingCustomQuoteIfAny } from "../lib/submitPendingCustomQuote";
-import { customQuoteSuccessNavigateState } from "../lib/customQuoteSuccessNavigation";
 
 /**
  * After Google/Facebook OAuth, Laravel redirects with `api_token` (and optional user fields).
@@ -65,31 +64,17 @@ export function SocialAuthReturnRedirect() {
       setCurrentUser({ name: displayName, role: "customer" });
       toast.success(`Welcome, ${displayName}! Signed in successfully.`);
       const pendingResult = await submitPendingCustomQuoteIfAny();
-      if (pendingResult.submitted) {
+      if (pendingResult.hadPending && pendingResult.returnPath) {
         navigate(
-          { pathname: "/customer/dashboard/quote-requests", search: "", hash: "" },
-          { replace: true, state: customQuoteSuccessNavigateState() }
+          { pathname: pendingResult.returnPath, search: "", hash: "" },
+          {
+            replace: true,
+            state: pendingResult.pending?.serviceName
+              ? { serviceName: pendingResult.pending.serviceName }
+              : undefined,
+          }
         );
         return;
-      }
-      if (pendingResult.hadPending && pendingResult.error) {
-        toast.error(pendingResult.error);
-        if (pendingResult.returnPath) {
-          navigate(
-            {
-              pathname: pendingResult.returnPath,
-              search: "",
-              hash: "",
-            },
-            {
-              replace: true,
-              state: pendingResult.pending?.serviceName
-                ? { serviceName: pendingResult.pending.serviceName }
-                : undefined,
-            }
-          );
-          return;
-        }
       }
       navigate({ pathname: "/customer/dashboard", search: "", hash: "" }, { replace: true });
     })();

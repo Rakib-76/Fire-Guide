@@ -816,6 +816,28 @@ export function ProfessionalProfile({
     }
   }, [onBook]);
 
+  const renderBookNowButton = () => {
+    if (!onBook) return null;
+    return (
+      <Button
+        type="button"
+        className="w-full bg-red-600 hover:bg-red-700 text-white h-11"
+        disabled={isBooking}
+        aria-busy={isBooking}
+        onClick={() => void handleBookNow()}
+      >
+        {isBooking ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden />
+            Booking…
+          </>
+        ) : (
+          "Book Now"
+        )}
+      </Button>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 pb-8 md:pb-12">
       {/* Header — same logo as compare / booking flow */}
@@ -1226,25 +1248,8 @@ export function ProfessionalProfile({
 
             {/* Right Column - Booking Sidebar */}
             <div className="lg:col-span-1">
-              <div className="sticky top-20 space-y-6 lg:top-24">
-                {onBook ? (
-                  <Button
-                    type="button"
-                    className="w-full bg-red-600 hover:bg-red-700 text-white h-11"
-                    disabled={isBooking}
-                    aria-busy={isBooking}
-                    onClick={() => void handleBookNow()}
-                  >
-                    {isBooking ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden />
-                        Booking…
-                      </>
-                    ) : (
-                      "Book Now"
-                    )}
-                  </Button>
-                ) : null}
+              <div className="flex flex-col gap-6 lg:sticky lg:top-24">
+                <div className="hidden lg:block">{renderBookNowButton()}</div>
 
                 {/* Pricing — API data (professional_id from Professional List → View Profile) */}
                 {/* <Card>
@@ -1456,6 +1461,7 @@ export function ProfessionalProfile({
                         <Mail className="w-4 h-4 mr-2 shrink-0" aria-hidden />
                         Send Message
                       </Button>
+                      <div className="block pt-1 lg:hidden">{renderBookNowButton()}</div>
                     </div>
                   </CardContent>
                 </Card>

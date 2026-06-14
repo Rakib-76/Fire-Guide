@@ -775,20 +775,26 @@ export function ComparisonResults({ onViewProfile, onBookNow }: ComparisonResult
                             )}
 
                             {professional.membershipLogos && professional.membershipLogos.length > 0 && (
-                              <div className="flex flex-wrap items-center gap-2 mb-4">
-                                {professional.membershipLogos.map((membership) => (
-                                  <div
-                                    key={`${professional.id}-membership-logo-${membership.id}`}
-                                    className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white p-1"
-                                    title={membership.organizationName || "Professional membership"}
-                                  >
-                                    <MembershipLogoImage
-                                      logoPath={membership.logoPath}
-                                      alt={membership.organizationName || "Membership logo"}
-                                      className="h-full w-full object-contain"
-                                    />
-                                  </div>
-                                ))}
+                              <div className="mb-4">
+                                <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-[#0A1A2F]">
+                                  <Award className="h-4 w-4 shrink-0 text-gray-600" aria-hidden />
+                                  Professional Memberships
+                                </p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {professional.membershipLogos.map((membership) => (
+                                    <div
+                                      key={`${professional.id}-membership-logo-${membership.id}`}
+                                      className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white p-1"
+                                      title={membership.organizationName || "Professional membership"}
+                                    >
+                                      <MembershipLogoImage
+                                        logoPath={membership.logoPath}
+                                        alt={membership.organizationName || "Membership logo"}
+                                        className="h-full w-full object-contain"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             )}
 

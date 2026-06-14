@@ -2,6 +2,10 @@ import type { CustomQuoteRequestData } from "../api/customQuoteRequestsService";
 
 export const PENDING_CUSTOM_QUOTE_STORAGE_KEY = "fireguide_pending_custom_quote";
 
+export function customQuoteDetailsPath(serviceId: number): string {
+  return `/services/${serviceId}/custom-quote/details`;
+}
+
 export type PendingCustomQuote = {
   serviceId: number;
   requestData: CustomQuoteRequestData;
@@ -33,7 +37,7 @@ export function readPendingCustomQuote(): PendingCustomQuote | null {
     const returnPath =
       typeof parsed.returnPath === "string" && parsed.returnPath.trim()
         ? parsed.returnPath.trim()
-        : `/services/${serviceId}/questionnaire`;
+        : customQuoteDetailsPath(serviceId);
     return {
       serviceId,
       requestData: parsed.requestData as CustomQuoteRequestData,

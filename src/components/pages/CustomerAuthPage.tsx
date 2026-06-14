@@ -1,12 +1,10 @@
 import { useNavigate } from "react-router-dom";
 import { startTransition } from "react";
-import { toast } from "sonner";
 import { useApp } from "../../contexts/AppContext";
 import { CustomerAuth } from "../CustomerAuth";
 import { setUserInfo, getUserRole } from "../../lib/auth";
 import { navigateToProfessionalHome } from "../../lib/professionalDashboardNavigation";
 import { submitPendingCustomQuoteIfAny } from "../../lib/submitPendingCustomQuote";
-import { customQuoteSuccessNavigateState } from "../../lib/customQuoteSuccessNavigation";
 
 export default function CustomerAuthPage() {
   const navigate = useNavigate();
@@ -22,24 +20,14 @@ export default function CustomerAuthPage() {
     if (userRole === "USER") {
       const pendingResult = await submitPendingCustomQuoteIfAny();
       startTransition(() => {
-        if (pendingResult.submitted) {
-          navigate("/customer/dashboard/quote-requests", {
+        if (pendingResult.hadPending && pendingResult.returnPath) {
+          navigate(pendingResult.returnPath, {
             replace: true,
-            state: customQuoteSuccessNavigateState(),
+            state: pendingResult.pending?.serviceName
+              ? { serviceName: pendingResult.pending.serviceName }
+              : undefined,
           });
           return;
-        }
-        if (pendingResult.hadPending && pendingResult.error) {
-          toast.error(pendingResult.error);
-          if (pendingResult.returnPath) {
-            navigate(pendingResult.returnPath, {
-              replace: true,
-              state: pendingResult.pending?.serviceName
-                ? { serviceName: pendingResult.pending.serviceName }
-                : undefined,
-            });
-            return;
-          }
         }
         navigate("/customer/dashboard", { replace: true });
       });

@@ -43,6 +43,18 @@ export interface CreateMembershipResponse {
   data?: ProfessionalMembershipApiItem;
 }
 
+export interface DeleteMembershipRequest {
+  api_token: string;
+  membership_id: number;
+}
+
+export interface DeleteMembershipResponse {
+  status?: boolean | string;
+  success?: boolean;
+  message?: string;
+  error?: string;
+}
+
 export interface GetAllMembershipsResponse {
   status?: boolean | string;
   success?: boolean;
@@ -315,6 +327,39 @@ export const getAllMemberships = async (
         "Failed to fetch memberships."
     );
     return [];
+  }
+};
+
+/**
+ * Delete a professional membership.
+ * POST /delete/membership
+ * Body: { api_token, membership_id }
+ */
+export const deleteMembership = async (
+  apiToken: string,
+  membershipId: number
+): Promise<DeleteMembershipResponse> => {
+  try {
+    const response = await apiClient.post<DeleteMembershipResponse>("/delete/membership", {
+      api_token: apiToken,
+      membership_id: membershipId,
+    });
+    return response.data;
+  } catch (error: unknown) {
+    const err = error as {
+      response?: { data?: { message?: string; error?: string } };
+      message?: string;
+    };
+    return {
+      status: false,
+      success: false,
+      message:
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        "Failed to delete membership.",
+      error: err.response?.data?.error || err.message,
+    };
   }
 };
 

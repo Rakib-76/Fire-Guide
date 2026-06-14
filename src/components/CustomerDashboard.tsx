@@ -77,6 +77,7 @@ import {
   getCustomQuoteRequestDisplayRows,
   loadQuoteRequestDurationLabelMap,
 } from "./CustomQuoteRequestDetailsPanel";
+import { parseCustomQuoteRequestData } from "../lib/parseCustomQuoteRequestData";
 import { CustomQuoteSubmittedModal } from "./CustomQuoteSubmittedModal";
 import type { CustomQuoteSuccessLocationState } from "../lib/customQuoteSuccessNavigation";
 
@@ -3575,32 +3576,16 @@ export function CustomerDashboard({
         };
 
         const modalReq = selectedQuoteRequest;
-        const modalRd =
-          modalReq == null
-            ? ""
-            : typeof modalReq.request_data === "string"
-              ? modalReq.request_data
-              : JSON.stringify(modalReq.request_data ?? {});
         const modalDetailRows =
-          modalReq == null ? [] : getCustomQuoteRequestDisplayRows(modalRd, fraDurationLabels);
+          modalReq == null ? [] : getCustomQuoteRequestDisplayRows(modalReq.request_data, fraDurationLabels);
+        const modalHasAccessNoteInRows = modalDetailRows.some(
+          (row) => row.label.toLowerCase() === "access notes"
+        );
         let modalNotes = "";
-        let modalPreferredDateRaw = "";
         if (modalReq != null) {
-          try {
-            const parsed =
-              typeof modalReq.request_data === "string"
-                ? JSON.parse(modalReq.request_data)
-                : modalReq.request_data;
-            if (parsed && typeof parsed === "object" && parsed !== null) {
-              const rec = parsed as Record<string, unknown>;
-              const n = rec.notes;
-              modalNotes = typeof n === "string" ? n.trim() : "";
-              const pd = rec.preferred_date;
-              modalPreferredDateRaw = typeof pd === "string" ? pd.trim() : "";
-            }
-          } catch {
-            modalNotes = "";
-          }
+          const parsed = parseCustomQuoteRequestData(modalReq.request_data);
+          const n = parsed.notes;
+          modalNotes = typeof n === "string" ? n.trim() : "";
         }
         const modalStatusLower = normalizeQuoteRequestStatus(modalReq?.status);
         const modalIsAssigned = modalStatusLower === "assigned";
@@ -3631,10 +3616,6 @@ export function CustomerDashboard({
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}`
-            : null;
-        const modalPreferredLabel =
-          modalPreferredDateRaw && !Number.isNaN(Date.parse(modalPreferredDateRaw))
-            ? new Date(modalPreferredDateRaw).toLocaleDateString("en-GB")
             : null;
 
         return (
@@ -3908,13 +3889,6 @@ export function CustomerDashboard({
                         </div>
                       </div>
 
-                      {modalPreferredLabel && (
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Calendar className="w-4 h-4 shrink-0" />
-                          <span>Preferred date: {modalPreferredLabel}</span>
-                        </div>
-                      )}
-
                       {modalDetailRows.length > 0 ? (
                         <div>
                           <p className="text-sm font-semibold text-[#0A1A2F] mb-3">Request details</p>
@@ -3935,7 +3909,7 @@ export function CustomerDashboard({
                         <p className="text-sm text-gray-500">No structured request fields to display.</p>
                       )}
 
-                      {modalNotes ? (
+                      {modalNotes && !modalHasAccessNoteInRows ? (
                         <div className="rounded-lg border p-3 bg-white">
                           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Notes</p>
                           <p className="text-sm text-gray-800 whitespace-pre-wrap">{modalNotes}</p>

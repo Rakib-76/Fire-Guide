@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Bell, Calendar, DollarSign, AlertCircle, CheckCircle, Info, Trash2, Filter, X } from "lucide-react";
+import { Bell, Calendar, CalendarClock, DollarSign, AlertCircle, CheckCircle, Info, Trash2, Filter, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -17,6 +17,14 @@ import {
   // deleteAllNotifications,
   deleteNotification as deleteNotificationAPI,
   getProfessionalNotificationDedupeKey,
+  formatProfessionalNotificationTitle,
+  formatProfessionalNotificationContent,
+  isBookingCancellationNotification,
+  isBookingRescheduleNotification,
+  isApprovalNotification,
+  isNegativeNotification,
+  getProfessionalNotificationTone,
+  type ProfessionalNotificationTone,
 } from "../api/notificationsService";
 import { getApiToken } from "../lib/auth";
 import { mergeProfessionalNotificationSeenKeys, emitProfessionalNotificationsMutated } from "../lib/professionalNotificationSeen";
@@ -134,11 +142,13 @@ export function ProfessionalNotifications() {
       if (response && (response.status === true || response.status === "success" || response.status === "true")) {
         if (dataArray.length > 0) {
             const mappedNotifications: Notification[] = dataArray.map((item) => {
+              const title = formatProfessionalNotificationTitle(item.title, item.content);
+              const message = formatProfessionalNotificationContent(item.title, item.content);
               return {
                 id: item.id,
                 type: mapCategoryToType(item.category),
-                title: item.title,
-                message: item.content,
+                title,
+                message,
                 timestamp: formatTimestamp(item.created_at),
                 read: Boolean(item.is_read),
                 priority: item.priority,
@@ -200,7 +210,19 @@ export function ProfessionalNotifications() {
     loadNotifications();
   }, [activeTab]);
 
-  const getNotificationIcon = (type: string) => {
+  const getNotificationIcon = (type: string, title?: string, message?: string) => {
+    const titleText = title ?? "";
+    const messageText = message ?? "";
+
+    if (isApprovalNotification(titleText, messageText)) {
+      return <CheckCircle className="w-5 h-5 text-green-600" />;
+    }
+    if (isNegativeNotification(titleText, messageText)) {
+      return <AlertCircle className="w-5 h-5 text-orange-600" />;
+    }
+    if (isBookingRescheduleNotification(titleText, messageText)) {
+      return <CalendarClock className="w-5 h-5 text-amber-600" />;
+    }
     switch (type) {
       case "booking":
         return <Calendar className="w-5 h-5 text-blue-600" />;
@@ -215,7 +237,13 @@ export function ProfessionalNotifications() {
     }
   };
 
-  const getPriorityColor = (priority: string) => {
+  const getPriorityColor = (priority: string, tone: ProfessionalNotificationTone = "default") => {
+    if (tone === "approve") {
+      return "border border-green-400 bg-green-100 text-green-800";
+    }
+    if (tone === "negative") {
+      return "border border-orange-400 bg-orange-100 text-orange-800";
+    }
     switch (priority) {
       case "high":
         return "bg-red-100 text-red-800 border-red-200";
@@ -226,6 +254,19 @@ export function ProfessionalNotifications() {
       default:
         return "bg-gray-100 text-gray-800 border-gray-200";
     }
+  };
+
+  const getUnreadNotificationCardClass = (read: boolean, tone: ProfessionalNotificationTone): string => {
+    if (read) return "";
+    if (tone === "approve") return "border-l-4 border-l-green-600 bg-green-50/30";
+    if (tone === "negative") return "border-l-4 border-l-orange-500 bg-orange-50/30";
+    return "border-l-4 border-l-red-600 bg-red-50/30";
+  };
+
+  const getUnreadDotClass = (tone: ProfessionalNotificationTone): string => {
+    if (tone === "approve") return "bg-green-600";
+    if (tone === "negative") return "bg-orange-500";
+    return "bg-red-600";
   };
 
   const markAsRead = async (id: number) => {
@@ -465,15 +506,20 @@ export function ProfessionalNotifications() {
             </Card>
           ) : (
             <div className="space-y-3 w-full">
-              {filteredNotifications.map((notification) => (
+              {filteredNotifications.map((notification) => {
+                const tone = getProfessionalNotificationTone(
+                  notification.title,
+                  notification.message
+                );
+                return (
                 <Card 
                   key={notification.id} 
-                  className={`transition-all hover:shadow-md w-full ${!notification.read ? 'border-l-4 border-l-red-600 bg-red-50/30' : ''}`}
+                  className={`transition-all hover:shadow-md w-full ${getUnreadNotificationCardClass(notification.read, tone)}`}
                 >
                   <CardContent className="p-4">
                     <div className="flex flex-col md:flex-row md:items-start gap-4">
                       <div className="mt-1 flex-shrink-0">
-                        {getNotificationIcon(notification.type)}
+                        {getNotificationIcon(notification.type, notification.title, notification.message)}
                       </div>
                       
                       <div className="flex-1 min-w-0">
@@ -484,7 +530,7 @@ export function ProfessionalNotifications() {
                                 {notification.title}
                               </h3>
                               {!notification.read && (
-                                <div className="w-2 h-2 bg-red-600 rounded-full flex-shrink-0"></div>
+                                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getUnreadDotClass(tone)}`}></div>
                               )}
                             </div>
                             <p className="text-sm text-gray-600 break-words">
@@ -492,7 +538,7 @@ export function ProfessionalNotifications() {
                             </p>
                           </div>
                           
-                          <Badge className={`${getPriorityColor(notification.priority)} flex-shrink-0`} variant="outline">
+                          <Badge className={`${getPriorityColor(notification.priority, tone)} flex-shrink-0`} variant="outline">
                             {notification.priority}
                           </Badge>
                         </div>
@@ -527,7 +573,8 @@ export function ProfessionalNotifications() {
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+                );
+              })}
             </div>
           )}
         </TabsContent>
