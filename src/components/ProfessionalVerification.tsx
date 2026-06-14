@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Shield, CheckCircle, AlertCircle, Upload, FileText, Award, X, Loader2, Pencil, Building2, Plus, Trash2, ImageIcon } from "lucide-react";
+import { Shield, CheckCircle, AlertCircle, Upload, FileText, Award, X, Loader2, Pencil, Building2, Plus, ImageIcon, MoreHorizontal, Info } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -7,7 +7,13 @@ import { Progress } from "./ui/progress";
 import { Separator } from "./ui/separator";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { Textarea } from "./ui/textarea";
+import { Checkbox } from "./ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -51,6 +57,7 @@ type ProfessionalMembershipEntry = {
   membershipId: string;
   memberSince: string;
   notes: string;
+  status?: string;
   /** Raw path from API e.g. membership/123_evidence.jpeg */
   evidencePath?: string;
   logoPath?: string;
@@ -60,6 +67,62 @@ type ProfessionalMembershipEntry = {
   logoFileName?: string;
   logoDataUrl?: string;
 };
+
+type MembershipStatusDisplay = {
+  label: string;
+  className: string;
+};
+
+function normalizeMembershipStatus(status: string | null | undefined): string {
+  const value = String(status ?? "").trim().toLowerCase();
+  if (!value) return "pending";
+  if (value === "approved" || value === "verified" || value === "active") return "verified";
+  if (value === "rejected" || value === "declined" || value === "invalid" || value === "denied") {
+    return "rejected";
+  }
+  if (value === "pending" || value === "submitted" || value === "review") return "pending";
+  return value;
+}
+
+function getMembershipStatusDisplay(status: string | null | undefined): MembershipStatusDisplay {
+  const normalized = normalizeMembershipStatus(status);
+  if (normalized === "verified") {
+    return {
+      label: "Verified by Fire Guide",
+      className: "border border-green-400 bg-green-100 text-green-800",
+    };
+  }
+  if (normalized === "rejected") {
+    return {
+      label: "Rejected / Invalid",
+      className: "border border-red-400 bg-red-100 text-red-800",
+    };
+  }
+  return {
+    label: "Pending Review",
+    className: "border border-yellow-400 bg-yellow-100 text-yellow-900",
+  };
+}
+
+function formatMembershipListDate(dateString: string | null | undefined): string {
+  const value = (dateString ?? "").trim();
+  if (!value) return "—";
+  try {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+  } catch {
+    return value;
+  }
+}
+
+function getMembershipOrganizationShortName(name: string): string {
+  const match = name.match(/\(([^)]+)\)/);
+  if (match?.[1]?.trim()) return match[1].trim();
+  const words = name.split(/\s+/).filter(Boolean);
+  if (words.length <= 2) return name;
+  return words.map((word) => word[0]?.toUpperCase() ?? "").join("");
+}
 
 function membershipsStorageKey(): string {
   const professionalId = getProfessionalId();
@@ -87,6 +150,7 @@ function loadStoredMemberships(): ProfessionalMembershipEntry[] {
         membershipId: (item.membershipId ?? "").trim(),
         memberSince: (item.memberSince ?? "").trim(),
         notes: (item.notes ?? "").trim(),
+        status: (item.status ?? "").trim() || "pending",
         evidencePath: (item.evidencePath ?? "").trim() || undefined,
         logoPath: (item.logoPath ?? "").trim() || undefined,
         documentFileName: (item.documentFileName ?? "").trim() || undefined,
@@ -130,8 +194,11 @@ type MembershipUploadTarget = {
 };
 
 const PROFESSIONAL_MEMBERSHIP_SUGGESTIONS = [
-  "Fire Industry Association (FIA)",
+  "Institute of Fire Safety Managers (IFSM)",
   "Institution of Fire Engineers (IFE)",
+  "Fire Industry Association (FIA)",
+  "SAFE Fire Safety Register (SAFE)",
+  "Fire Protection Association (FPA)",
   "BAFE (British Approvals for Fire Equipment)",
   "IOSH (Institution of Occupational Safety and Health)",
   "NEBOSH Alumni / Network",
@@ -286,6 +353,7 @@ export function ProfessionalVerification() {
   const [isLoadingMemberships, setIsLoadingMemberships] = useState(false);
   const [membershipForm, setMembershipForm] = useState({ ...EMPTY_MEMBERSHIP_FORM });
   const [membershipFormOpen, setMembershipFormOpen] = useState(false);
+  const [membershipConfirmed, setMembershipConfirmed] = useState(false);
   const [isSavingMembership, setIsSavingMembership] = useState(false);
   const [membershipUploadTarget, setMembershipUploadTarget] = useState<MembershipUploadTarget | null>(null);
   const [uploadingMembershipAsset, setUploadingMembershipAsset] = useState<string | null>(null);
@@ -781,6 +849,7 @@ export function ProfessionalVerification() {
       membershipId: (item.reference_id ?? "").trim(),
       memberSince: (item.member_since ?? "").trim(),
       notes: (item.note ?? "").trim(),
+      status: (item.status ?? "").trim() || "pending",
       evidencePath,
       logoPath,
       ...(evidencePath || documentPreview
@@ -800,10 +869,21 @@ export function ProfessionalVerification() {
     });
   };
 
+  const closeMembershipForm = () => {
+    setMembershipFormOpen(false);
+    setMembershipForm({ ...EMPTY_MEMBERSHIP_FORM });
+    setMembershipConfirmed(false);
+  };
+
   const handleAddMembership = async () => {
     const organizationName = membershipForm.organizationName.trim();
     if (!organizationName) {
-      toast.error("Please enter the organization or body name.");
+      toast.error("Please select or enter the professional body / organization.");
+      return;
+    }
+
+    if (!membershipConfirmed) {
+      toast.error("Please confirm that your membership information is accurate.");
       return;
     }
 
@@ -838,6 +918,7 @@ export function ProfessionalVerification() {
       }
 
       setMembershipForm({ ...EMPTY_MEMBERSHIP_FORM });
+      setMembershipConfirmed(false);
       setMembershipFormOpen(false);
       toast.success(response.message || "Membership saved successfully.");
       await fetchMemberships();
@@ -976,120 +1057,6 @@ export function ProfessionalVerification() {
     }
     setMembershipEvidencePreviewIndex(0);
     setMembershipEvidencePreview({ title, urls });
-  };
-
-  const renderMembershipDocumentSlot = (args: {
-    label: string;
-    hasDocument: boolean;
-    uploadedOn: string | null;
-    documentUrl: string | null;
-    uploadKey: string;
-    onUpload: () => void;
-    onView?: () => void;
-  }) => {
-    const { label, hasDocument, uploadedOn, documentUrl, uploadKey, onUpload, onView } = args;
-    const slotSurfaceClass = hasDocument
-      ? "bg-green-50 border-green-200"
-      : "bg-gray-50 border-gray-100";
-
-    return (
-      <div className={`rounded-lg border p-3 ${slotSurfaceClass}`}>
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="flex min-w-0 flex-1 items-start gap-2">
-            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-            <div className="min-w-0 flex-1">
-              <p className="mb-1 text-sm font-medium text-gray-900">{label}</p>
-              <p className="text-xs text-gray-500">
-                {hasDocument
-                  ? uploadedOn
-                    ? `Uploaded ${uploadedOn}`
-                    : "Document uploaded"
-                  : "No document uploaded yet"}
-              </p>
-            </div>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            {hasDocument && (onView || documentUrl) ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  if (onView) {
-                    onView();
-                    return;
-                  }
-                  if (documentUrl) window.open(documentUrl, "_blank", "noopener,noreferrer");
-                }}
-              >
-                View
-              </Button>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onUpload}
-              disabled={uploadingMembershipAsset === uploadKey}
-            >
-              {uploadingMembershipAsset === uploadKey ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  <Upload className="mr-1 h-4 w-4" />
-                  {hasDocument ? "Update Document" : "Upload Document"}
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderMembershipLogoSlot = (args: {
-    label: string;
-    logoUrl: string | null;
-    uploadKey: string;
-    onUpload: () => void;
-  }) => {
-    const { label, logoUrl, uploadKey, onUpload } = args;
-
-    return (
-      <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-white">
-              {logoUrl ? (
-                <img src={logoUrl} alt={label} className="h-full w-full object-contain" />
-              ) : (
-                <ImageIcon className="h-5 w-5 text-gray-300" />
-              )}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-gray-900">{label}</p>
-              <p className="text-xs text-gray-500">
-                {logoUrl ? "Logo uploaded" : "Upload the organization logo."}
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onUpload}
-            disabled={uploadingMembershipAsset === uploadKey}
-            className="shrink-0"
-          >
-            {uploadingMembershipAsset === uploadKey ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                <Upload className="mr-1 h-4 w-4" />
-                {logoUrl ? "Update Logo" : "Upload Logo"}
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
-    );
   };
 
   const requirements = [
@@ -1998,7 +1965,6 @@ export function ProfessionalVerification() {
             </CardContent>
           </Card>
         ))}
-      </div>
 
       {/* Professional memberships — loaded from professional/membership/get-all */}
       <Card>
@@ -2010,174 +1976,39 @@ export function ProfessionalVerification() {
             onChange={handleMembershipAssetChange}
             className="hidden"
           />
+
           <div className="flex items-start gap-3 md:gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-indigo-100">
               <Building2 className="h-6 w-6 text-indigo-700" />
             </div>
+
             <div className="min-w-0 flex-1">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <h3 className="text-lg text-[#0A1A2F]">Professional Memberships</h3>
+              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-lg text-[#0A1A2F]">Professional Memberships</h3>
+                  <p className="mt-1 text-sm text-gray-600 md:max-w-xl">
+                    Add and manage your professional body memberships and registrations.
+                  </p>
+                </div>
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  className="ml-auto shrink-0"
-                  onClick={() => setMembershipFormOpen((open) => !open)}
+                  className="w-full shrink-0 bg-red-600 hover:bg-red-700 md:ml-auto md:w-auto"
+                  onClick={() => setMembershipFormOpen(true)}
                 >
-                  {membershipFormOpen ? (
-                    "Cancel"
-                  ) : (
-                    <>
-                      <Plus className="mr-1.5 h-4 w-4" />
-                      Add membership
-                    </>
-                  )}
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Membership
                 </Button>
               </div>
-              {/* <p className="mb-4 text-sm text-gray-600">
-                List industry bodies, associations, or organizations you belong to — for example FIA,
-                IFE, BAFE, IOSH, or event networks. Upload membership certificates and organization
-                logos where available.
-              </p> */}
 
-              {membershipFormOpen ? (
-                <div className="mb-4 space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="membership-organization">Organization*</Label>
-                    <Input
-                      id="membership-organization"
-                      list="membership-organization-suggestions"
-                      value={membershipForm.organizationName}
-                      onChange={(e) =>
-                        setMembershipForm((prev) => ({ ...prev, organizationName: e.target.value }))
-                      }
-                      placeholder="e.g. Fire Industry Association (FIA)"
-                    />
-                    <datalist id="membership-organization-suggestions">
-                      {PROFESSIONAL_MEMBERSHIP_SUGGESTIONS.map((name) => (
-                        <option key={name} value={name} />
-                      ))}
-                    </datalist>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="membership-type">Membership type</Label>
-                      <Input
-                        id="membership-type"
-                        value={membershipForm.membershipType}
-                        onChange={(e) =>
-                          setMembershipForm((prev) => ({ ...prev, membershipType: e.target.value }))
-                        }
-                        placeholder="e.g. Full Member, Associate, Registered"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="membership-id">Reference ID</Label>
-                      <Input
-                        id="membership-id"
-                        value={membershipForm.membershipId}
-                        onChange={(e) =>
-                          setMembershipForm((prev) => ({ ...prev, membershipId: e.target.value }))
-                        }
-                        placeholder="Optional membership number"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="membership-since">Member since</Label>
-                    <Input
-                      id="membership-since"
-                      value={membershipForm.memberSince}
-                      onChange={(e) =>
-                        setMembershipForm((prev) => ({ ...prev, memberSince: e.target.value }))
-                      }
-                      placeholder="e.g. 2019 or Jan 2020"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="membership-notes">Notes (optional)</Label>
-                    <Textarea
-                      id="membership-notes"
-                      value={membershipForm.notes}
-                      onChange={(e) =>
-                        setMembershipForm((prev) => ({ ...prev, notes: e.target.value }))
-                      }
-                      placeholder="e.g. Active committee member, attended FIREX 2024"
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-gray-700">Membership certificate</p>
-                    {renderMembershipDocumentSlot({
-                      label: "Membership certificate document",
-                      hasDocument: Boolean(membershipForm.documentDataUrl),
-                      uploadedOn: membershipForm.documentUploadedAt
-                        ? formatDate(membershipForm.documentUploadedAt)
-                        : null,
-                      documentUrl: membershipForm.documentDataUrl || null,
-                      uploadKey: "form-document",
-                      onUpload: () =>
-                        handleMembershipAssetClick({ kind: "document", forForm: true }),
-                      onView: membershipForm.documentDataUrl
-                        ? () =>
-                            openMembershipEvidencePreview("Membership certificate preview", {
-                              documentDataUrl: membershipForm.documentDataUrl,
-                            })
-                        : undefined,
-                    })}
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-gray-700">Organization logo</p>
-                    {renderMembershipLogoSlot({
-                      label: "Organization logo",
-                      logoUrl: membershipForm.logoDataUrl || null,
-                      uploadKey: "form-logo",
-                      onUpload: () => handleMembershipAssetClick({ kind: "logo", forForm: true }),
-                    })}
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      className="bg-red-600 hover:bg-red-700"
-                      onClick={() => void handleAddMembership()}
-                      disabled={isSavingMembership}
-                    >
-                      {isSavingMembership ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Saving...
-                        </>
-                      ) : (
-                        "Save membership"
-                      )}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setMembershipFormOpen(false);
-                        setMembershipForm({ ...EMPTY_MEMBERSHIP_FORM });
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
+              <h4 className="mb-4 text-base font-semibold text-[#0A1A2F]">Your Professional Memberships</h4>
 
               {isLoadingMemberships ? (
-                <div className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-8 text-gray-600">
+                <div className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-10 text-gray-600">
                   <Loader2 className="h-5 w-5 animate-spin" />
                   <span>Loading memberships...</span>
                 </div>
               ) : memberships.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-gray-300 bg-white px-4 py-8 text-center">
+                <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-10 text-center">
                   <Building2 className="mx-auto mb-3 h-10 w-10 text-gray-300" />
                   <p className="font-medium text-gray-900">No memberships added yet</p>
                   <p className="mt-1 text-sm text-gray-500">
@@ -2186,109 +2017,310 @@ export function ProfessionalVerification() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {memberships.map((membership) => (
-                    <div
-                      key={membership.id}
-                      className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 flex-1 gap-3">
-                          {membership.logoDataUrl ? (
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                <div className="divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
+                  {memberships.map((membership) => {
+                    const statusDisplay = getMembershipStatusDisplay(membership.status);
+                    const hasCertificate = Boolean(membership.documentDataUrl || membership.evidencePath);
+                    return (
+                      <div
+                        key={membership.id}
+                        className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="flex min-w-0 flex-1 items-start gap-4">
+                          <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                            {membership.logoDataUrl ? (
                               <img
                                 src={membership.logoDataUrl}
                                 alt={`${membership.organizationName} logo`}
-                                className="h-full w-full object-contain"
+                                className="h-full w-full object-contain p-1"
                               />
-                            </div>
-                          ) : null}
+                            ) : (
+                              <Building2 className="h-6 w-6 text-gray-300" />
+                            )}
+                          </div>
                           <div className="min-w-0 flex-1">
-                            <p className="break-words font-semibold text-[#0A1A2F]">
-                              {membership.organizationName}
+                            <p className="text-base font-semibold text-[#0A1A2F]">
+                              {getMembershipOrganizationShortName(membership.organizationName)}
                             </p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {membership.membershipType ? (
-                                <Badge
-                                  variant="outline"
-                                  className="border-indigo-200 bg-indigo-50 text-indigo-800"
-                                >
-                                  {membership.membershipType}
-                                </Badge>
-                              ) : null}
-                              {membership.memberSince ? (
-                                <Badge variant="outline" className="border-gray-200 bg-gray-50 text-gray-700">
-                                  Since {membership.memberSince}
-                                </Badge>
-                              ) : null}
-                            </div>
-                            {membership.membershipId ? (
-                              <p className="mt-2 text-sm text-gray-600">
-                                <span className="font-medium text-gray-700">ID:</span>{" "}
-                                {membership.membershipId}
-                              </p>
-                            ) : null}
+                            <p className="mt-1 text-sm text-gray-600">
+                              {membership.membershipType || "Member"}
+                              {membership.membershipId
+                                ? ` | Membership No: ${membership.membershipId}`
+                                : ""}
+                              {membership.memberSince
+                                ? ` | Expiry: ${formatMembershipListDate(membership.memberSince)}`
+                                : ""}
+                            </p>
                             {membership.notes ? (
-                              <p className="mt-2 break-words text-sm text-gray-600">{membership.notes}</p>
+                              <p className="mt-1 truncate text-xs text-gray-500">{membership.notes}</p>
                             ) : null}
                           </div>
                         </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="shrink-0 text-red-600 hover:bg-red-50 hover:text-red-700"
-                          onClick={() => handleRemoveMembership(membership.id)}
-                          aria-label={`Remove ${membership.organizationName}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
 
-                      <div className="mt-4 space-y-2">
-                        {renderMembershipDocumentSlot({
-                          label: "Membership certificate document",
-                          hasDocument: Boolean(membership.documentDataUrl || membership.evidencePath),
-                          uploadedOn: membership.documentUploadedAt
-                            ? formatDate(membership.documentUploadedAt)
-                            : null,
-                          documentUrl: membership.documentDataUrl || null,
-                          uploadKey: `${membership.id}-document`,
-                          onUpload: () =>
-                            handleMembershipAssetClick({
-                              kind: "document",
-                              membershipId: membership.id,
-                            }),
-                          onView: () =>
-                            openMembershipEvidencePreview(
-                              `${membership.organizationName} — membership certificate`,
-                              membership
-                            ),
-                        })}
-                        {renderMembershipLogoSlot({
-                          label: "Organization logo",
-                          logoUrl: membership.logoDataUrl || null,
-                          uploadKey: `${membership.id}-logo`,
-                          onUpload: () =>
-                            handleMembershipAssetClick({
-                              kind: "logo",
-                              membershipId: membership.id,
-                            }),
-                        })}
+                        <div className="flex items-center gap-3 sm:shrink-0">
+                          <Badge variant="outline" className={statusDisplay.className}>
+                            {statusDisplay.label}
+                          </Badge>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                aria-label={`Actions for ${membership.organizationName}`}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                              {hasCertificate ? (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    openMembershipEvidencePreview(
+                                      `${membership.organizationName} — membership certificate`,
+                                      membership
+                                    )
+                                  }
+                                >
+                                  View certificate
+                                </DropdownMenuItem>
+                              ) : null}
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleMembershipAssetClick({
+                                    kind: "document",
+                                    membershipId: membership.id,
+                                  })
+                                }
+                              >
+                                Update certificate
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleMembershipAssetClick({
+                                    kind: "logo",
+                                    membershipId: membership.id,
+                                  })
+                                }
+                              >
+                                Update logo
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-red-600 focus:text-red-600"
+                                onClick={() => handleRemoveMembership(membership.id)}
+                              >
+                                Remove membership
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
-              {/*               <p className="mt-4 text-xs text-gray-500">
-                Membership certificate and organization logo must be image files. They are converted to
-                base64 and sent with your membership details when you save.
-              </p> */}
+              <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-4">
+                <div className="flex items-start gap-3">
+                  <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
+                  <div>
+                    <p className="font-medium text-blue-900">About Memberships</p>
+                    <p className="mt-1 text-sm text-blue-800">
+                      Membership details are subject to verification by Fire Guide. Approved memberships may be
+                      displayed on your public profile and used to support customer trust.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </CardContent>
       </Card>
+      </div>
+
+      <Dialog
+        open={membershipFormOpen}
+        onOpenChange={(open) => {
+          if (!open) closeMembershipForm();
+        }}
+      >
+        <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl text-[#0A1A2F]">Add Professional Membership</DialogTitle>
+            <DialogDescription>
+              Add your professional body membership details and upload supporting documents for review.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-6 py-2 lg:grid-cols-2">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="membership-organization">Professional Body / Organization*</Label>
+                <Input
+                  id="membership-organization"
+                  list="membership-organization-suggestions"
+                  value={membershipForm.organizationName}
+                  onChange={(e) =>
+                    setMembershipForm((prev) => ({ ...prev, organizationName: e.target.value }))
+                  }
+                  placeholder="e.g. Fire Industry Association (FIA)"
+                />
+                <datalist id="membership-organization-suggestions">
+                  {PROFESSIONAL_MEMBERSHIP_SUGGESTIONS.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="membership-type">Membership Grade / Type</Label>
+                <Input
+                  id="membership-type"
+                  value={membershipForm.membershipType}
+                  onChange={(e) =>
+                    setMembershipForm((prev) => ({ ...prev, membershipType: e.target.value }))
+                  }
+                  placeholder="e.g. Member, Associate, Registered Member"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="membership-id">Membership / Registration Number</Label>
+                <Input
+                  id="membership-id"
+                  value={membershipForm.membershipId}
+                  onChange={(e) =>
+                    setMembershipForm((prev) => ({ ...prev, membershipId: e.target.value }))
+                  }
+                  placeholder="Enter your membership number"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="membership-since">Expiry Date (optional)</Label>
+                <Input
+                  id="membership-since"
+                  type="date"
+                  value={membershipForm.memberSince}
+                  onChange={(e) =>
+                    setMembershipForm((prev) => ({ ...prev, memberSince: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="membership-notes">Website / Profile link (optional)</Label>
+                <Input
+                  id="membership-notes"
+                  value={membershipForm.notes}
+                  onChange={(e) =>
+                    setMembershipForm((prev) => ({ ...prev, notes: e.target.value }))
+                  }
+                  placeholder="https://example.com/profile"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Upload Proof / Certificate</Label>
+                <button
+                  type="button"
+                  onClick={() => handleMembershipAssetClick({ kind: "document", forForm: true })}
+                  disabled={uploadingMembershipAsset === "form-document"}
+                  className="flex w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center transition-colors hover:border-red-300 hover:bg-red-50/40"
+                >
+                  {uploadingMembershipAsset === "form-document" ? (
+                    <Loader2 className="mb-2 h-6 w-6 animate-spin text-gray-500" />
+                  ) : (
+                    <Upload className="mb-2 h-6 w-6 text-gray-400" />
+                  )}
+                  <p className="text-sm font-medium text-gray-700">
+                    {membershipForm.documentDataUrl ? "Certificate uploaded" : "Click to upload certificate"}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">PDF, JPG, or PNG (Max 5MB)</p>
+                  {membershipForm.documentDataUrl ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openMembershipEvidencePreview("Membership certificate preview", {
+                          documentDataUrl: membershipForm.documentDataUrl,
+                        });
+                      }}
+                    >
+                      Preview certificate
+                    </Button>
+                  ) : null}
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Upload Logo / Badge (optional)</Label>
+                <button
+                  type="button"
+                  onClick={() => handleMembershipAssetClick({ kind: "logo", forForm: true })}
+                  disabled={uploadingMembershipAsset === "form-logo"}
+                  className="flex w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center transition-colors hover:border-red-300 hover:bg-red-50/40"
+                >
+                  {uploadingMembershipAsset === "form-logo" ? (
+                    <Loader2 className="mb-2 h-6 w-6 animate-spin text-gray-500" />
+                  ) : membershipForm.logoDataUrl ? (
+                    <img
+                      src={membershipForm.logoDataUrl}
+                      alt="Organization logo preview"
+                      className="mb-2 h-12 w-12 object-contain"
+                    />
+                  ) : (
+                    <ImageIcon className="mb-2 h-6 w-6 text-gray-400" />
+                  )}
+                  <p className="text-sm font-medium text-gray-700">
+                    {membershipForm.logoDataUrl ? "Logo uploaded" : "Click to upload logo"}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">PNG, JPG, or SVG (Max 2MB)</p>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <Checkbox
+              id="membership-confirm"
+              checked={membershipConfirmed}
+              onCheckedChange={(checked) => setMembershipConfirmed(checked === true)}
+            />
+            <Label htmlFor="membership-confirm" className="text-sm leading-relaxed text-gray-700">
+              I confirm that the above information is true and I am a current member of this
+              organization.
+            </Label>
+          </div>
+
+          <DialogFooter className="mt-6 gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={closeMembershipForm}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => void handleAddMembership()}
+              disabled={isSavingMembership || !membershipConfirmed}
+            >
+              {isSavingMembership ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Membership"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={membershipEvidencePreview !== null}
