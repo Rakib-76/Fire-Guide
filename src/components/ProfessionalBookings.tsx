@@ -27,7 +27,7 @@ import {
   getProfessionalBookingPaymentStatus,
   getProfessionalBookingPaymentStatusLabel,
 } from "../api/bookingService";
-import { cancelCustomerBooking } from "../api/authService";
+import { cancelProfessionalBooking } from "../api/authService";
 import { UploadCompletionReportModal, UploadReportBookingData } from "./UploadCompletionReportModal";
 import { RescheduleCalendarPicker } from "./RescheduleCalendarPicker";
 import { getApiToken, getProfessionalId } from "../lib/auth";
@@ -532,7 +532,7 @@ export function ProfessionalBookings({ onViewDetails }: ProfessionalBookingsProp
 
     setRejectingBookingId(booking.id);
     try {
-      const response = await cancelCustomerBooking(apiToken, booking.id);
+      const response = await cancelProfessionalBooking(apiToken, booking.id);
       const ok =
         response.status === "success" ||
         (response as { success?: boolean }).success === true;

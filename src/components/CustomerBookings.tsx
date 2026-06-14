@@ -794,8 +794,12 @@ export const CustomerBookings = React.memo(function CustomerBookings({ bookings:
 
     setIsCancelling(bookingId);
     try {
-      const response = await cancelCustomerBooking(token, parseInt(bookingId));
-      if (response.status === 'success') {
+      const response = await cancelCustomerBooking(token, parseInt(bookingId, 10));
+      const ok =
+        response.status === "success" ||
+        String(response.status).toLowerCase() === "success" ||
+        (response as { success?: boolean }).success === true;
+      if (ok) {
         toast.success(response.message || "Booking cancelled successfully. Refund will be processed within 5-7 days.");
         setSelectedBooking(null);
         const cancelledUpdates: Partial<Booking> = {

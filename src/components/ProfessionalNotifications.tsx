@@ -66,18 +66,29 @@ export function ProfessionalNotifications() {
 
   // Map API category to component type
   const mapCategoryToType = (category: string): "booking" | "payment" | "system" | "review" => {
-    switch (category) {
-      case "bookings":
-        return "booking";
-      case "payments":
-        return "payment";
-      case "reviews":
-        return "review";
-      case "system":
-        return "system";
-      default:
-        return "system";
+    const value = String(category ?? "").toLowerCase();
+    if (
+      value === "bookings" ||
+      value === "booking" ||
+      value === "user_booking" ||
+      value === "user_bookings" ||
+      value.includes("booking")
+    ) {
+      return "booking";
     }
+    if (
+      value === "payments" ||
+      value === "payment" ||
+      value === "user_payment" ||
+      value === "user_payments" ||
+      value.includes("payment")
+    ) {
+      return "payment";
+    }
+    if (value === "reviews" || value === "review" || value.includes("review")) {
+      return "review";
+    }
+    return "system";
   };
 
   // Function to load notifications from API
@@ -351,6 +362,10 @@ export function ProfessionalNotifications() {
     const sourceNotifications = type === "all" ? allNotifications : notifications;
     if (type === "all") return sourceNotifications;
     if (type === "unread") return sourceNotifications.filter(n => !n.read);
+    // Category tabs already load filtered data from their own API endpoints.
+    if (type === "booking" || type === "payment" || type === "review" || type === "system") {
+      return sourceNotifications;
+    }
     return sourceNotifications.filter(n => n.type === type);
   };
 

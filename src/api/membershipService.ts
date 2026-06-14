@@ -43,6 +43,28 @@ export interface CreateMembershipResponse {
   data?: ProfessionalMembershipApiItem;
 }
 
+export interface GetAllMembershipsResponse {
+  status?: boolean | string;
+  success?: boolean;
+  message?: string;
+  error?: string;
+  total?: number;
+  data?:
+    | ProfessionalMembershipApiItem[]
+    | {
+        membership?: ProfessionalMembershipApiItem[];
+        memberships?: ProfessionalMembershipApiItem[];
+      };
+}
+
+export function parseMembershipGetAllData(
+  data: GetAllMembershipsResponse["data"]
+): ProfessionalMembershipApiItem[] {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  return data.membership ?? data.memberships ?? [];
+}
+
 const MEMBERSHIP_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
 const MEMBERSHIP_IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp"];
 
@@ -99,15 +121,19 @@ export interface MembershipMediaUrlOptions {
   apiToken?: string | null;
 }
 
-function isLocalDevHost(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-  );
-}
-
 function resolveMembershipApiToken(options?: MembershipMediaUrlOptions): string {
   return options?.apiToken?.trim() || getApiToken()?.trim() || "";
+}
+
+function buildPublicMembershipAssetUrl(origin: string, normalizedPath: string): string {
+  const prefix = origin.replace(/\/+$/, "");
+  return `${prefix}/${normalizedPath}`;
+}
+
+function buildAuthenticatedMembershipImageUrl(base: string, normalizedPath: string, token: string): string {
+  const query = `path=${encodeURIComponent(normalizedPath)}&api_token=${encodeURIComponent(token)}`;
+  const prefix = base.replace(/\/+$/, "");
+  return prefix ? `${prefix}/image/?${query}` : `/image/?${query}`;
 }
 
 export function getMembershipMediaUrlCandidates(
@@ -130,24 +156,15 @@ export function getMembershipMediaUrlCandidates(
     if (url && !urls.includes(url)) urls.push(url);
   };
 
-  const authenticatedImageUrl = (base: string): string | null => {
-    if (!token) return null;
-    const query = `path=${encodeURIComponent(normalized)}&api_token=${encodeURIComponent(token)}`;
-    const prefix = base.replace(/\/+$/, "");
-    return prefix ? `${prefix}/image?${query}` : `/image?${query}`;
-  };
-
-  // Backend serves membership files via GET /image?path=...&api_token=... (not /image/membership/...)
-  if (token) {
-    if (isLocalDevHost()) add(authenticatedImageUrl("") ?? "");
-    add(authenticatedImageUrl(origin) ?? "");
+  // Membership uploads are publicly served at /membership/{filename} (no token required).
+  if (normalized.startsWith("membership/")) {
+    add(buildPublicMembershipAssetUrl(origin, normalized));
   }
 
-  if (isLocalDevHost()) add(`/storage/${normalized}`);
-  add(`${origin}/storage/${normalized}`);
-  add(`${origin}/image/${normalized}`);
-  if (isLocalDevHost()) add(`/image/${normalized}`);
-  add(`${origin}/${normalized}`);
+  // Authenticated fallback for non-public paths or when public URL is unavailable.
+  if (token) {
+    add(buildAuthenticatedMembershipImageUrl(origin, normalized, token));
+  }
 
   return urls;
 }
@@ -263,6 +280,43 @@ export function resolveMembershipEntryMedia<T extends {
     ...(logoDataUrl ? { logoDataUrl } : {}),
   };
 }
+
+/**
+ * Fetch all memberships for the logged-in professional.
+ * POST /professional/membership/get-all
+ * Body: { api_token }
+ */
+export const getAllMemberships = async (
+  apiToken: string
+): Promise<ProfessionalMembershipApiItem[]> => {
+  try {
+    const response = await apiClient.post<GetAllMembershipsResponse>(
+      "/professional/membership/get-all",
+      { api_token: apiToken }
+    );
+    const payload = response.data;
+    const isSuccess =
+      payload?.status === true ||
+      payload?.success === true ||
+      String(payload?.status ?? "").toLowerCase() === "success";
+    if (isSuccess || payload?.data != null) {
+      return parseMembershipGetAllData(payload.data);
+    }
+    return [];
+  } catch (error: unknown) {
+    const err = error as {
+      response?: { data?: { message?: string; error?: string } };
+      message?: string;
+    };
+    console.error(
+      err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        "Failed to fetch memberships."
+    );
+    return [];
+  }
+};
 
 export const createMembership = async (
   data: CreateMembershipRequest

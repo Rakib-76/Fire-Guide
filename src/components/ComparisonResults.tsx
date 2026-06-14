@@ -15,6 +15,7 @@ import type {
   FilterProfessionalMembershipItem,
 } from "../api/servicesService";
 import { getMembershipMediaUrlCandidates } from "../api/membershipService";
+import { getApiToken } from "../lib/auth";
 import { toast } from "sonner";
 
 interface Professional {
@@ -58,24 +59,40 @@ function MembershipLogoImage({
   alt: string;
   className?: string;
 }) {
-  const urls = React.useMemo(() => getMembershipMediaUrlCandidates(logoPath), [logoPath]);
+  const token = getApiToken() ?? "";
+  const urls = React.useMemo(
+    () => getMembershipMediaUrlCandidates(logoPath, { apiToken: token }),
+    [logoPath, token]
+  );
   const [urlIndex, setUrlIndex] = React.useState(0);
+  const [loaded, setLoaded] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
   const src = urls[urlIndex] ?? "";
 
   React.useEffect(() => {
     setUrlIndex(0);
-  }, [logoPath]);
+    setLoaded(false);
+    setFailed(false);
+  }, [logoPath, urls]);
 
-  if (!src) return null;
+  if (!src || failed) return null;
 
   return (
     <img
       src={src}
       alt={alt}
       title={alt}
-      className={className}
+      className={`${className ?? ""}${loaded ? "" : " opacity-0"}`}
+      onLoad={() => setLoaded(true)}
       onError={() => {
-        setUrlIndex((current) => (current < urls.length - 1 ? current + 1 : current));
+        setUrlIndex((current) => {
+          if (current >= urls.length - 1) {
+            setFailed(true);
+            return current;
+          }
+          setLoaded(false);
+          return current + 1;
+        });
       }}
     />
   );

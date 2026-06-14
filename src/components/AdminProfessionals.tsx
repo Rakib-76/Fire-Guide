@@ -39,15 +39,21 @@ function MembershipMediaImage({
   className?: string;
   onExhausted?: () => void;
 }) {
-  const urls = React.useMemo(() => getMembershipMediaUrlCandidates(path), [path]);
+  const token = getApiToken() ?? "";
+  const urls = React.useMemo(
+    () => getMembershipMediaUrlCandidates(path, { apiToken: token }),
+    [path, token]
+  );
   const [urlIndex, setUrlIndex] = React.useState(0);
+  const [loaded, setLoaded] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
   const src = urls[urlIndex] ?? "";
 
   React.useEffect(() => {
     setUrlIndex(0);
+    setLoaded(false);
     setFailed(false);
-  }, [path]);
+  }, [path, urls]);
 
   if (!src || failed) return null;
 
@@ -55,7 +61,8 @@ function MembershipMediaImage({
     <img
       src={src}
       alt={alt}
-      className={className}
+      className={`${className ?? ""}${loaded ? "" : " opacity-0"}`}
+      onLoad={() => setLoaded(true)}
       onError={() => {
         setUrlIndex((current) => {
           if (current >= urls.length - 1) {
@@ -63,6 +70,7 @@ function MembershipMediaImage({
             onExhausted?.();
             return current;
           }
+          setLoaded(false);
           return current + 1;
         });
       }}
@@ -2946,13 +2954,15 @@ export function AdminProfessionals() {
 
                 {/* Professional Memberships - from API membership */}
                 {(() => {
+                  const adminToken = getApiToken();
                   const membershipList = getProfessionalMemberships(profileDetail).map((item, idx) => {
                     const evidencePath = item.evidence ?? "";
                     const logoPath = item.logo ?? "";
                     const isPdf = /\.pdf(\?.*)?$/i.test(evidencePath);
                     const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i.test(evidencePath);
-                    const evidenceUrls = buildMembershipEvidenceViewUrls({ evidencePath });
-                    const logoUrls = buildMembershipLogoViewUrls({ logoPath });
+                    const mediaOptions = { apiToken: adminToken };
+                    const evidenceUrls = buildMembershipEvidenceViewUrls({ evidencePath, ...mediaOptions });
+                    const logoUrls = buildMembershipLogoViewUrls({ logoPath, ...mediaOptions });
                     return {
                       id: String(item.id ?? `membership-${idx}`),
                       organizationName: item.organization_name || "Professional membership",

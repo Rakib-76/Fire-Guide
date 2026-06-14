@@ -28,6 +28,7 @@ import {
 import { getApiToken, getProfessionalId } from "../lib/auth";
 import {
   createMembership,
+  getAllMemberships,
   encodeImageFileAsBase64DataUrl,
   buildMembershipEvidenceViewUrls,
   getMembershipMediaUrl,
@@ -282,6 +283,7 @@ export function ProfessionalVerification() {
     expire_date: "",
   });
   const [memberships, setMemberships] = useState<ProfessionalMembershipEntry[]>([]);
+  const [isLoadingMemberships, setIsLoadingMemberships] = useState(false);
   const [membershipForm, setMembershipForm] = useState({ ...EMPTY_MEMBERSHIP_FORM });
   const [membershipFormOpen, setMembershipFormOpen] = useState(false);
   const [isSavingMembership, setIsSavingMembership] = useState(false);
@@ -350,6 +352,30 @@ export function ProfessionalVerification() {
     }
   };
 
+  const fetchMemberships = async () => {
+    try {
+      const apiToken = getApiToken();
+      if (!apiToken) {
+        console.warn("No API token available for fetching memberships");
+        setMemberships(loadStoredMemberships());
+        return;
+      }
+
+      setIsLoadingMemberships(true);
+      const items = await getAllMemberships(apiToken);
+      const entries = items
+        .map((item) => mapApiMembershipToEntry(item))
+        .filter((item) => item.organizationName.length > 0);
+      setMemberships(entries);
+      persistMemberships(entries);
+    } catch (err: unknown) {
+      console.error("Error fetching memberships:", err);
+      setMemberships(loadStoredMemberships());
+    } finally {
+      setIsLoadingMemberships(false);
+    }
+  };
+
   // Fetch insurance coverage data
   const fetchInsuranceData = async () => {
     try {
@@ -378,7 +404,7 @@ export function ProfessionalVerification() {
     fetchVerificationSummary();
     fetchQualificationsEvidence();
     fetchInsuranceData();
-    setMemberships(loadStoredMemberships());
+    void fetchMemberships();
   }, []);
 
   // Progress: each of insurance, certificate, identity true = one third (no other logic).
@@ -811,40 +837,10 @@ export function ProfessionalVerification() {
         return;
       }
 
-      const entry = response.data
-        ? mapApiMembershipToEntry(response.data, {
-            documentDataUrl: membershipForm.documentDataUrl.trim() || undefined,
-            logoDataUrl: membershipForm.logoDataUrl.trim() || undefined,
-          })
-        : resolveMembershipEntryMedia({
-            id: `membership-${Date.now()}`,
-            organizationName,
-            membershipType: membershipForm.membershipType.trim(),
-            membershipId: membershipForm.membershipId.trim(),
-            memberSince: membershipForm.memberSince.trim(),
-            notes: membershipForm.notes.trim(),
-            ...(membershipForm.documentDataUrl
-              ? {
-                  documentFileName: membershipForm.documentFileName.trim() || "Membership document",
-                  documentDataUrl: membershipForm.documentDataUrl,
-                  documentUploadedAt:
-                    membershipForm.documentUploadedAt || new Date().toISOString(),
-                }
-              : {}),
-            ...(membershipForm.logoDataUrl
-              ? {
-                  logoFileName: membershipForm.logoFileName.trim() || "Organization logo",
-                  logoDataUrl: membershipForm.logoDataUrl,
-                }
-              : {}),
-          });
-
-      const next = [...memberships, entry];
-      setMemberships(next);
-      persistMemberships(next);
       setMembershipForm({ ...EMPTY_MEMBERSHIP_FORM });
       setMembershipFormOpen(false);
       toast.success(response.message || "Membership saved successfully.");
+      await fetchMemberships();
     } catch {
       toast.error("Failed to save membership. Please try again.");
     } finally {
@@ -2004,7 +2000,7 @@ export function ProfessionalVerification() {
         ))}
       </div>
 
-      {/* Professional memberships — UI only (saved locally until API is available) */}
+      {/* Professional memberships — loaded from professional/membership/get-all */}
       <Card>
         <CardContent className="p-4 md:p-6">
           <input
@@ -2175,7 +2171,12 @@ export function ProfessionalVerification() {
                 </div>
               ) : null}
 
-              {memberships.length === 0 ? (
+              {isLoadingMemberships ? (
+                <div className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-8 text-gray-600">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Loading memberships...</span>
+                </div>
+              ) : memberships.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-gray-300 bg-white px-4 py-8 text-center">
                   <Building2 className="mx-auto mb-3 h-10 w-10 text-gray-300" />
                   <p className="font-medium text-gray-900">No memberships added yet</p>

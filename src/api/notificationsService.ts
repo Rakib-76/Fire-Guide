@@ -52,9 +52,27 @@ function strField(r: Record<string, unknown>, ...keys: string[]): string {
 
 function coerceCategory(raw: unknown): NotificationApiItem["category"] {
   const v = String(raw ?? "system").toLowerCase();
-  if (v === "bookings" || v === "booking") return "bookings";
-  if (v === "payments" || v === "payment") return "payments";
-  if (v === "reviews" || v === "review") return "reviews";
+  if (
+    v === "bookings" ||
+    v === "booking" ||
+    v === "user_booking" ||
+    v === "user_bookings" ||
+    v.includes("booking")
+  ) {
+    return "bookings";
+  }
+  if (
+    v === "payments" ||
+    v === "payment" ||
+    v === "user_payment" ||
+    v === "user_payments" ||
+    v.includes("payment")
+  ) {
+    return "payments";
+  }
+  if (v === "reviews" || v === "review" || v === "user_review" || v.includes("review")) {
+    return "reviews";
+  }
   return "system";
 }
 
@@ -257,17 +275,33 @@ export const fetchNotifications = async (
  * @param data - Request data containing api_token
  * @returns Promise with the API response containing array of unread notifications
  */
+function buildFetchNotificationsResult(body: unknown): FetchNotificationsResponse {
+  const list = normalizeNotificationsResponsePayload(body);
+  const msg = isRecord(body) && typeof body.message === "string" ? body.message : undefined;
+  const status =
+    isRecord(body) &&
+    (body.status === true ||
+      body.status === "success" ||
+      body.status === "true" ||
+      body.success === true);
+  return {
+    status: status ?? list.length > 0,
+    data: list,
+    message: msg,
+  };
+}
+
 export const fetchUnreadNotifications = async (
   data: FetchNotificationsRequest
 ): Promise<FetchNotificationsResponse> => {
   try {
-    const response = await apiClient.post<FetchNotificationsResponse>(
+    const response = await apiClient.post<unknown>(
       '/notifications/unread',
       {
         api_token: data.api_token,
       }
     );
-    return response.data;
+    return buildFetchNotificationsResult(response.data);
   } catch (error) {
     if (axios.isAxiosError(error)) {
       // Handle axios errors
@@ -308,13 +342,13 @@ export const fetchBookingsNotifications = async (
   data: FetchNotificationsRequest
 ): Promise<FetchNotificationsResponse> => {
   try {
-    const response = await apiClient.post<FetchNotificationsResponse>(
+    const response = await apiClient.post<unknown>(
       '/notifications/bookings',
       {
         api_token: data.api_token,
       }
     );
-    return response.data;
+    return buildFetchNotificationsResult(response.data);
   } catch (error) {
     if (axios.isAxiosError(error)) {
       // Handle axios errors
@@ -355,13 +389,13 @@ export const fetchPaymentsNotifications = async (
   data: FetchNotificationsRequest
 ): Promise<FetchNotificationsResponse> => {
   try {
-    const response = await apiClient.post<FetchNotificationsResponse>(
+    const response = await apiClient.post<unknown>(
       '/notifications/payments',
       {
         api_token: data.api_token,
       }
     );
-    return response.data;
+    return buildFetchNotificationsResult(response.data);
   } catch (error) {
     if (axios.isAxiosError(error)) {
       // Handle axios errors

@@ -1626,6 +1626,43 @@ export const cancelCustomerBooking = async (
   }
 };
 
+/** Reject/cancel from professional dashboard — separate from customer cancel. */
+export const cancelProfessionalBooking = async (
+  apiToken: string,
+  bookingId: number
+): Promise<CancelBookingResponse> => {
+  try {
+    const response = await apiClient.post<CancelBookingResponse>('/pro_dashboard/cancel_booking', {
+      api_token: apiToken,
+      booking_id: bookingId,
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('Error cancelling professional booking:', error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          status: 'error',
+          message: error.response.data?.message || 'Failed to cancel booking',
+          error: error.response.data?.error || error.message,
+          statusCode: error.response.status,
+        };
+      } else if (error.request) {
+        throw {
+          status: 'error',
+          message: 'No response from server. Please check your connection.',
+          error: 'Network error',
+        };
+      }
+    }
+    throw {
+      status: 'error',
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
+
 // Reschedule booking response interface
 export interface RescheduleBookingResponse {
   status: string;
@@ -1648,7 +1685,7 @@ export const rescheduleCustomerBooking = async (
   reason?: string
 ): Promise<RescheduleBookingResponse> => {
   try {
-    const response = await apiClient.post<RescheduleBookingResponse>('/professional_booking/update', {
+    const response = await apiClient.post<RescheduleBookingResponse>('professional_booking/user/update', {
       api_token: apiToken,
       id: bookingId,
       selected_date: selectedDate,
