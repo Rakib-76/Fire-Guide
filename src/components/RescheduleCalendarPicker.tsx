@@ -3,14 +3,14 @@ import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Label } from "./ui/label";
 import { Calendar, ChevronLeft, ChevronRight, Clock, Loader2 } from "lucide-react";
-import {
-  fetchProfessionalProfileAvailableDates,
-  findAvailabilityEntryForDate,
-  getBookableSlotsForDateEntry,
-  type ProfessionalProfileAvailableDateItem,
-} from "../api/availableDatesService";
+import { fetchProfessionalProfileAvailableDates, type ProfessionalProfileAvailableDateItem } from "../api/availableDatesService";
 import { getNoticeBlockedBookingDates } from "../api/professionalsService";
 import { normalizeSlotForBookingComparison } from "../lib/bookingSlotNormalize";
+
+function parseDateOnly(dateStr: string): string {
+  if (!dateStr) return "";
+  return dateStr.replace(" ", "T").slice(0, 10);
+}
 
 type DayInfo = { date: string; day: number; isAvailable: boolean; isBlocked: boolean } | null;
 
@@ -129,15 +129,17 @@ export function RescheduleCalendarPicker({
   const calendarDays = generateCalendarDays();
   const monthName = currentMonth.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 
-  const selectedDateEntry = useMemo(
-    () => findAvailabilityEntryForDate(availableDatesData, selectedDate),
-    [availableDatesData, selectedDate]
-  );
+  const timeSlots = [
+    "9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
+    "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM",
+  ];
 
-  const bookableTimeSlots = useMemo(
-    () => getBookableSlotsForDateEntry(selectedDateEntry),
-    [selectedDateEntry]
-  );
+  const availableSlotsForSelectedDate = useMemo(() => {
+    if (!selectedDate) return new Set<string>();
+    const entry = availableDatesData.find((d) => parseDateOnly(d.date) === parseDateOnly(selectedDate));
+    if (!entry?.slots || !Array.isArray(entry.slots)) return new Set<string>();
+    return new Set(entry.slots.map((s) => normalizeSlotForBookingComparison(s)));
+  }, [selectedDate, availableDatesData]);
 
   if (pid == null) {
     return (
@@ -241,33 +243,29 @@ export function RescheduleCalendarPicker({
                     year: "numeric",
                   })}
                 </Label>
-                {bookableTimeSlots.length === 0 ? (
-                  <p className="text-sm text-gray-500 py-4 text-center">
-                    No time slots are available for this date. Please choose another day.
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {bookableTimeSlots.map((slot) => {
-                      const isSelected =
-                        normalizeSlotForBookingComparison(selectedTime) ===
-                        normalizeSlotForBookingComparison(slot);
-                      return (
-                        <button
-                          key={slot}
-                          type="button"
-                          onClick={() => onSelectTime(slot)}
-                          className={`p-2 text-center text-sm rounded-lg border transition-all ${
-                            isSelected
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {timeSlots.map((slot) => {
+                    const slotKey = normalizeSlotForBookingComparison(slot);
+                    const isAvailable = availableSlotsForSelectedDate.has(slotKey);
+                    return (
+                      <button
+                        key={slot}
+                        type="button"
+                        onClick={() => isAvailable && onSelectTime(slot)}
+                        disabled={!isAvailable}
+                        className={`p-2 text-center text-sm rounded-lg border transition-all ${
+                          !isAvailable
+                            ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                            : selectedTime === slot
                               ? "border-red-600 bg-red-50 text-red-700 font-semibold"
                               : "border-gray-200 hover:border-red-300"
-                          }`}
-                        >
-                          {slot}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                        }`}
+                      >
+                        {slot}
+                      </button>
+                    );
+                  })}
+                </div>
               </>
             )}
           </CardContent>

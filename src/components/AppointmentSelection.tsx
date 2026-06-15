@@ -15,16 +15,18 @@ import {
   Loader2
 } from "lucide-react";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
-import {
-  fetchProfessionalProfileAvailableDates,
-  findAvailabilityEntryForDate,
-  getBookableSlotsForDateEntry,
-  type ProfessionalProfileAvailableDateItem,
-} from "../api/availableDatesService";
+import { fetchProfessionalProfileAvailableDates, ProfessionalProfileAvailableDateItem } from "../api/availableDatesService";
 import { getNoticeBlockedBookingDates } from "../api/professionalsService";
 import { normalizeSlotForBookingComparison } from "../lib/bookingSlotNormalize";
 import type { BookingData } from "./BookingFlow";
 import { BookingServiceDetailsLines } from "./BookingServiceDetailsLines";
+
+/** Parse API date string to YYYY-MM-DD. Handles "2026-03-28 00:00:00" and "2026-03-28T00:00:00.000000Z". */
+function parseDateOnly(dateStr: string): string {
+  if (!dateStr) return "";
+  const s = dateStr.replace(" ", "T").slice(0, 10);
+  return s;
+}
 
 interface AppointmentSelectionProps {
   service: BookingData["service"];
@@ -170,15 +172,18 @@ export function AppointmentSelection({
 
   const calendarDays = generateCalendarDays();
 
-  const selectedDateEntry = useMemo(
-    () => findAvailabilityEntryForDate(availableDatesData, selectedDate),
-    [availableDatesData, selectedDate]
-  );
+  const timeSlots = [
+    "9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
+    "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM"
+  ];
 
-  const bookableTimeSlots = useMemo(
-    () => getBookableSlotsForDateEntry(selectedDateEntry),
-    [selectedDateEntry]
-  );
+  // For the selected date, slots the API lists as bookable (source of truth).
+  const availableSlotsForSelectedDate = useMemo(() => {
+    if (!selectedDate) return new Set<string>();
+    const entry = availableDatesData.find((d) => parseDateOnly(d.date) === parseDateOnly(selectedDate));
+    if (!entry || !entry.slots || !Array.isArray(entry.slots)) return new Set<string>();
+    return new Set(entry.slots.map((s) => normalizeSlotForBookingComparison(s)));
+  }, [selectedDate, availableDatesData]);
 
   const handleContinue = () => {
     if (selectedDate && selectedTime) {
@@ -349,7 +354,7 @@ export function AppointmentSelection({
                 </CardContent>
               </Card>
 
-              {/* Time Slots — only enable slots returned by API for the selected date */}
+              {/* Time slots: show full day grid; only API `slots` are selectable, others stay visible but disabled */}
               {selectedDate && (
                 <Card>
                   <CardHeader>
@@ -369,34 +374,30 @@ export function AppointmentSelection({
                         <Label className="mb-3 block">
                           Available time slots for {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
                         </Label>
-                        {bookableTimeSlots.length === 0 ? (
-                          <p className="text-sm text-gray-500 py-4 text-center">
-                            No time slots are available for this date. Please choose another day.
-                          </p>
-                        ) : (
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            {bookableTimeSlots.map((slot) => {
-                              const isSelected =
-                                normalizeSlotForBookingComparison(selectedTime) ===
-                                normalizeSlotForBookingComparison(slot);
-                              return (
-                                <button
-                                  key={slot}
-                                  type="button"
-                                  onClick={() => setSelectedTime(slot)}
-                                  className={`p-3 text-center rounded-lg border-2 transition-all ${
-                                    isSelected
-                                      ? "border-red-600 bg-red-50 text-red-600 font-semibold"
-                                      : "border-gray-200 hover:border-red-300"
-                                  }`}
-                                >
-                                  <Clock className="w-4 h-4 inline mr-2" />
-                                  {slot}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {timeSlots.map((slot) => {
+                            const slotKey = normalizeSlotForBookingComparison(slot);
+                            const isAvailable = availableSlotsForSelectedDate.has(slotKey);
+                            return (
+                              <button
+                                key={slot}
+                                type="button"
+                                onClick={() => isAvailable && setSelectedTime(slot)}
+                                disabled={!isAvailable}
+                                className={`p-3 text-center rounded-lg border-2 transition-all ${
+                                  !isAvailable
+                                    ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                    : selectedTime === slot
+                                    ? "border-red-600 bg-red-50 text-red-600 font-semibold"
+                                    : "border-gray-200 hover:border-red-300"
+                                }`}
+                              >
+                                <Clock className="w-4 h-4 inline mr-2" />
+                                {slot}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </>
                     )}
                   </CardContent>
