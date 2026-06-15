@@ -14,7 +14,7 @@ import { Input } from "./ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { filterPaymentInvoices, PaymentInvoiceItem, getEarningsSummary, getMonthlyEarnings, type PaymentInvoiceFilterPeriod } from "../api/paymentService";
+import { filterPaymentInvoices, PaymentInvoiceItem, getEarningsSummary, getMonthlyEarnings, getPlatformCommission, type PaymentInvoiceFilterPeriod } from "../api/paymentService";
 import { getApiToken } from "../lib/auth";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
@@ -117,6 +117,25 @@ const formatGbp = (amount: number): string =>
     maximumFractionDigits: 2,
   }).format(amount);
 
+function formatPlatformCommissionRate(rate: string | number | null | undefined): string | null {
+  if (rate == null || String(rate).trim() === "") return null;
+  const raw = String(rate).trim();
+  if (raw.endsWith("%")) return raw;
+  const parsed = parseFloat(raw);
+  if (!Number.isFinite(parsed)) return raw;
+  const display = parsed % 1 === 0 ? String(Math.round(parsed)) : String(parsed);
+  return `${display}%`;
+}
+
+function isPlatformCommissionGetSuccess(
+  res: { success?: boolean; status?: boolean | string } | null | undefined
+): boolean {
+  if (!res) return false;
+  if (res.success === true) return true;
+  if (res.status === true || res.status === "success" || res.status === "true") return true;
+  return false;
+}
+
 export function ProfessionalPayments() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterPeriod, setFilterPeriod] = useState<PaymentInvoiceFilterPeriod>("all_time");
@@ -132,6 +151,9 @@ export function ProfessionalPayments() {
   const [monthlyEarnings, setMonthlyEarnings] = useState<Array<{ month: string; earnings: number; jobs: number }>>([]);
   const [isLoadingMonthlyEarnings, setIsLoadingMonthlyEarnings] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [platformCommissionRate, setPlatformCommissionRate] = useState<string | null>(null);
+  const [platformCommissionMessage, setPlatformCommissionMessage] = useState<string | null>(null);
+  const [isLoadingCommission, setIsLoadingCommission] = useState(true);
 
   // Function to download statement as PDF using Payment History data
   const handleDownloadStatement = async () => {
@@ -439,10 +461,40 @@ export function ProfessionalPayments() {
     }
   };
 
+  // Fetch platform commission rate for Commission Structure section
+  const fetchPlatformCommission = async () => {
+    try {
+      setIsLoadingCommission(true);
+      const apiToken = getApiToken();
+      if (!apiToken) {
+        return;
+      }
+
+      const response = await getPlatformCommission(apiToken);
+      if (isPlatformCommissionGetSuccess(response) && response.data?.commission_rate != null) {
+        setPlatformCommissionRate(formatPlatformCommissionRate(response.data.commission_rate));
+      } else {
+        setPlatformCommissionRate(null);
+      }
+      setPlatformCommissionMessage(
+        typeof response.message === "string" && response.message.trim() !== ""
+          ? response.message.trim()
+          : null
+      );
+    } catch (err) {
+      console.error("Error fetching platform commission:", err);
+      setPlatformCommissionRate(null);
+      setPlatformCommissionMessage(null);
+    } finally {
+      setIsLoadingCommission(false);
+    }
+  };
+
   // Fetch earnings on mount; payment history refetches when filter changes
   useEffect(() => {
     fetchEarningsSummary();
     fetchMonthlyEarnings();
+    void fetchPlatformCommission();
   }, []);
 
   useEffect(() => {
@@ -564,9 +616,23 @@ export function ProfessionalPayments() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-medium text-blue-900">Commission Structure</p>
-              <p className="text-sm text-blue-800 mt-1">
-                Fire Guide charges a 15% platform commission on each booking. Your earnings are automatically calculated and displayed below.
-              </p>
+              {isLoadingCommission ? (
+                <p className="text-sm text-blue-800 mt-1 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading commission details…
+                </p>
+              ) : platformCommissionRate ? (
+                <p className="text-sm text-blue-800 mt-1">
+                  Fire Guide charges a {platformCommissionRate} platform commission on each booking. Your earnings are automatically calculated and displayed below.
+                </p>
+              ) : (
+                <p className="text-sm text-blue-800 mt-1">
+                  Fire Guide platform commission applies to each booking. Your earnings are automatically calculated and displayed below.
+                </p>
+              )}
+              {platformCommissionMessage && !isLoadingCommission && (
+                <p className="text-xs text-blue-700 mt-2">{platformCommissionMessage}</p>
+              )}
             </div>
           </div>
         </CardContent>

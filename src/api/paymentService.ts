@@ -757,3 +757,62 @@ export const getProfessionalInvoices = async (
     };
   }
 };
+
+export interface PlatformCommissionGetRequest {
+  api_token: string;
+}
+
+export interface PlatformCommissionData {
+  id?: number;
+  commission_rate?: string | number;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+}
+
+export interface PlatformCommissionGetResponse {
+  success?: boolean;
+  status?: boolean | string;
+  message?: string;
+  data?: PlatformCommissionData;
+}
+
+/**
+ * Get current platform commission rate
+ * POST /platform-commission/get
+ * Body: { api_token }
+ */
+export const getPlatformCommission = async (
+  api_token: string
+): Promise<PlatformCommissionGetResponse> => {
+  try {
+    const response = await apiClient.post<PlatformCommissionGetResponse>(
+      '/platform-commission/get',
+      { api_token }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching platform commission:', error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          success: false,
+          message: error.response.data?.message || 'Failed to fetch platform commission',
+          error: error.response.data?.error || error.message,
+          status: error.response.status,
+        };
+      } else if (error.request) {
+        throw {
+          success: false,
+          message: 'No response from server. Please check your connection.',
+          error: 'Network error',
+        };
+      }
+    }
+    throw {
+      success: false,
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
