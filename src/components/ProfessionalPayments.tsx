@@ -144,6 +144,13 @@ export function ProfessionalPayments() {
         return;
       }
 
+      // Statement PDF includes paid entries only (pending excluded from table and total).
+      const paidPayments = paymentHistory.filter((payment) => payment.status === "paid");
+      if (paidPayments.length === 0) {
+        toast.error("No paid payments found to download");
+        return;
+      }
+
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
       
@@ -152,10 +159,9 @@ export function ProfessionalPayments() {
       const headerBg = [0, 51, 102] as [number, number, number];
       const lightGray = [245, 245, 245] as [number, number, number];
       
-      // Calculate totals from payment history
-      const totalNetEarnings = paymentHistory.reduce((sum, payment) => sum + payment.netAmount, 0);
+      const totalNetEarnings = paidPayments.reduce((sum, payment) => sum + payment.netAmount, 0);
       const statementDate = new Date().toLocaleDateString('en-GB');
-      const statementNumber = `STM-${new Date().getFullYear()}-${String(paymentHistory.length).padStart(4, '0')}`;
+      const statementNumber = `STM-${new Date().getFullYear()}-${String(paidPayments.length).padStart(4, '0')}`;
       
       await drawFireGuidePdfHeader(doc, { margin: 14, y: 10, logoMaxH: 16, logoMaxW: 95 });
       
@@ -176,7 +182,7 @@ export function ProfessionalPayments() {
       doc.setFont('helvetica', 'normal');
       doc.text(statementDate, pageWidth - 14, 30, { align: 'right' });
       doc.text(statementNumber, pageWidth - 14, 37, { align: 'right' });
-      doc.text(String(paymentHistory.length), pageWidth - 14, 44, { align: 'right' });
+      doc.text(String(paidPayments.length), pageWidth - 14, 44, { align: 'right' });
       
       // Bill To Section
       doc.setFontSize(10);
@@ -197,7 +203,7 @@ export function ProfessionalPayments() {
       doc.text('Payment History', 14, 62);
       
       // Table data from paymentHistory
-      const tableData = paymentHistory.map((payment) => {
+      const tableData = paidPayments.map((payment) => {
         return [
           payment.reference,
           payment.date,
@@ -278,7 +284,7 @@ export function ProfessionalPayments() {
       // Download the PDF
       doc.save(`Fire_Guide_Statement_${new Date().toISOString().split('T')[0]}.pdf`);
       
-      toast.success(`Statement downloaded with ${paymentHistory.length} payment(s)`);
+      toast.success(`Statement downloaded with ${paidPayments.length} paid payment(s)`);
     } catch (err: any) {
       console.error("Error downloading statement:", err);
       toast.error(err?.message || "Failed to download statement");
