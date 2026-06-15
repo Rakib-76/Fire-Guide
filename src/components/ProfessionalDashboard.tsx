@@ -54,14 +54,9 @@ import { ProfessionalCustomQuoteContent } from "./ProfessionalCustomQuoteContent
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
 import { setCompleteProfileReminderFlag } from "../lib/professionalProfileReminder";
 import { toast } from "sonner";
-import {
-  loadProfessionalNotificationSeenKeys,
-  subscribeProfessionalNotificationSeen,
-  subscribeProfessionalNotificationMutated,
-} from "../lib/professionalNotificationSeen";
+import { subscribeProfessionalNotificationMutated } from "../lib/professionalNotificationSeen";
 import {
   fetchNotifications,
-  getProfessionalNotificationDedupeKey,
   type NotificationApiItem,
 } from "../api/notificationsService";
 
@@ -121,20 +116,10 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
   const [isLoadingAdminContactMessages, setIsLoadingAdminContactMessages] = useState(false);
 
   const [headerNotificationFeed, setHeaderNotificationFeed] = useState<NotificationApiItem[]>([]);
-  const [headerNotificationTick, setHeaderNotificationTick] = useState(0);
-
-  const professionalSeenKeys = useMemo(() => {
-    void headerNotificationTick;
-    return loadProfessionalNotificationSeenKeys();
-  }, [headerNotificationFeed, headerNotificationTick]);
 
   const unreadProfessionalNotificationCount = useMemo(() => {
-    return headerNotificationFeed.reduce((acc, n) => {
-      if (n.is_read) return acc;
-      if (professionalSeenKeys.has(getProfessionalNotificationDedupeKey(n))) return acc;
-      return acc + 1;
-    }, 0);
-  }, [headerNotificationFeed, professionalSeenKeys]);
+    return headerNotificationFeed.filter((n) => !n.is_read).length;
+  }, [headerNotificationFeed]);
 
   const refreshHeaderNotificationFeed = useCallback(async () => {
     const token = getApiToken();
@@ -159,16 +144,12 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
     }, 90_000);
     const onFocus = () => void refreshHeaderNotificationFeed();
     window.addEventListener("focus", onFocus);
-    const unsubSeen = subscribeProfessionalNotificationSeen(() => {
-      setHeaderNotificationTick((t) => t + 1);
-    });
     const unsubMut = subscribeProfessionalNotificationMutated(() => {
       void refreshHeaderNotificationFeed();
     });
     return () => {
       window.clearInterval(id);
       window.removeEventListener("focus", onFocus);
-      unsubSeen();
       unsubMut();
     };
   }, [refreshHeaderNotificationFeed]);

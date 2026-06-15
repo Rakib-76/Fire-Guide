@@ -249,7 +249,9 @@ export const fetchProfessionalProfileAvailableDates = async (
     payload as Record<string, unknown>,
     raw
   );
-  const bookedMap = extractBookedSlotKeysByDateFromAvailabilityPayload(raw);
+  // Only honour per-date `booked_slots` on each row — not top-level booking lists that can
+  // disagree with `slots` and incorrectly disable times the API still exposes as available.
+  const bookedMap = new Map<string, Set<string>>();
   for (const row of dates) {
     const bookedArr = row.booked_slots;
     if (!Array.isArray(bookedArr)) continue;
@@ -263,6 +265,26 @@ export const fetchProfessionalProfileAvailableDates = async (
     bookedSlotKeysByDate: bookedMapToRecord(bookedMap),
   };
 };
+
+/** Match a calendar day to its availability row. */
+export function findAvailabilityEntryForDate(
+  dates: ProfessionalProfileAvailableDateItem[],
+  selectedDate: string
+): ProfessionalProfileAvailableDateItem | undefined {
+  const key = parseBookingDateKey(selectedDate);
+  return dates.find((d) => parseBookingDateKey(d.date) === key);
+}
+
+/** Slots the customer can book: API `slots` minus optional same-row `booked_slots`. */
+export function getBookableSlotsForDateEntry(
+  entry: ProfessionalProfileAvailableDateItem | undefined
+): string[] {
+  if (!entry?.slots?.length) return [];
+  const bookedKeys = new Set(
+    (entry.booked_slots ?? []).map((s) => normalizeSlotForBookingComparison(s))
+  );
+  return entry.slots.filter((s) => !bookedKeys.has(normalizeSlotForBookingComparison(s)));
+}
 
 /**
  * Fetch all available dates

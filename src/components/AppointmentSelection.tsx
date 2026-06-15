@@ -15,18 +15,16 @@ import {
   Loader2
 } from "lucide-react";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
-import { fetchProfessionalProfileAvailableDates, ProfessionalProfileAvailableDateItem } from "../api/availableDatesService";
+import {
+  fetchProfessionalProfileAvailableDates,
+  findAvailabilityEntryForDate,
+  getBookableSlotsForDateEntry,
+  type ProfessionalProfileAvailableDateItem,
+} from "../api/availableDatesService";
 import { getNoticeBlockedBookingDates } from "../api/professionalsService";
-import { normalizeSlotForBookingComparison, parseBookingDateKey } from "../lib/bookingSlotNormalize";
+import { normalizeSlotForBookingComparison } from "../lib/bookingSlotNormalize";
 import type { BookingData } from "./BookingFlow";
 import { BookingServiceDetailsLines } from "./BookingServiceDetailsLines";
-
-/** Parse API date string to YYYY-MM-DD. Handles "2026-03-28 00:00:00" and "2026-03-28T00:00:00.000000Z". */
-function parseDateOnly(dateStr: string): string {
-  if (!dateStr) return "";
-  const s = dateStr.replace(" ", "T").slice(0, 10);
-  return s;
-}
 
 interface AppointmentSelectionProps {
   service: BookingData["service"];
@@ -36,35 +34,6 @@ interface AppointmentSelectionProps {
   pricingErrorMessage?: string;
   onContinue: (date: string, time: string) => void;
   onBack: () => void;
-}
-
-function readSessionBookedSlotKeysByDate(professionalId: number): Record<string, string[]> {
-  try {
-    const raw = sessionStorage.getItem(`fireguide_session_booked_slots_${professionalId}`);
-    const arr = JSON.parse(raw || "[]") as { date?: string; time?: string }[];
-    const rec: Record<string, string[]> = {};
-    for (const x of arr) {
-      if (!x?.date || !x?.time) continue;
-      const dk = parseBookingDateKey(x.date);
-      const tk = normalizeSlotForBookingComparison(x.time);
-      if (!rec[dk]) rec[dk] = [];
-      if (!rec[dk].includes(tk)) rec[dk].push(tk);
-    }
-    return rec;
-  } catch {
-    return {};
-  }
-}
-
-function mergeBookedSlotRecords(
-  fromApi: Record<string, string[]>,
-  fromSession: Record<string, string[]>
-): Record<string, string[]> {
-  const out: Record<string, string[]> = { ...fromApi };
-  for (const [d, list] of Object.entries(fromSession)) {
-    out[d] = [...new Set([...(out[d] || []), ...list])];
-  }
-  return out;
 }
 
 export function AppointmentSelection({
@@ -84,8 +53,6 @@ export function AppointmentSelection({
   const [blockedDatesSet, setBlockedDatesSet] = useState<Set<string>>(new Set());
   /** Blocked days returned inside POST available-date (blocked_ranges / notice), merged into calendar. */
   const [blockedDatesFromAvailabilityApi, setBlockedDatesFromAvailabilityApi] = useState<Set<string>>(new Set());
-  /** Normalized slot keys already taken per YYYY-MM-DD (API + this browser session after a successful booking). */
-  const [bookedSlotKeysByDate, setBookedSlotKeysByDate] = useState<Record<string, string[]>>({});
   const [availabilityRefreshTick, setAvailabilityRefreshTick] = useState(0);
 
   useEffect(() => {
@@ -103,26 +70,22 @@ export function AppointmentSelection({
     if (professionalId == null || Number.isNaN(Number(professionalId))) {
       setAvailableDatesData([]);
       setBlockedDatesFromAvailabilityApi(new Set());
-      setBookedSlotKeysByDate({});
       return;
     }
     let cancelled = false;
     const load = async () => {
       setIsLoadingAvailableDates(true);
       try {
-        const { dates, blockedCalendarDates, bookedSlotKeysByDate: apiBooked } =
+        const { dates, blockedCalendarDates } =
           await fetchProfessionalProfileAvailableDates(Number(professionalId));
         if (!cancelled) {
           setAvailableDatesData(dates ?? []);
           setBlockedDatesFromAvailabilityApi(new Set(blockedCalendarDates ?? []));
-          const sessionBooked = readSessionBookedSlotKeysByDate(Number(professionalId));
-          setBookedSlotKeysByDate(mergeBookedSlotRecords(apiBooked ?? {}, sessionBooked));
         }
       } catch (err) {
         if (!cancelled) {
           setAvailableDatesData([]);
           setBlockedDatesFromAvailabilityApi(new Set());
-          setBookedSlotKeysByDate({});
         }
       } finally {
         if (!cancelled) setIsLoadingAvailableDates(false);
@@ -207,24 +170,15 @@ export function AppointmentSelection({
 
   const calendarDays = generateCalendarDays();
 
-  const timeSlots = [
-    "9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
-    "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM"
-  ];
+  const selectedDateEntry = useMemo(
+    () => findAvailabilityEntryForDate(availableDatesData, selectedDate),
+    [availableDatesData, selectedDate]
+  );
 
-  // For the selected date, which slots the API lists as bookable (before removing taken times).
-  const availableSlotsForSelectedDate = useMemo(() => {
-    if (!selectedDate) return new Set<string>();
-    const entry = availableDatesData.find((d) => parseDateOnly(d.date) === parseDateOnly(selectedDate));
-    if (!entry || !entry.slots || !Array.isArray(entry.slots)) return new Set<string>();
-    return new Set(entry.slots.map((s) => normalizeSlotForBookingComparison(s)));
-  }, [selectedDate, availableDatesData]);
-
-  const bookedSlotsForSelectedDate = useMemo(() => {
-    if (!selectedDate) return new Set<string>();
-    const keys = bookedSlotKeysByDate[selectedDate] ?? bookedSlotKeysByDate[parseDateOnly(selectedDate)] ?? [];
-    return new Set(keys);
-  }, [selectedDate, bookedSlotKeysByDate]);
+  const bookableTimeSlots = useMemo(
+    () => getBookableSlotsForDateEntry(selectedDateEntry),
+    [selectedDateEntry]
+  );
 
   const handleContinue = () => {
     if (selectedDate && selectedTime) {
@@ -415,32 +369,34 @@ export function AppointmentSelection({
                         <Label className="mb-3 block">
                           Available time slots for {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
                         </Label>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          {timeSlots.map((slot) => {
-                            const slotKey = normalizeSlotForBookingComparison(slot);
-                            const isAvailable =
-                              availableSlotsForSelectedDate.has(slotKey) &&
-                              !bookedSlotsForSelectedDate.has(slotKey);
-                            return (
-                              <button
-                                key={slot}
-                                type="button"
-                                onClick={() => isAvailable && setSelectedTime(slot)}
-                                disabled={!isAvailable}
-                                className={`p-3 text-center rounded-lg border-2 transition-all ${
-                                  !isAvailable
-                                    ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
-                                    : selectedTime === slot
-                                    ? "border-red-600 bg-red-50 text-red-600 font-semibold"
-                                    : "border-gray-200 hover:border-red-300"
-                                }`}
-                              >
-                                <Clock className="w-4 h-4 inline mr-2" />
-                                {slot}
-                              </button>
-                            );
-                          })}
-                        </div>
+                        {bookableTimeSlots.length === 0 ? (
+                          <p className="text-sm text-gray-500 py-4 text-center">
+                            No time slots are available for this date. Please choose another day.
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {bookableTimeSlots.map((slot) => {
+                              const isSelected =
+                                normalizeSlotForBookingComparison(selectedTime) ===
+                                normalizeSlotForBookingComparison(slot);
+                              return (
+                                <button
+                                  key={slot}
+                                  type="button"
+                                  onClick={() => setSelectedTime(slot)}
+                                  className={`p-3 text-center rounded-lg border-2 transition-all ${
+                                    isSelected
+                                      ? "border-red-600 bg-red-50 text-red-600 font-semibold"
+                                      : "border-gray-200 hover:border-red-300"
+                                  }`}
+                                >
+                                  <Clock className="w-4 h-4 inline mr-2" />
+                                  {slot}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </>
                     )}
                   </CardContent>

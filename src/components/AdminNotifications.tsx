@@ -48,7 +48,7 @@ const ADMIN_NOTIFICATION_TAB_PATH: Record<string, string> = {
   user: "/admin/notifications/users",
   professional: "/admin/notifications/professionals",
   payment: "/admin/notifications/payments",
-  system: "/admin/notifications/system",
+  // system: "/admin/notifications/system",
 };
 
 const NOTIFICATION_FILTER_TABS = [
@@ -57,7 +57,7 @@ const NOTIFICATION_FILTER_TABS = [
   { value: "user", label: "Users" },
   { value: "professional", label: "Professionals" },
   { value: "payment", label: "Payments" },
-  { value: "system", label: "System" },
+  // { value: "system", label: "System" },
 ] as const;
 
 const notificationTabTriggerClass =
@@ -540,7 +540,7 @@ export function AdminNotifications() {
           </div>
 
           {/* 3. STATS CARDS - contextual icons per notification type */}
-          <div className="flex flex-col gap-3 md:grid md:grid-cols-4 md:gap-4">
+          <div className="flex flex-col gap-3 md:grid md:grid-cols-3 md:gap-4">
             <Card className="w-full border-gray-200 shadow-sm rounded-lg">
               <CardContent className="p-4">
                 <div className="mb-2 flex items-center gap-2">
@@ -577,6 +577,7 @@ export function AdminNotifications() {
               </CardContent>
             </Card>
 
+            {/* System summary card — hidden
             <Card className="w-full border-gray-200 shadow-sm rounded-lg">
               <CardContent className="p-4">
                 <div className="mb-2 flex items-center gap-2">
@@ -588,6 +589,7 @@ export function AdminNotifications() {
                 <p className="text-3xl font-semibold text-[#0A1A2F]">{stats.systemAlerts}</p>
               </CardContent>
             </Card>
+            */}
           </div>
 
           {/* 4. TABS — slider on mobile only; md+ full row (single TabsList) */}
@@ -599,7 +601,7 @@ export function AdminNotifications() {
                 style={{ WebkitOverflowScrolling: "touch" }}
                 aria-label="Notification filters"
               >
-                <TabsList className="inline-flex h-11 w-max min-w-0 flex-nowrap gap-1 rounded-lg bg-gray-100 p-1 md:grid md:h-11 md:w-full md:grid-cols-6">
+                <TabsList className="inline-flex h-11 w-max min-w-0 flex-nowrap gap-1 rounded-lg bg-gray-100 p-1 md:grid md:h-11 md:w-full md:grid-cols-5">
                   {NOTIFICATION_FILTER_TABS.map(({ value, label }) => (
                     <TabsTrigger key={value} value={value} className={notificationTabTriggerClass}>
                       {label}
