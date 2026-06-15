@@ -428,8 +428,9 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
 
   // Generate statement PDF using the payment data shown in cards
   const handleDownloadAll = async () => {
-    if (payments.length === 0) {
-      toast.error("No payments found to download.");
+    const paidPayments = payments.filter((payment) => payment.status === "paid");
+    if (paidPayments.length === 0) {
+      toast.error("No paid payments found to download.");
       return;
     }
 
@@ -455,7 +456,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       // Statement details (right side)
       const today = new Date();
       const statementDate = today.toLocaleDateString('en-GB');
-      const statementNumber = `STM-${today.getFullYear()}-${String(payments.length).padStart(4, '0')}`;
+      const statementNumber = `STM-${today.getFullYear()}-${String(paidPayments.length).padStart(4, '0')}`;
       
       doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
@@ -469,7 +470,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       doc.setFont('helvetica', 'bold');
       doc.text(statementDate, pageWidth - 14, 38, { align: 'right' });
       doc.text(statementNumber, pageWidth - 14, 46, { align: 'right' });
-      doc.text(String(payments.length), pageWidth - 14, 54, { align: 'right' });
+      doc.text(String(paidPayments.length), pageWidth - 14, 54, { align: 'right' });
       
       // Professional Statement info (left side)
       doc.setFont('helvetica', 'bold');
@@ -484,7 +485,10 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       doc.text('Payment History Report', 14, 57);
       doc.text('United Kingdom', 14, 64);
       
-      const totalAmount = payments.reduce((sum, p) => sum + parseFloat(p.amount.replace('£', '').replace(',', '')), 0);
+      const totalAmount = paidPayments.reduce(
+        (sum, p) => sum + parseFloat(p.amount.replace('£', '').replace(',', '')),
+        0
+      );
       
       // Account Summary — customer-facing total only
       doc.setFillColor(248, 250, 252);
@@ -510,7 +514,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       doc.setFontSize(12);
       doc.text('Payment History', 14, 108);
       
-      const tableData = payments.map(payment => {
+      const tableData = paidPayments.map(payment => {
         const date = new Date(payment.date);
         const formattedDate = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
         return [
@@ -568,7 +572,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       // Save PDF
       doc.save(`Payment_Statement_${today.toISOString().split('T')[0]}.pdf`);
       
-      toast.success("Statement downloaded successfully!");
+      toast.success(`Statement downloaded with ${paidPayments.length} paid payment(s)`);
     } catch (error: any) {
       console.error('Error generating PDF:', error);
       toast.error("Failed to generate statement. Please try again.");
