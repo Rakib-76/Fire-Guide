@@ -12,6 +12,7 @@ import {
   XCircle,
   Eye,
   AlertCircle,
+  MoreVertical,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
@@ -20,6 +21,13 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Checkbox } from "./ui/checkbox";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -27,6 +35,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 import { getApiToken, getProfessionalId } from "../lib/auth";
 import {
   createMembership,
@@ -34,6 +48,7 @@ import {
   getAllMemberships,
   encodeImageFileAsBase64DataUrl,
   buildMembershipEvidenceViewUrls,
+  buildMembershipLogoViewUrls,
   isMembershipImageFile,
   resolveMembershipEntryMedia,
   type ProfessionalMembershipApiItem,
@@ -90,16 +105,29 @@ const EMPTY_MEMBERSHIP_FORM = {
   logoDataUrl: "",
 };
 
-const PROFESSIONAL_MEMBERSHIP_SUGGESTIONS = [
-  "Institute of Fire Safety Managers (IFSM)",
-  "Institution of Fire Engineers (IFE)",
-  "Fire Industry Association (FIA)",
-  "SAFE Fire Safety Register (SAFE)",
-  "Fire Protection Association (FPA)",
-  "BAFE (British Approvals for Fire Equipment)",
-  "IOSH (Institution of Occupational Safety and Health)",
-  "NEBOSH Alumni / Network",
-  "NFPA (National Fire Protection Association)",
+const PROFESSIONAL_BODY_OPTIONS = [
+  "IFSM",
+  "IFE",
+  "FIA",
+  "BAFE",
+  "FPA",
+  "UK-FA",
+  "ASFP",
+  "IIRSM",
+  "IOSH",
+  "CABE",
+  "RICS",
+  "CIOB",
+  "NFRAR",
+  "FRACS",
+  "CFPA Europe",
+  "Institution of Occupational Safety and Health",
+  "International Institute of Risk and Safety Management",
+  "Association for Specialist Fire Protection",
+  "Fire Protection Association",
+  "Institution of Fire Engineers",
+  "Institute of Fire Safety Managers",
+  "Fire Industry Association",
 ];
 
 function normalizeMembershipStatus(status: string | null | undefined): string {
@@ -170,12 +198,64 @@ function formatMembershipListDate(dateString: string | null | undefined): string
   }
 }
 
-function getMembershipOrganizationShortName(name: string): string {
-  const match = name.match(/\(([^)]+)\)/);
-  if (match?.[1]?.trim()) return match[1].trim();
-  const words = name.split(/\s+/).filter(Boolean);
-  if (words.length <= 2) return name;
-  return words.map((word) => word[0]?.toUpperCase() ?? "").join("");
+function getMembershipTypeBadgeClass(membershipType: string): string {
+  const value = membershipType.toLowerCase();
+  if (value.includes("registered")) {
+    return "border border-blue-200 bg-blue-50 text-blue-800";
+  }
+  return "border border-green-200 bg-green-50 text-green-800";
+}
+
+function getMembershipReferenceLabel(membershipType: string): string {
+  return membershipType.toLowerCase().includes("registered")
+    ? "Registration No:"
+    : "Membership No:";
+}
+
+function getMembershipVerificationDisplay(
+  status: string | null | undefined,
+  activityDate: string | null | undefined
+): MembershipStatusDisplay & { sublabel: string } {
+  const key = getMembershipStatusKey(status);
+  const dateLabel = activityDate ? formatMembershipDisplayDate(activityDate) : "";
+
+  if (key === "verified") {
+    return {
+      label: "Checked by Fire Guide",
+      sublabel: dateLabel ? `Checked on ${dateLabel}` : "",
+      className: "border border-green-300 bg-green-100 text-green-900",
+    };
+  }
+  if (key === "rejected") {
+    return {
+      label: "Rejected / Invalid",
+      sublabel: "Please update and resubmit",
+      className: "border border-red-300 bg-red-100 text-red-900",
+    };
+  }
+  if (key === "pending") {
+    return {
+      label: "Pending Review",
+      sublabel: dateLabel ? `Submitted on ${dateLabel}` : "Awaiting admin review",
+      className: "border border-amber-300 bg-amber-100 text-amber-950",
+    };
+  }
+  return {
+    label: "Provided by Professional",
+    sublabel: "Not yet checked",
+    className: "border border-gray-300 bg-gray-100 text-gray-800",
+  };
+}
+
+function getMembershipLogoSrc(membership: ProfessionalMembershipEntry): string | null {
+  const fromData = membership.logoDataUrl?.trim();
+  if (fromData) return fromData;
+  const urls = buildMembershipLogoViewUrls({
+    logoPath: membership.logoPath,
+    logoDataUrl: membership.logoDataUrl,
+    apiToken: getApiToken(),
+  });
+  return urls[0] ?? null;
 }
 
 function membershipsStorageKey(): string {
@@ -249,16 +329,16 @@ function mapApiMembershipToEntry(
     logoPath,
     ...(evidencePath || documentPreview
       ? {
-          documentFileName: "Membership certificate",
-          documentDataUrl: documentPreview?.startsWith("data:") ? documentPreview : undefined,
-          documentUploadedAt: item.created_at ?? new Date().toISOString(),
-        }
+        documentFileName: "Membership certificate",
+        documentDataUrl: documentPreview?.startsWith("data:") ? documentPreview : undefined,
+        documentUploadedAt: item.created_at ?? new Date().toISOString(),
+      }
       : {}),
     ...(logoPath || logoPreview
       ? {
-          logoFileName: "Organization logo",
-          logoDataUrl: logoPreview?.startsWith("data:") ? logoPreview : undefined,
-        }
+        logoFileName: "Organization logo",
+        logoDataUrl: logoPreview?.startsWith("data:") ? logoPreview : undefined,
+      }
       : {}),
   });
 }
@@ -339,7 +419,7 @@ export function ProfessionalMembershipSection({
   const handleAddMembership = async () => {
     const organizationName = membershipForm.organizationName.trim();
     if (!organizationName) {
-      toast.error("Please select or enter the professional body / organization.");
+      toast.error("Please select the professional body / organization.");
       return;
     }
 
@@ -535,9 +615,27 @@ export function ProfessionalMembershipSection({
     const urls = buildMembershipEvidenceViewUrls({
       evidencePath: entry.evidencePath,
       documentDataUrl: entry.documentDataUrl,
+      apiToken: getApiToken(),
     });
     if (urls.length === 0) {
       toast.error("No membership certificate is available to view.");
+      return;
+    }
+    setMembershipEvidencePreviewIndex(0);
+    setMembershipEvidencePreview({ title, urls });
+  };
+
+  const openMembershipLogoPreview = (
+    title: string,
+    entry: Pick<ProfessionalMembershipEntry, "logoPath" | "logoDataUrl">
+  ) => {
+    const urls = buildMembershipLogoViewUrls({
+      logoPath: entry.logoPath,
+      logoDataUrl: entry.logoDataUrl,
+      apiToken: getApiToken(),
+    });
+    if (urls.length === 0) {
+      toast.error("No organization logo is available to view.");
       return;
     }
     setMembershipEvidencePreviewIndex(0);
@@ -581,6 +679,7 @@ export function ProfessionalMembershipSection({
       {memberships.map((membership) => {
         const statusKey = getMembershipStatusKey(membership.status);
         const hasCertificate = Boolean(membership.documentDataUrl || membership.evidencePath);
+        const hasLogo = Boolean(membership.logoDataUrl || membership.logoPath);
         const evidenceLabel = membership.evidencePath || membership.documentFileName || "";
         const membershipMeta = [
           membership.membershipType || "Member",
@@ -593,13 +692,12 @@ export function ProfessionalMembershipSection({
         return (
           <div
             key={membership.id}
-            className={`min-w-0 overflow-hidden rounded-lg border p-3 sm:p-4 ${
-              statusKey === "verified"
-                ? "border-green-200 bg-green-50"
-                : statusKey === "pending"
-                  ? "border-amber-200 bg-amber-50"
-                  : "border-red-200 bg-red-50"
-            }`}
+            className={`min-w-0 overflow-hidden rounded-lg border p-3 sm:p-4 ${statusKey === "verified"
+              ? "border-green-200 bg-green-50"
+              : statusKey === "pending"
+                ? "border-amber-200 bg-amber-50"
+                : "border-red-200 bg-red-50"
+              }`}
           >
             <div className="mb-2 flex min-w-0 flex-col gap-3 sm:mb-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 flex-1">
@@ -633,21 +731,6 @@ export function ProfessionalMembershipSection({
                       <span className="text-gray-500"> (1 file)</span>
                       <span className="mt-1 block break-all text-gray-700">{evidenceLabel}</span>
                     </p>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 shrink-0 self-start text-xs text-blue-600 hover:bg-blue-50 hover:text-blue-700 sm:text-sm"
-                      onClick={() =>
-                        openMembershipEvidencePreview(
-                          `${membership.organizationName} — membership certificate`,
-                          membership
-                        )
-                      }
-                    >
-                      <Eye className="mr-1 h-3 w-3" />
-                      View
-                    </Button>
                   </div>
                 ) : null}
               </div>
@@ -703,29 +786,28 @@ export function ProfessionalMembershipSection({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-8 text-xs text-gray-700 sm:text-sm"
+                className="h-7 shrink-0 self-start text-xs text-blue-600 hover:bg-blue-50 hover:text-blue-700 sm:text-sm"
+                disabled={!hasCertificate}
                 onClick={() =>
-                  handleMembershipAssetClick({
-                    kind: "document",
-                    membershipId: membership.id,
-                  })
+                  openMembershipEvidencePreview(
+                    `${membership.organizationName} — membership certificate`,
+                    membership
+                  )
                 }
-              >
-                Update certificate
+              ><Eye className="mr-1 h-3 w-3" />
+                View certificate
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-8 text-xs text-gray-700 sm:text-sm"
+                className="h-7 shrink-0 self-start text-xs text-blue-600 hover:bg-blue-50 hover:text-blue-700 sm:text-sm"
+                disabled={!hasLogo}
                 onClick={() =>
-                  handleMembershipAssetClick({
-                    kind: "logo",
-                    membershipId: membership.id,
-                  })
+                  openMembershipLogoPreview(`${membership.organizationName} — logo`, membership)
                 }
-              >
-                Update logo
+              ><Eye className="mr-1 h-3 w-3" />
+                View logo
               </Button>
               <Button
                 type="button"
@@ -748,39 +830,66 @@ export function ProfessionalMembershipSection({
   );
 
   const renderStatusList = () => (
-    <div className="divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
+    <div className="space-y-2">
       {memberships.map((membership) => {
-        const statusDisplay = getMembershipStatusDisplay(membership.status);
+        const statusKey = getMembershipStatusKey(membership.status);
         const hasCertificate = Boolean(membership.documentDataUrl || membership.evidencePath);
+        const hasLogo = Boolean(membership.logoDataUrl || membership.logoPath);
+        const membershipTypeLabel = membership.membershipType.trim() || "Member";
+        const activityDate =
+          statusKey === "verified"
+            ? membership.documentUploadedAt
+            : membership.documentUploadedAt ?? undefined;
+        const verificationDisplay = getMembershipVerificationDisplay(
+          membership.status,
+          activityDate
+        );
+        const logoSrc = getMembershipLogoSrc(membership);
 
         return (
           <div
             key={membership.id}
-            className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between"
+            className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div className="flex min-w-0 flex-1 items-start gap-4">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-                {membership.logoDataUrl ? (
+                {logoSrc ? (
                   <img
-                    src={membership.logoDataUrl}
+                    src={logoSrc}
                     alt={`${membership.organizationName} logo`}
-                    className="h-full w-full object-contain p-1"
+                    className="h-full w-full object-contain p-1.5"
                   />
                 ) : (
                   <Building2 className="h-6 w-6 text-gray-300" />
                 )}
               </div>
+
               <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold text-[#0A1A2F]">
-                  {getMembershipOrganizationShortName(membership.organizationName)}
-                </p>
-                <p className="mt-1 text-sm text-gray-600">
-                  {membership.membershipType || "Member"}
-                  {membership.membershipId ? ` | Membership No: ${membership.membershipId}` : ""}
-                  {membership.memberSince
-                    ? ` | Expiry: ${formatMembershipListDate(membership.memberSince)}`
-                    : ""}
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-base font-semibold text-[#0A1A2F]">
+                    {membership.organizationName}
+                  </p>
+                  <Badge variant="outline" className={getMembershipTypeBadgeClass(membershipTypeLabel)}>
+                    {membershipTypeLabel}
+                  </Badge>
+                </div>
+
+                {membership.membershipId ? (
+                  <p className="mt-1 text-sm text-gray-600">
+                    {getMembershipReferenceLabel(membershipTypeLabel)}{" "}
+                    <span className="text-gray-900">{membership.membershipId}</span>
+                  </p>
+                ) : null}
+
+                {membership.memberSince ? (
+                  <p className="mt-0.5 text-sm text-gray-600">
+                    Expires:{" "}
+                    <span className="text-gray-900">
+                      {formatMembershipDisplayDate(membership.memberSince)}
+                    </span>
+                  </p>
+                ) : null}
+
                 {membership.notes ? (
                   <p className="mt-1 truncate text-xs text-gray-500">{membership.notes}</p>
                 ) : null}
@@ -788,24 +897,60 @@ export function ProfessionalMembershipSection({
             </div>
 
             <div className="flex items-center gap-3 sm:shrink-0">
-              <Badge variant="outline" className={statusDisplay.className}>
-                {statusDisplay.label}
-              </Badge>
-              {hasCertificate ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    openMembershipEvidencePreview(
-                      `${membership.organizationName} — membership certificate`,
-                      membership
-                    )
-                  }
-                >
-                  View certificate
-                </Button>
-              ) : null}
+              <div className="min-w-0 text-right">
+                <Badge variant="outline" className={`whitespace-normal ${verificationDisplay.className}`}>
+                  {statusKey === "verified" ? (
+                    <CheckCircle2 className="mr-1 inline h-3 w-3" />
+                  ) : null}
+                  {statusKey === "pending" ? (
+                    <Clock className="mr-1 inline h-3 w-3" />
+                  ) : null}
+                  {statusKey === "rejected" ? (
+                    <XCircle className="mr-1 inline h-3 w-3" />
+                  ) : null}
+                  {statusKey !== "verified" && statusKey !== "pending" && statusKey !== "rejected" ? (
+                    <Info className="mr-1 inline h-3 w-3" />
+                  ) : null}
+                  {verificationDisplay.label}
+                </Badge>
+                {verificationDisplay.sublabel ? (
+                  <p className="mt-1 text-xs text-gray-500">{verificationDisplay.sublabel}</p>
+                ) : null}
+              </div>
+
+              {(hasCertificate || hasLogo) && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                      <MoreVertical className="h-4 w-4 text-gray-500" />
+                      <span className="sr-only">Membership actions</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {hasCertificate ? (
+                      <DropdownMenuItem
+                        onClick={() =>
+                          openMembershipEvidencePreview(
+                            `${membership.organizationName} — membership certificate`,
+                            membership
+                          )
+                        }
+                      >
+                        View Certificate
+                      </DropdownMenuItem>
+                    ) : null}
+                    {hasLogo ? (
+                      <DropdownMenuItem
+                        onClick={() =>
+                          openMembershipLogoPreview(`${membership.organizationName} — logo`, membership)
+                        }
+                      >
+                        View logo
+                      </DropdownMenuItem>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </div>
         );
@@ -897,27 +1042,32 @@ export function ProfessionalMembershipSection({
         <Card>
           <CardContent className="p-4 md:p-6">
             <div className="flex items-start gap-3 md:gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-indigo-100">
-                <Building2 className="h-6 w-6 text-indigo-700" />
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gray-100">
+                <Award className="h-6 w-6 text-gray-600" />
               </div>
 
               <div className="min-w-0 flex-1">
-                <div className="mb-4">
-                  <h3 className="text-lg text-[#0A1A2F]">Professional Memberships</h3>
-                  <p className="mt-1 text-sm text-gray-600 md:max-w-xl">
-                    Add and manage your professional body memberships and registrations.
+                <div className="mb-2">
+                  <h3 className="text-lg text-[#0A1A2F]">Your Professional Memberships</h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                  Manage your added memberships and track verification status.
                   </p>
                 </div>
 
-                <h4 className="mb-4 text-base font-semibold text-[#0A1A2F]">
+                {/* <h4 className="text-base font-semibold text-[#0A1A2F]">
                   Your Professional Memberships
-                </h4>
+                </h4> */}
+                {/* <p className="mt-1 text-sm text-gray-600">
+                  Manage your added memberships and track verification status.
+                </p> */}
 
-                {isLoadingMemberships
-                  ? renderLoadingState()
-                  : memberships.length === 0
-                    ? renderEmptyState()
-                    : renderStatusList()}
+                <div className="mt-4">
+                  {isLoadingMemberships
+                    ? renderLoadingState()
+                    : memberships.length === 0
+                      ? renderEmptyState()
+                      : renderStatusList()}
+                </div>
 
                 {renderAboutMembershipsInfo()}
               </div>
@@ -946,20 +1096,23 @@ export function ProfessionalMembershipSection({
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="membership-organization">Professional Body / Organization*</Label>
-                  <Input
-                    id="membership-organization"
-                    list="membership-organization-suggestions"
-                    value={membershipForm.organizationName}
-                    onChange={(e) =>
-                      setMembershipForm((prev) => ({ ...prev, organizationName: e.target.value }))
+                  <Select
+                    value={membershipForm.organizationName || undefined}
+                    onValueChange={(value) =>
+                      setMembershipForm((prev) => ({ ...prev, organizationName: value }))
                     }
-                    placeholder="e.g. Fire Industry Association (FIA)"
-                  />
-                  <datalist id="membership-organization-suggestions">
-                    {PROFESSIONAL_MEMBERSHIP_SUGGESTIONS.map((name) => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
+                  >
+                    <SelectTrigger id="membership-organization">
+                      <SelectValue placeholder="Select professional body / organization" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PROFESSIONAL_BODY_OPTIONS.map((name) => (
+                        <SelectItem key={name} value={name}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
@@ -1127,7 +1280,7 @@ export function ProfessionalMembershipSection({
               {membershipEvidencePreview?.title ?? "Membership certificate"}
             </DialogTitle>
             <DialogDescription>
-              Preview of your uploaded membership certificate evidence.
+              Preview of your uploaded membership file.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-auto py-2">
@@ -1148,12 +1301,12 @@ export function ProfessionalMembershipSection({
                 }}
               />
             ) : (
-              <p className="py-8 text-center text-sm text-gray-500">No certificate preview available.</p>
+              <p className="py-8 text-center text-sm text-gray-500">No preview available.</p>
             )}
           </div>
           <DialogFooter className="gap-2 sm:justify-between">
             {membershipEvidencePreview?.urls[membershipEvidencePreviewIndex] &&
-            !membershipEvidencePreview.urls[membershipEvidencePreviewIndex].startsWith("data:") ? (
+              !membershipEvidencePreview.urls[membershipEvidencePreviewIndex].startsWith("data:") ? (
               <Button
                 type="button"
                 variant="outline"

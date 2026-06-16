@@ -117,6 +117,14 @@ function isMembershipVerified(status: string | null | undefined): boolean {
   return normalized === "verified" || normalized === "approved";
 }
 
+function getMembershipTypeBadgeClass(membershipType: string): string {
+  const value = membershipType.toLowerCase();
+  if (value.includes("registered")) {
+    return "border border-blue-200 bg-blue-50 text-blue-800";
+  }
+  return "border border-green-200 bg-green-50 text-green-800";
+}
+
 export function ProfessionalProfile({
   professional,
   professionalIdFromUrl,
@@ -1146,17 +1154,24 @@ export function ProfessionalProfile({
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-start justify-between gap-2">
-                                <p className="font-medium text-gray-900 break-words">
-                                  {membership.organization_name}
-                                </p>
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                  <p className="font-medium text-gray-900 break-words">
+                                    {membership.organization_name}
+                                  </p>
+                                  {membership.membership_type ? (
+                                    <Badge
+                                      variant="outline"
+                                      className={`shrink-0 ${getMembershipTypeBadgeClass(membership.membership_type)}`}
+                                    >
+                                      {membership.membership_type}
+                                    </Badge>
+                                  ) : null}
+                                </div>
                                 <Badge className="border border-green-200 bg-green-100 text-green-700 hover:bg-green-100 shrink-0">
                                   <CheckCircle2 className="w-3 h-3 mr-1" />
                                   Verified
                                 </Badge>
                               </div>
-                              {membership.membership_type ? (
-                                <p className="text-sm text-gray-700 mt-1">{membership.membership_type}</p>
-                              ) : null}
                               <div className="mt-1 space-y-0.5 text-sm text-gray-500">
                                 {membership.reference_id ? (
                                   <p>Reference: {membership.reference_id}</p>
