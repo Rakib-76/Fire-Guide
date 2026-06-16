@@ -20,7 +20,8 @@ import {
   MessageCircle,
   MessageSquare,
   Loader2,
-  Wallet
+  Wallet,
+  Star
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "./ui/card";
@@ -51,6 +52,7 @@ import { ProfessionalProfileContent } from "./ProfessionalProfileContent";
 import { ProfessionalPricingContent } from "./ProfessionalPricingContent";
 import { ProfessionalAvailabilityContent } from "./ProfessionalAvailabilityContent";
 import { ProfessionalCustomQuoteContent } from "./ProfessionalCustomQuoteContent";
+import { ProfessionalReviewsContent } from "./ProfessionalReviewsContent";
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
 import { setCompleteProfileReminderFlag } from "../lib/professionalProfileReminder";
 import { toast } from "sonner";
@@ -76,6 +78,7 @@ type ProfessionalView =
   | "custom-quote"
   | "verification"
   | "admin-messages"
+  | "reviews"
   | "settings"
   | "notifications";
 
@@ -94,6 +97,7 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
     "custom-quote",
     "verification",
     "admin-messages",
+    "reviews",
     "settings",
     "notifications",
   ];
@@ -243,6 +247,7 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
     { id: "custom-quote" as ProfessionalView, label: "Custom Quote", icon: MessageCircle },
     { id: "verification" as ProfessionalView, label: "Verification Status", icon: ShieldCheck },
     { id: "admin-messages" as ProfessionalView, label: "Admin-Message", icon: MessageSquare },
+    { id: "reviews" as ProfessionalView, label: "Review", icon: Star },
     { id: "notifications" as ProfessionalView, label: "Notifications", icon: Bell },
     { id: "settings" as ProfessionalView, label: "Settings", icon: Settings },
   ];
@@ -418,18 +423,25 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
         })
         .slice(0, 3) // Only show first 3
         .map((booking: ProfessionalBookingItem) => {
-          // Get service name from selected_service or default
-          const serviceName = booking.selected_service?.name || "Fire Risk Assessment";
+          // Resolve service name from the actual API fields (same precedence as the Bookings list)
+          const serviceName =
+            booking.service?.service_name ??
+            booking.service_name ??
+            (booking.selected_service && "name" in booking.selected_service
+              ? booking.selected_service.name
+              : undefined) ??
+            "General Service";
           
           const clientName = getProfessionalBookingCustomerName(booking);
           
           // Format date and time
           const formattedDate = formatJobDate(booking.selected_date, booking.selected_time);
           
-          // Format location from city and post_code
-          const location = booking.city && booking.post_code
-            ? `${booking.city}, ${booking.post_code}`
-            : booking.city || booking.property_address || "Location";
+          // Build location from address parts the API actually returns (property_address, city, post_code)
+          const location =
+            [booking.property_address, booking.city, booking.post_code]
+              .filter(Boolean)
+              .join(", ") || "Location";
           
           // Map status
           const status = booking.status?.toLowerCase() === 'confirmed' ? 'confirmed' : 'pending';
@@ -677,6 +689,8 @@ export function ProfessionalDashboard({ onLogout, onNavigateToReports }: Profess
         return <ProfessionalVerification />;
       case "admin-messages":
         return renderAdminMessages();
+      case "reviews":
+        return <ProfessionalReviewsContent />;
       case "settings":
         return <ProfessionalSettings />;
       case "notifications":

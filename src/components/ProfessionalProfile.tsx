@@ -701,6 +701,27 @@ export function ProfessionalProfile({
 
   const reviewCount = reviews.length;
 
+  // Average rating across all reviews (for the All Reviews modal summary)
+  const averageReviewRating = React.useMemo(() => {
+    if (reviews.length === 0) return 0;
+    const sum = reviews.reduce((acc, r) => acc + (parseFloat(r.rating) || 0), 0);
+    return sum / reviews.length;
+  }, [reviews]);
+
+  // Reviews sorted newest-first for the modal list
+  const sortedAllReviews = React.useMemo(
+    () =>
+      [...reviews].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ),
+    [reviews]
+  );
+
+  const getReviewerInitial = (name: string | null | undefined): string => {
+    const trimmed = (name ?? "").trim();
+    return trimmed ? trimmed.charAt(0).toUpperCase() : "C";
+  };
+
   // Pricing from API response: size, number_of_people, price (displayed in Pricing section)
   const pricing = useMemo(
     () =>
@@ -1227,25 +1248,63 @@ export function ProfessionalProfile({
                       </Button>
                       {/* All Reviews Modal — scrollable */}
                       <Dialog open={reviewsModalOpen} onOpenChange={setReviewsModalOpen}>
-                        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0">
+                        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-4 gap-0 overflow-hidden">
                           <DialogHeader className="flex-shrink-0 border-b pl-6 pr-14 py-4">
-                            <DialogTitle className="text-[#0A1A2F]">All Reviews ({reviewCount})</DialogTitle>
+                            <DialogTitle className="text-[#0A1A2F]">All Reviews</DialogTitle>
                           </DialogHeader>
-                          <div className="overflow-y-auto flex-1 min-h-0 px-6 py-4 space-y-4">
-                            {[...reviews]
-                              .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                              .map((review) => (
-                                <div key={review.id} className="pb-4 border-b last:border-0 last:pb-0">
-                                  <div className="flex items-start justify-between mb-2">
-                                    <div>
-                                      <p className="font-medium text-gray-900">{review.name}</p>
-                                      <p className="text-sm text-gray-500">{formatReviewDate(review.created_at)}</p>
-                                    </div>
-                                    {renderStars(parseFloat(review.rating) || 0)}
-                                  </div>
-                                  <p className="text-gray-700 text-sm">{review.feedback}</p>
+
+                          {/* Summary banner */}
+                          {/* <div className="flex-shrink-0 bg-gradient-to-r from-amber-50 to-white border-b px-6 py-5">
+                            <div className="flex items-center gap-5">
+                              <div className="text-center">
+                                <div className="text-4xl font-bold text-[#0A1A2F] leading-none">
+                                  {averageReviewRating.toFixed(1)}
                                 </div>
-                              ))}
+                                <div className="mt-1.5 flex justify-center">
+                                  {renderStars(Math.round(averageReviewRating))}
+                                </div>
+                              </div>
+                              <div className="h-12 w-px bg-gray-200" />
+                              <div>
+                                <p className="text-lg font-semibold text-gray-900">
+                                  {reviewCount} {reviewCount === 1 ? "review" : "reviews"}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                  From verified customers
+                                </p>
+                              </div>
+                            </div>
+                          </div> */}
+
+                          <div className="overflow-y-auto flex-1 min-h-0 px-6 py-5 space-y-3 bg-gray-50">
+                            {sortedAllReviews.map((review) => (
+                              <div
+                                key={review.id}
+                                className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm"
+                              >
+                                <div className="flex items-start gap-3">
+                                  {/* <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0"> */}
+                                    {/* <span className="text-sm font-semibold text-red-600">
+                                      {getReviewerInitial(review.name)}
+                                    </span> */}
+                                  {/* </div> */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1">
+                                      <p className="font-semibold text-gray-900">{review.name}</p>
+                                      <span className="text-xs text-gray-400">
+                                        {formatReviewDate(review.created_at)}
+                                      </span>
+                                    </div>
+                                    <div className="mb-2">
+                                      {renderStars(parseFloat(review.rating) || 0)}
+                                    </div>
+                                    <p className="text-gray-700 text-sm whitespace-pre-wrap break-words">
+                                      {review.feedback}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </DialogContent>
                       </Dialog>

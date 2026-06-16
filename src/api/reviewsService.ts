@@ -6,6 +6,7 @@ import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 export interface ReviewCreator {
   id: number;
   full_name: string;
+  image?: string | null;
 }
 
 export interface ReviewUpdater {
@@ -124,6 +125,60 @@ export const fetchProfessionalProfileReviews = async (
     return data;
   }
   throw new Error(payload?.message || 'Failed to fetch reviews');
+};
+
+/**
+ * Reviews for the currently logged-in professional.
+ * POST /reviews/professional-wise
+ * Body: { api_token } — token sent in the payload for security (no Authorization header).
+ * Response: { status: 'success' | true, message, data: ReviewResponse[] }
+ */
+export const fetchProfessionalWiseReviews = async (
+  apiToken: string
+): Promise<ReviewResponse[]> => {
+  try {
+    const response = await apiClient.post<ReviewsApiResponse>(
+      '/reviews/professional-wise',
+      { api_token: apiToken }
+    );
+    const payload = response.data as {
+      status?: string | boolean;
+      message?: string;
+      data?: ReviewResponse[];
+    };
+    const ok = payload?.status === 'success' || payload?.status === true;
+    if (ok && Array.isArray(payload.data)) {
+      return payload.data;
+    }
+    if (Array.isArray(payload?.data)) {
+      return payload.data;
+    }
+    console.warn('Unexpected professional-wise reviews response structure:', response.data);
+    return [];
+  } catch (error) {
+    console.error('Error fetching professional-wise reviews:', error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        throw {
+          success: false,
+          message: error.response.data?.message || 'Failed to fetch reviews',
+          error: error.response.data?.error || error.message,
+          status: error.response.status,
+        };
+      } else if (error.request) {
+        throw {
+          success: false,
+          message: 'No response from server. Please check your connection.',
+          error: 'Network error',
+        };
+      }
+    }
+    throw {
+      success: false,
+      message: 'An unexpected error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
 };
 
 // TypeScript types for Create Review request
