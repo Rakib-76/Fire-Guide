@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Bell, User, Briefcase, Calendar, CalendarClock, CreditCard, Star, Settings, AlertCircle, CheckCircle, Info, Trash2, Send, Loader2 } from "lucide-react";
+import { useAdminNotificationNavigation } from "../hooks/useAdminNotificationNavigation";
 import { getApiToken } from "../lib/auth";
 import {
   getAdminNotificationsSummary,
@@ -175,6 +176,7 @@ function getAdminNotificationIcon(
 }
 
 export function AdminNotifications() {
+  const { navigateFromNotification } = useAdminNotificationNavigation();
   const [notifications, setNotifications] = useState<AdminNotificationItem[]>([]);
   const [activeTab, setActiveTab] = useState("all");
   const [notificationCards, setNotificationCards] = useState<AdminNotificationCards | null>(null);
@@ -282,10 +284,10 @@ export function AdminNotifications() {
     }
   };
 
-  const markAsRead = async (id: number) => {
+  const markAsRead = async (id: number, options?: { silent?: boolean }) => {
     const token = getApiToken();
     if (!token) {
-      toast.error("Not signed in");
+      if (!options?.silent) toast.error("Not signed in");
       return;
     }
     setPendingRow({ id, action: "read" });
@@ -295,14 +297,26 @@ export function AdminNotifications() {
         prev.map((n) => (n.id === id ? { ...n, is_read: 1 } : n))
       );
       setPendingRow(null);
-      toast.success("Marked as read");
+      if (!options?.silent) toast.success("Marked as read");
       await refreshSummaryQuiet();
-      await loadNotificationsForTab(activeTab);
+      if (!options?.silent) await loadNotificationsForTab(activeTab);
     } catch (e: unknown) {
-      toastMutationError(e, "Failed to mark as read");
+      if (!options?.silent) toastMutationError(e, "Failed to mark as read");
     } finally {
       setPendingRow(null);
     }
+  };
+
+  const onNotificationCardClick = (notification: AdminNotificationItem) => {
+    if (notification.is_read === 0) {
+      void markAsRead(notification.id, { silent: true });
+    }
+    navigateFromNotification({
+      id: notification.id,
+      category: notification.category,
+      title: notification.title,
+      message: notification.message,
+    });
   };
 
   const markAllAsRead = async () => {
@@ -652,8 +666,17 @@ export function AdminNotifications() {
                       (pendingRow !== null && pendingRow.id === notification.id);
                     return (
                     <Card 
-                      key={notification.id} 
-                      className={`w-full shadow-sm rounded-lg transition-shadow hover:shadow-md ${
+                      key={notification.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => onNotificationCardClick(notification)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onNotificationCardClick(notification);
+                        }
+                      }}
+                      className={`w-full shadow-sm rounded-lg transition-shadow hover:shadow-md cursor-pointer ${
                         notification.is_read === 0 
                           ? 'border-l-[3px] border-l-red-600 bg-red-50/50 border-y border-r border-gray-200' 
                           : 'border border-gray-200'
@@ -716,7 +739,10 @@ export function AdminNotifications() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => void markAsRead(notification.id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void markAsRead(notification.id);
+                                  }}
                                   disabled={rowLocked}
                                   className="w-full h-9 justify-start text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-md"
                                 >
@@ -732,7 +758,10 @@ export function AdminNotifications() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => void deleteNotification(notification.id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void deleteNotification(notification.id);
+                                  }}
                                   disabled={rowLocked}
                                   className="w-full h-9 justify-start text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md"
                                 >

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Bell, Calendar, CalendarClock, DollarSign, AlertCircle, CheckCircle, Info, Trash2, Filter, X } from "lucide-react";
+import { useProfessionalNotificationNavigation } from "../hooks/useProfessionalNotificationNavigation";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -37,7 +38,8 @@ interface Notification {
 }
 
 export function ProfessionalNotifications() {
-  const [allNotifications, setAllNotifications] = useState<Notification[]>([]); // Store all notifications from all categories
+  const { navigateFromNotification } = useProfessionalNotificationNavigation();
+  const [allNotifications, setAllNotifications] = useState<Notification[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]); // Current tab's notifications
   const [activeTab, setActiveTab] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -236,40 +238,53 @@ export function ProfessionalNotifications() {
     return "bg-red-600";
   };
 
-  const markAsRead = async (id: number) => {
+  const markAsRead = async (id: number, options?: { silent?: boolean }) => {
     try {
       const apiToken = getApiToken();
       
       if (!apiToken) {
-        toast.error("Authentication token not found. Please log in again.");
+        if (!options?.silent) {
+          toast.error("Authentication token not found. Please log in again.");
+        }
         return;
       }
 
-      console.log("Marking notification as read - ID:", id);
       const response = await markNotificationAsRead({ 
         api_token: apiToken,
         notification_id: id 
       });
       
-      console.log("Mark as read response:", response);
-      
       if (response.status === true) {
-        // Update local state directly without reloading
-        setAllNotifications(allNotifications.map(notif =>
-          notif.id === id ? { ...notif, read: true } : notif
-        ));
-        setNotifications(notifications.map(notif =>
-          notif.id === id ? { ...notif, read: true } : notif
-        ));
+        setAllNotifications((prev) =>
+          prev.map((notif) => (notif.id === id ? { ...notif, read: true } : notif))
+        );
+        setNotifications((prev) =>
+          prev.map((notif) => (notif.id === id ? { ...notif, read: true } : notif))
+        );
         emitProfessionalNotificationsMutated();
-        toast.success(response.message || "Marked as read");
-      } else {
+        if (!options?.silent) toast.success(response.message || "Marked as read");
+      } else if (!options?.silent) {
         toast.error(response.message || "Failed to mark notification as read");
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error marking notification as read:", error);
-      toast.error(error.message || "Failed to mark notification as read");
+      if (!options?.silent) {
+        toast.error(error instanceof Error ? error.message : "Failed to mark notification as read");
+      }
     }
+  };
+
+  const onNotificationCardClick = (notification: Notification) => {
+    if (!notification.read) {
+      void markAsRead(notification.id, { silent: true });
+    }
+    navigateFromNotification({
+      id: notification.id,
+      category: notification.type,
+      type: notification.type,
+      title: notification.title,
+      content: notification.message,
+    });
   };
 
   const markAllAsRead = async () => {
@@ -472,8 +487,17 @@ export function ProfessionalNotifications() {
                 );
                 return (
                 <Card 
-                  key={notification.id} 
-                  className={`transition-all hover:shadow-md w-full ${getUnreadNotificationCardClass(notification.read, tone)}`}
+                  key={notification.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onNotificationCardClick(notification)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onNotificationCardClick(notification);
+                    }
+                  }}
+                  className={`transition-all hover:shadow-md w-full cursor-pointer ${getUnreadNotificationCardClass(notification.read, tone)}`}
                 >
                   <CardContent className="p-4">
                     <div className="flex flex-col md:flex-row md:items-start gap-4">
@@ -510,7 +534,10 @@ export function ProfessionalNotifications() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => markAsRead(notification.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void markAsRead(notification.id);
+                                }}
                                 className="text-xs h-8"
                               >
                                 <CheckCircle className="w-3 h-3 mr-1" />
@@ -520,7 +547,10 @@ export function ProfessionalNotifications() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => deleteNotification(notification.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void deleteNotification(notification.id);
+                              }}
                               className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 h-8"
                             >
                               <Trash2 className="w-3 h-3 mr-1" />

@@ -78,6 +78,10 @@ import {
   loadQuoteRequestDurationLabelMap,
 } from "./CustomQuoteRequestDetailsPanel";
 import { parseCustomQuoteRequestData } from "../lib/parseCustomQuoteRequestData";
+import { useCustomerNotificationNavigation } from "../hooks/useCustomerNotificationNavigation";
+import {
+  customerModuleToView,
+} from "../lib/customerNotificationNavigation";
 import { CustomQuoteSubmittedModal } from "./CustomQuoteSubmittedModal";
 import type { CustomQuoteSuccessLocationState } from "../lib/customQuoteSuccessNavigation";
 
@@ -285,6 +289,7 @@ export function CustomerDashboard({
 }: CustomerDashboardProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { resolveCustomerSidebarNavigation } = useCustomerNotificationNavigation();
   const { view, id: addressIdParam } = useParams<{ view?: string; id?: string }>();
   const validViews: CustomerView[] = [
     "overview",
@@ -491,7 +496,7 @@ export function CustomerDashboard({
       }
     });
   };
-  
+
   // Address management state (continued)
   const [isLoadingAddresses, setIsLoadingAddresses] = useState(false);
   const [addressModalOpen, setAddressModalOpen] = useState(false);
@@ -575,6 +580,47 @@ export function CustomerDashboard({
   const unreadNotificationCount = useMemo(() => {
     return notifications.reduce((acc, n) => acc + (isNotificationUnread(n, seenNotificationKeys) ? 1 : 0), 0);
   }, [notifications, seenNotificationKeys]);
+
+  const markNotificationSeen = useCallback((notification: CustomerNotificationItem) => {
+    const key = getCustomerNotificationDedupeKey(notification);
+    setSeenNotificationKeys((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      persistCustomerNotificationSeenKeys(next);
+      return next;
+    });
+  }, []);
+
+  const onCustomerNotificationClick = useCallback(
+    (notification: CustomerNotificationItem) => {
+      markNotificationSeen(notification);
+
+      const row = notification as CustomerNotificationItem & { category?: string };
+      const category =
+        (typeof row.category === "string" && row.category.trim() ? row.category : undefined) ??
+        (typeof notification.type === "string" && notification.type.trim()
+          ? notification.type
+          : undefined);
+
+      const result = resolveCustomerSidebarNavigation({
+        id: notification.id,
+        category,
+        type: category,
+        title: notification.title,
+        content: notification.message,
+      });
+
+      const targetView = customerModuleToView(result.module) as CustomerView;
+
+      if (location.pathname === result.path) {
+        return;
+      }
+
+      handleViewChange(targetView);
+    },
+    [markNotificationSeen, resolveCustomerSidebarNavigation, location.pathname]
+  );
 
   // Delete account state
   const [isDeleteAccountDialogOpen, setIsDeleteAccountDialogOpen] = useState(false);
@@ -3126,7 +3172,19 @@ export function CustomerDashboard({
                 return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
               })
               .map((notification) => (
-              <Card key={getCustomerNotificationDedupeKey(notification)}>
+              <Card
+                key={getCustomerNotificationDedupeKey(notification)}
+                role="button"
+                tabIndex={0}
+                className="cursor-pointer transition-shadow hover:shadow-md"
+                onClick={() => onCustomerNotificationClick(notification)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onCustomerNotificationClick(notification);
+                  }
+                }}
+              >
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
