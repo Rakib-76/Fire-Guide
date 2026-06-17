@@ -623,11 +623,14 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
       {/* Filters and Actions */}
       <Card>
         <CardContent className="p-6">
-          <div className="flex flex-row items-center justify-between gap-4">
-            <div className="flex flex-row items-center gap-3">
-              <Filter className="w-10 h-10 text-gray-400" />
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex items-center gap-2 text-gray-500">
+                <Filter className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium sm:hidden">Filters</span>
+              </div>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full sm:w-[180px]">
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -639,7 +642,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
               </Select>
 
               <Select value={filterPeriod} onValueChange={setFilterPeriod}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full sm:w-[180px]">
                   <SelectValue placeholder="Filter by period" />
                 </SelectTrigger>
                 <SelectContent>
@@ -655,6 +658,7 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
             <Button
               variant="outline"
               onClick={handleDownloadAll}
+              className="w-full md:w-auto"
             >
               <Download className="w-4 h-4 mr-2" />
               Download All Invoices
