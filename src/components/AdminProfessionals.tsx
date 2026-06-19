@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Search, Star, MoreVertical, Mail, Phone, MapPin, CheckCircle, Clock, XCircle, Eye, Ban, Award, FileText, Download, AlertCircle, Edit2, Image, File, Loader2, Upload } from "lucide-react";
-import { getApiToken } from "../lib/auth";
+import { Search, Star, MoreVertical, Mail, Phone, MapPin, CheckCircle, Clock, XCircle, Eye, Ban, Award, FileText, Download, AlertCircle, Edit2, Image, File, Loader2, Upload, MessageSquare } from "lucide-react";
+import { getApiToken, getUserEmail, getUserFullName } from "../lib/auth";
 import { resolveApiBaseUrl } from "../lib/apiBaseUrl";
 import { getAdminProfessionalSummary, AdminProfessionalSummaryData, getAdminProfessionals, AdminProfessionalListItem, adminProfessionalTakeAction, AdminProfessionalStatus, getAdminProfessionalSingle, AdminProfessionalSingleData, AdminProfessionalExperience, AdminProfessionalMembershipItem, adminProfessionalUpdate, adminProfessionalUploadProfileImage, adminProfessionalChangeCertificateStatus, adminProfessionalChangeServiceStatus, adminProfessionalChangeExperienceStatus, adminApproveInsuranceCoverage, adminRejectInsuranceCoverage, adminApproveProfessionalIdentity, adminRejectProfessionalIdentity, adminApproveMembership, adminRejectMembership } from "../api/adminService";
+import { createReview } from "../api/reviewsService";
 import { buildMembershipEvidenceViewUrls, buildMembershipLogoViewUrls, getMembershipMediaUrlCandidates } from "../api/membershipService";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -27,6 +28,7 @@ import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Separator } from "./ui/separator";
 import { toast } from "sonner";
+import axios from "axios";
 
 function MembershipMediaImage({
   path,
@@ -137,6 +139,13 @@ export function AdminProfessionals() {
   const [membershipStatuses, setMembershipStatuses] = useState<{ [key: string]: string }>({});
   const [membershipUpdatingId, setMembershipUpdatingId] = useState<string | null>(null);
   const [serviceUpdatingId, setServiceUpdatingId] = useState<number | string | null>(null);
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
+  const [feedbackName, setFeedbackName] = useState("");
+  const [feedbackEmail, setFeedbackEmail] = useState("");
+  const [feedbackRating, setFeedbackRating] = useState("");
+  const [feedbackHoverRating, setFeedbackHoverRating] = useState(0);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [sendingFeedback, setSendingFeedback] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -700,6 +709,114 @@ export function AdminProfessionals() {
     handleUpdateProfessionalStatus(professional, "approved");
   };
 
+  const handleSendFeedback = (professional: ProfessionalDisplay) => {
+    setSelectedProfessional(professional);
+    setFeedbackName(getUserFullName() ?? "");
+    setFeedbackEmail(getUserEmail() ?? "");
+    setFeedbackRating("");
+    setFeedbackHoverRating(0);
+    setFeedbackMessage("");
+    setFeedbackModalOpen(true);
+  };
+
+  const getProfessionalServiceLabel = (professional: ProfessionalDisplay): string => {
+    const fromServices = professional.qualifications?.[0];
+    const fromCertificates = professional.certificateNames?.[0];
+    const fromExperience = professional.experienceNames?.[0];
+    return fromServices || fromCertificates || fromExperience || "their services";
+  };
+
+  const closeFeedbackModal = () => {
+    setFeedbackModalOpen(false);
+    setFeedbackName("");
+    setFeedbackEmail("");
+    setFeedbackRating("");
+    setFeedbackHoverRating(0);
+    setFeedbackMessage("");
+  };
+
+  const submitFeedback = async () => {
+    if (!selectedProfessional?.id) {
+      toast.error("Professional ID is missing");
+      return;
+    }
+    if (!feedbackName.trim()) {
+      toast.error("Please enter your name.");
+      return;
+    }
+    const emailTrimmed = feedbackEmail.trim();
+    if (!emailTrimmed) {
+      toast.error("Please enter your email.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
+      toast.error("Please enter a valid email address.");
+      return;
+    }
+    if (!feedbackRating) {
+      toast.error("Please select a rating.");
+      return;
+    }
+    if (!feedbackMessage.trim()) {
+      toast.error("Please enter your feedback.");
+      return;
+    }
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Please log in again.");
+      return;
+    }
+    setSendingFeedback(true);
+    try {
+      const response = await createReview({
+        api_token: token,
+        name: feedbackName.trim(),
+        email: emailTrimmed,
+        rating: String(feedbackRating),
+        feedback: feedbackMessage.trim(),
+        professional_id: selectedProfessional.id,
+      });
+
+      const failed =
+        response.status === "failed" ||
+        response.status === "error" ||
+        response.success === false;
+
+      if (failed) {
+        const validation = (response as { data?: Record<string, string[]> }).data;
+        const emailErr = validation?.email?.[0];
+        toast.error(emailErr || response.message || response.error || "Failed to send feedback.");
+        return;
+      }
+
+      const ok =
+        response.status === "success" ||
+        response.success === true ||
+        Boolean(response.message && !response.error);
+
+      if (!ok) {
+        toast.error(response.message || response.error || "Failed to send feedback.");
+        return;
+      }
+
+      toast.success(response.message || "Thank you! Your feedback has been sent.");
+      closeFeedbackModal();
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e) && e.response?.data) {
+        const d = e.response.data as { message?: string; data?: Record<string, string[]> };
+        const emailErr = d.data?.email?.[0];
+        if (emailErr || d.message) {
+          toast.error(emailErr || d.message || "Could not send feedback.");
+          return;
+        }
+      }
+      const err = e as { message?: string };
+      toast.error(err?.message || "Could not send feedback.");
+    } finally {
+      setSendingFeedback(false);
+    }
+  };
+
   const mobileActionBtnClass =
     "inline-flex h-10 w-full items-center justify-center gap-2 rounded-md text-sm font-medium shadow-sm transition-all duration-200 disabled:cursor-not-allowed";
 
@@ -728,6 +845,16 @@ export function AdminProfessionals() {
         >
           <Edit2 className="mr-2 h-4 w-4 shrink-0" />
           Edit Professional
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-10 w-full"
+          disabled={isUpdating || sendingFeedback}
+          onClick={() => handleSendFeedback(professional)}
+        >
+          <MessageSquare className="mr-2 h-4 w-4 shrink-0" />
+          Send Feedback
         </Button>
 
         {status === "pending" && (
@@ -885,31 +1012,20 @@ export function AdminProfessionals() {
             undefined;
         }
       } catch {
-        // Fall back to multipart update when dedicated upload route is unavailable.
+        // Dedicated upload route failed — no fallback on profile update.
       }
 
       if (!uploaded) {
-        const updateRes = await adminProfessionalUpdate({
-          api_token: token,
-          professional_id: selectedProfessional.id,
-          file,
-        });
-        if (!updateRes.success) {
-          throw new Error(updateRes.message || "Failed to upload profile image");
-        }
-        uploaded = true;
-        imageUrl = updateRes.data?.professional_image?.trim() || undefined;
+        throw new Error("Failed to upload profile image");
       }
 
-      if (uploaded) {
-        if (imageUrl) {
-          setEditDetail((prev) => (prev ? { ...prev, professional_image: imageUrl } : prev));
-        }
-        setPendingEditImageFile(null);
-        setEditImagePreview(null);
-        refetchProfessionalsList();
-        toast.success("Profile image updated successfully");
+      if (imageUrl) {
+        setEditDetail((prev) => (prev ? { ...prev, professional_image: imageUrl } : prev));
       }
+      setPendingEditImageFile(null);
+      setEditImagePreview(null);
+      refetchProfessionalsList();
+      toast.success("Profile image updated successfully");
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -944,16 +1060,21 @@ export function AdminProfessionals() {
     try {
       const res = await adminProfessionalUpdate({
         api_token: token,
-        professional_id: selectedProfessional.id,
+        id: selectedProfessional.id,
+        professional_id: editDetail?.id ?? selectedProfessional.id,
         name: editForm.name.trim(),
         business_name: editForm.business_name.trim(),
+        about: editForm.bio.trim(),
         email: editForm.email.trim(),
         number: editForm.phone.trim(),
         business_location: editForm.location.trim(),
         post_code: editForm.post_code.trim(),
-        about: editForm.bio.trim(),
         response_time: editForm.responseTime.trim(),
-        ...(pendingEditImageFile ? { file: pendingEditImageFile } : {}),
+        ...(editDetail?.radius != null && editDetail.radius !== ""
+          ? { radius: String(editDetail.radius) }
+          : {}),
+        ...(editDetail?.rating != null ? { rating: String(editDetail.rating) } : {}),
+        ...(editDetail?.review != null ? { review: String(editDetail.review) } : {}),
       });
 
       if (!res.success) {
@@ -1595,6 +1716,10 @@ export function AdminProfessionals() {
                           <DropdownMenuItem onClick={() => handleEdit(professional)}>
                             <Edit2 className="w-4 h-4 mr-2" />
                             Edit Professional
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleSendFeedback(professional)}>
+                            <MessageSquare className="w-4 h-4 mr-2" />
+                            Send Feedback
                           </DropdownMenuItem>
                           {professional.status === "pending" && (
                             <>
@@ -3198,35 +3323,44 @@ export function AdminProfessionals() {
                         rejectionReason: null,
                       }))
                       : professionalServices[selectedProfessional?.id as keyof typeof professionalServices] ?? []
-                    ).map((service: any) => (
+                    ).map((service: any) => {
+                      const serviceStatusVariant =
+                        service.status === "approved"
+                          ? "approved"
+                          : service.status === "pending"
+                            ? "pending"
+                            : "rejected";
+                      const serviceStatusBadge = (
+                        <Badge
+                          variant="custom"
+                          className={`inline-flex w-fit shrink-0 whitespace-nowrap ${profileModalStatusBadgeClass(serviceStatusVariant)}`}
+                        >
+                          {service.status === "approved" && <CheckCircle className="mr-1 h-3 w-3 shrink-0" />}
+                          {service.status === "pending" && <Clock className="mr-1 h-3 w-3 shrink-0" />}
+                          {service.status === "rejected" && <XCircle className="mr-1 h-3 w-3 shrink-0" />}
+                          {service.status.charAt(0).toUpperCase() + service.status.slice(1)}
+                        </Badge>
+                      );
+
+                      return (
                       <div
                         key={service.id}
                         className="border rounded-lg p-4 md:p-5 shadow-sm hover:shadow-md transition-shadow duration-200 space-y-4"
                       >
                         {/* Service Header - Mobile Optimized */}
-                        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                          <div className="flex-1 min-w-0">
-                            <h5 className="font-semibold text-gray-900 text-base md:text-lg break-words">
-                              {service.name}
-                            </h5>
-                            <p className="text-sm text-gray-500 mt-1">
-                              {service.uploadDate ? `Uploaded: ${service.uploadDate}` : 'Not uploaded yet'}
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <h5 className="min-w-0 flex-1 font-semibold text-base text-gray-900 break-words md:text-lg">
+                                {service.name}
+                              </h5>
+                              <div className="md:hidden">{serviceStatusBadge}</div>
+                            </div>
+                            <p className="mt-1 text-sm text-gray-500">
+                              {service.uploadDate ? `Uploaded: ${service.uploadDate}` : "Not uploaded yet"}
                             </p>
                           </div>
-                          <Badge
-                            className={profileModalStatusBadgeClass(
-                              service.status === "approved"
-                                ? "approved"
-                                : service.status === "pending"
-                                  ? "pending"
-                                  : "rejected"
-                            )}
-                          >
-                            {service.status === 'approved' && <CheckCircle className="w-3 h-3 mr-1" />}
-                            {service.status === 'pending' && <Clock className="w-3 h-3 mr-1" />}
-                            {service.status === 'rejected' && <XCircle className="w-3 h-3 mr-1" />}
-                            {service.status.charAt(0).toUpperCase() + service.status.slice(1)}
-                          </Badge>
+                          <div className="hidden md:block">{serviceStatusBadge}</div>
                         </div>
 
                         {/* Evidence of Competency */}
@@ -3330,7 +3464,8 @@ export function AdminProfessionals() {
                           )}
                         </div>
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
 
                   {((profileDetail?.services?.length ?? 0) === 0 &&
@@ -3345,7 +3480,7 @@ export function AdminProfessionals() {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="max-sm:justify-between sm:justify-end">
             <Button
               variant="outline"
               onClick={() => setProfileModalOpen(false)}
@@ -3360,13 +3495,142 @@ export function AdminProfessionals() {
               }}
             >
               <Edit2 className="w-4 h-4 mr-2" />
-              Edit Professional
+              Edit
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Service Rejection Modal */}
+      {/* Send Feedback Modal */}
+      <Dialog open={feedbackModalOpen} onOpenChange={(open) => !open && closeFeedbackModal()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-xl text-[#0A1A2F]">Give Feedback</DialogTitle>
+            <DialogDescription>
+              Share your experience with {selectedProfessional?.name ?? "this professional"} for{" "}
+              {selectedProfessional
+                ? getProfessionalServiceLabel(selectedProfessional)
+                : "their services"}
+              .
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedProfessional && (
+            <form
+              className="space-y-4 py-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submitFeedback();
+              }}
+            >
+              <div className="space-y-2">
+                <Label htmlFor="admin-feedback-name">
+                  Name <span className="text-red-600">*</span>
+                </Label>
+                <Input
+                  id="admin-feedback-name"
+                  type="text"
+                  value={feedbackName}
+                  onChange={(e) => setFeedbackName(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="admin-feedback-email">
+                  Reviewer email <span className="text-red-600">*</span>
+                </Label>
+                <Input
+                  id="admin-feedback-email"
+                  type="email"
+                  value={feedbackEmail}
+                  onChange={(e) => setFeedbackEmail(e.target.value)}
+                  placeholder="e.g. john.doe@example.com"
+                  autoComplete="email"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>
+                  Rating <span className="text-red-600">*</span>
+                </Label>
+                <div
+                  className="flex gap-1"
+                  onMouseLeave={() => setFeedbackHoverRating(0)}
+                  role="group"
+                  aria-label="Rating out of 5 stars"
+                >
+                  {[1, 2, 3, 4, 5].map((star) => {
+                    const activeStars = feedbackHoverRating || Number(feedbackRating) || 0;
+                    return (
+                      <button
+                        key={star}
+                        type="button"
+                        className="rounded p-0.5 transition-transform hover:scale-110"
+                        onClick={() => setFeedbackRating(String(star))}
+                        onMouseEnter={() => setFeedbackHoverRating(star)}
+                        aria-label={`${star} star${star > 1 ? "s" : ""}`}
+                        aria-pressed={Number(feedbackRating) === star}
+                      >
+                        <Star
+                          className={`h-9 w-9 ${
+                            activeStars >= star
+                              ? "fill-yellow-400 text-yellow-500"
+                              : "text-gray-300"
+                          }`}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="admin-feedback-message">
+                  Feedback <span className="text-red-600">*</span>
+                </Label>
+                <Textarea
+                  id="admin-feedback-message"
+                  value={feedbackMessage}
+                  onChange={(e) => setFeedbackMessage(e.target.value)}
+                  rows={4}
+                  placeholder="e.g. Excellent service and very professional."
+                  required
+                />
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={closeFeedbackModal}
+                  disabled={sendingFeedback}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  disabled={sendingFeedback}
+                >
+                  {sendingFeedback ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    "Send"
+                  )}
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={serviceRejectModalOpen} onOpenChange={setServiceRejectModalOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>

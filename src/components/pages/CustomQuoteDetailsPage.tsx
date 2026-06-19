@@ -1,21 +1,51 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Loader2, MapPin } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  MapPin,
+  AlertCircle,
+  User,
+  Mail,
+  Phone,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 import { Button } from "../ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { Textarea } from "../ui/textarea";
 import { toast } from "sonner";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 import { storeCustomQuoteRequest } from "../../api/customQuoteRequestsService";
-import { getApiToken, getUserEmail, getUserFullName, getUserPhone } from "../../lib/auth";
+import {
+  getApiToken,
+  getUserEmail,
+  getUserFullName,
+  getUserPhone,
+} from "../../lib/auth";
 import {
   clearPendingCustomQuote,
-  customQuoteDetailsPath,
   readPendingCustomQuote,
-  savePendingCustomQuote,
+  type PendingCustomQuoteContact,
 } from "../../lib/pendingCustomQuote";
-import { CustomQuoteSubmittedModal } from "../CustomQuoteSubmittedModal";
+import { registerAndLoginCustomer } from "../../lib/customerGuestAuth";
+
+function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: "", lastName: "" };
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+}
+
+function buildAccessNote(existingNote: string | undefined, userNotes: string): string | undefined {
+  const existing = existingNote?.trim() ?? "";
+  const extra = userNotes.trim();
+  const combined = [existing, extra].filter(Boolean).join("\n\n");
+  return combined || undefined;
+}
 
 export default function CustomQuoteDetailsPage() {
   const navigate = useNavigate();
@@ -25,12 +55,21 @@ export default function CustomQuoteDetailsPage() {
     serviceIdParam && /^\d+$/.test(serviceIdParam) ? parseInt(serviceIdParam, 10) : null;
   const serviceNameFromState = (location.state as { serviceName?: string } | null)?.serviceName;
 
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [postcode, setPostcode] = useState("");
+  const [notes, setNotes] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [successModalOpen, setSuccessModalOpen] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [resolvedServiceName, setResolvedServiceName] = useState<string | undefined>(
     serviceNameFromState
@@ -49,18 +88,77 @@ export default function CustomQuoteDetailsPage() {
       });
       return;
     }
+
     setResolvedServiceName(draft.serviceName ?? serviceNameFromState);
+    setIsLoggedIn(Boolean(getApiToken()));
+
+    if (draft.contactDetails) {
+      const contact = draft.contactDetails;
+      setFirstName(contact.firstName);
+      setLastName(contact.lastName);
+      setEmail(contact.email);
+      setPhone(contact.phone);
+      setAddress(contact.property_address);
+      setCity(contact.city);
+      setPostcode(contact.post_code);
+      setNotes(contact.notes ?? "");
+    } else {
+      const { firstName: fn, lastName: ln } = splitFullName(getUserFullName() ?? "");
+      setFirstName(fn);
+      setLastName(ln);
+      setEmail(getUserEmail() ?? "");
+      setPhone(getUserPhone() ?? "");
+      setAddress(draft.requestData.property_address?.trim() ?? "");
+      setCity(draft.requestData.city?.trim() ?? "");
+      setPostcode(draft.requestData.post_code?.trim() ?? "");
+    }
+
     setDraftReady(true);
   }, [serviceId, navigate, serviceNameFromState]);
 
+  const clearError = (field: string) => {
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: "" }));
+    }
+  };
+
   const validate = () => {
     const next: Record<string, string> = {};
-    if (!address.trim()) next.address = "Property address is required";
+    if (!firstName.trim()) next.firstName = "First name is required";
+    if (!lastName.trim()) next.lastName = "Last name is required";
+    if (!email.trim()) {
+      next.email = "Email is required";
+    } else if (!/\S+@\S+\.\S+/.test(email)) {
+      next.email = "Please enter a valid email";
+    }
+    if (!phone.trim()) {
+      next.phone = "Phone number is required";
+    } else if (!/^[\d\s+()-]+$/.test(phone)) {
+      next.phone = "Please enter a valid phone number";
+    }
+    if (!address.trim()) next.address = "Address is required";
     if (!city.trim()) next.city = "City is required";
     if (!postcode.trim()) next.postcode = "Postcode is required";
+    if (!isLoggedIn && !password.trim()) next.password = "Password is required";
+    if (!isLoggedIn && !confirmPassword.trim()) {
+      next.confirmPassword = "Please confirm your password";
+    } else if (!isLoggedIn && password !== confirmPassword) {
+      next.confirmPassword = "Passwords do not match";
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
+
+  const buildContactDetails = (): PendingCustomQuoteContact => ({
+    firstName: firstName.trim(),
+    lastName: lastName.trim(),
+    email: email.trim(),
+    phone: phone.trim(),
+    property_address: address.trim(),
+    city: city.trim(),
+    post_code: postcode.trim(),
+    ...(notes.trim() ? { notes: notes.trim() } : {}),
+  });
 
   const handleSubmit = async () => {
     if (!serviceId) return;
@@ -74,32 +172,64 @@ export default function CustomQuoteDetailsPage() {
     }
     if (!validate()) return;
 
-    const name = getUserFullName()?.trim() ?? "";
-    const email = getUserEmail()?.trim() ?? "";
-    const phone = getUserPhone()?.trim() ?? "";
-    const token = getApiToken();
+    const contact = buildContactDetails();
+    const customerName = `${contact.firstName} ${contact.lastName}`.trim();
+    const access_note = buildAccessNote(pending.requestData.access_note, contact.notes ?? "");
+    const requestData = {
+      ...pending.requestData,
+      property_address: contact.property_address,
+      city: contact.city,
+      post_code: contact.post_code,
+      ...(access_note ? { access_note } : {}),
+    };
 
-    if (!token || !name || !email || !phone) {
-      savePendingCustomQuote({
-        ...pending,
-        returnPath: customQuoteDetailsPath(serviceId),
-      });
-      navigate("/customer/auth", { state: { pendingCustomQuote: true } });
-      return;
-    }
+    const token = getApiToken();
+    const wasGuest = !token;
 
     setSubmitting(true);
     try {
-      await storeCustomQuoteRequest(token, serviceId, name, email, phone, {
-        ...pending.requestData,
-        property_address: address.trim(),
-        city: city.trim(),
-        post_code: postcode.trim(),
-      });
+      let apiToken = token;
+      let signedInWithExistingAccount = false;
+
+      if (!apiToken) {
+        const auth = await registerAndLoginCustomer(contact, password);
+        apiToken = auth.token;
+        signedInWithExistingAccount = auth.usedExistingAccount;
+        setIsLoggedIn(true);
+      }
+
+      await storeCustomQuoteRequest(
+        apiToken,
+        serviceId,
+        customerName,
+        contact.email,
+        contact.phone,
+        requestData
+      );
       clearPendingCustomQuote();
-      setSuccessModalOpen(true);
+      toast.success(
+        wasGuest
+          ? signedInWithExistingAccount
+            ? "Signed in successfully. Your custom quote request has been submitted."
+            : "Account created and signed in. Your custom quote request has been submitted."
+          : "Your custom quote request has been submitted."
+      );
+      navigate("/customer/dashboard/quote-requests");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to submit custom quote request.");
+      const message =
+        err && typeof err === "object" && "message" in err
+          ? String((err as { message?: string }).message)
+          : err instanceof Error
+            ? err.message
+            : "Failed to submit custom quote request.";
+      if (message.toLowerCase().includes("email or password is wrong")) {
+        setErrors((prev) => ({
+          ...prev,
+          email: "Email or password is wrong.",
+          password: "Email or password is wrong.",
+        }));
+      }
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -133,77 +263,268 @@ export default function CustomQuoteDetailsPage() {
             Select Service
           </Link>
           <ChevronRight className="h-4 w-4" />
-          <span className="text-gray-900">Property details</span>
+          <span className="text-gray-900">Contact details</span>
         </div>
       </div>
 
-      <main className="px-4 pt-14 pb-10 md:px-6">
-        <div className="mx-auto max-w-3xl pt-2">
+      <main className="px-4 py-8 md:px-6">
+        <div className="mx-auto max-w-3xl">
+          <h1 className="mb-6 text-[#0A1A2F]">Your Contact Details</h1>
+
           <Card className="border-gray-200 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-[#0A1A2F]">
-                <MapPin className="h-5 w-5 text-red-600" />
-                Property details
+                <User className="h-5 w-5" />
+                Contact Information
               </CardTitle>
-              <CardDescription className="text-gray-600">
-                {resolvedServiceName
-                  ? `Tell us where the ${resolvedServiceName} service is needed. We will use this for your custom quote request.`
-                  : "Tell us where the service is needed. We will use this for your custom quote request."}
-              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <div>
-                <Label htmlFor="property-address" className="mb-1.5 block text-sm font-medium text-gray-700">
-                  Property address
-                </Label>
-                <Input
-                  id="property-address"
-                  value={address}
-                  onChange={(e) => {
-                    setAddress(e.target.value);
-                    if (errors.address) setErrors((prev) => ({ ...prev, address: "" }));
-                  }}
-                  placeholder="e.g. 123 Business Park, Unit 4"
-                  className="h-11"
-                />
-                {errors.address && <p className="mt-1 text-sm text-red-600">{errors.address}</p>}
+            <CardContent>
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="first-name">First Name *</Label>
+                    <Input
+                      id="first-name"
+                      value={firstName}
+                      onChange={(e) => {
+                        setFirstName(e.target.value);
+                        clearError("firstName");
+                      }}
+                      className={errors.firstName ? "border-red-500" : ""}
+                    />
+                    {errors.firstName && (
+                      <p className="flex items-center gap-1 text-sm text-red-600">
+                        <AlertCircle className="h-3 w-3" />
+                        {errors.firstName}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="last-name">Last Name *</Label>
+                    <Input
+                      id="last-name"
+                      value={lastName}
+                      onChange={(e) => {
+                        setLastName(e.target.value);
+                        clearError("lastName");
+                      }}
+                      className={errors.lastName ? "border-red-500" : ""}
+                    />
+                    {errors.lastName && (
+                      <p className="flex items-center gap-1 text-sm text-red-600">
+                        <AlertCircle className="h-3 w-3" />
+                        {errors.lastName}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email Address *</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        clearError("email");
+                      }}
+                      className={`pl-10 ${errors.email ? "border-red-500" : ""}`}
+                    />
+                  </div>
+                  {errors.email ? (
+                    <p className="flex items-center gap-1 text-sm text-red-600">
+                      <AlertCircle className="h-3 w-3" />
+                      {errors.email}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500">We&apos;ll send your booking confirmation here</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone Number *</Label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <Input
+                      id="phone"
+                      type="tel"
+                      placeholder="07123 456789"
+                      value={phone}
+                      onChange={(e) => {
+                        setPhone(e.target.value);
+                        clearError("phone");
+                      }}
+                      className={`pl-10 ${errors.phone ? "border-red-500" : ""}`}
+                    />
+                  </div>
+                  {errors.phone ? (
+                    <p className="flex items-center gap-1 text-sm text-red-600">
+                      <AlertCircle className="h-3 w-3" />
+                      {errors.phone}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500">The professional may call to confirm details</p>
+                  )}
+                </div>
+
+                {!isLoggedIn ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="password">Password *</Label>
+                      <div className="relative">
+                        <Input
+                          id="password"
+                          type={showPassword ? "text" : "password"}
+                          placeholder="Create a strong password"
+                          value={password}
+                          onChange={(e) => {
+                            setPassword(e.target.value);
+                            clearError("password");
+                            if (errors.confirmPassword) clearError("confirmPassword");
+                          }}
+                          className={`pr-10 ${errors.password ? "border-red-500" : ""}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((prev) => !prev)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      {errors.password ? (
+                        <p className="flex items-center gap-1 text-sm text-red-600">
+                          <AlertCircle className="h-3 w-3" />
+                          {errors.password}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-gray-500">
+                          We&apos;ll create your account when you submit this quote request
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="confirm-password">Confirm Password *</Label>
+                      <div className="relative">
+                        <Input
+                          id="confirm-password"
+                          type={showConfirmPassword ? "text" : "password"}
+                          placeholder="Re-enter your password"
+                          value={confirmPassword}
+                          onChange={(e) => {
+                            setConfirmPassword(e.target.value);
+                            clearError("confirmPassword");
+                          }}
+                          className={`pr-10 ${errors.confirmPassword ? "border-red-500" : ""}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword((prev) => !prev)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                        >
+                          {showConfirmPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                      {errors.confirmPassword && (
+                        <p className="flex items-center gap-1 text-sm text-red-600">
+                          <AlertCircle className="h-3 w-3" />
+                          {errors.confirmPassword}
+                        </p>
+                      )}
+                    </div>
+                  </>
+                ) : null}
+
+                <div className="space-y-2">
+                  <Label htmlFor="property-address">Property Address *</Label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="property-address"
+                      placeholder="Street address"
+                      value={address}
+                      onChange={(e) => {
+                        setAddress(e.target.value);
+                        clearError("address");
+                      }}
+                      className={`pl-10 ${errors.address ? "border-red-500" : ""}`}
+                    />
+                  </div>
+                  {errors.address ? (
+                    <p className="flex items-center gap-1 text-sm text-red-600">
+                      <AlertCircle className="h-3 w-3" />
+                      {errors.address}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500">Where the service will be performed</p>
+                  )}
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="property-city">City *</Label>
+                    <Input
+                      id="property-city"
+                      value={city}
+                      onChange={(e) => {
+                        setCity(e.target.value);
+                        clearError("city");
+                      }}
+                      className={errors.city ? "border-red-500" : ""}
+                    />
+                    {errors.city && (
+                      <p className="flex items-center gap-1 text-sm text-red-600">
+                        <AlertCircle className="h-3 w-3" />
+                        {errors.city}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="property-postcode">Postcode *</Label>
+                    <Input
+                      id="property-postcode"
+                      placeholder="SW1A 1AA"
+                      value={postcode}
+                      onChange={(e) => {
+                        setPostcode(e.target.value.toUpperCase());
+                        clearError("postcode");
+                      }}
+                      className={errors.postcode ? "border-red-500" : ""}
+                    />
+                    {errors.postcode && (
+                      <p className="flex items-center gap-1 text-sm text-red-600">
+                        <AlertCircle className="h-3 w-3" />
+                        {errors.postcode}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="notes">Additional Notes (Optional)</Label>
+                  <Textarea
+                    id="notes"
+                    placeholder="Any special requirements, access instructions, or specific areas of concern..."
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="min-h-[100px]"
+                  />
+                  <p className="text-xs text-gray-500">Help the professional prepare for your appointment</p>
+                </div>
               </div>
 
-              <div>
-                <Label htmlFor="property-city" className="mb-1.5 block text-sm font-medium text-gray-700">
-                  City
-                </Label>
-                <Input
-                  id="property-city"
-                  value={city}
-                  onChange={(e) => {
-                    setCity(e.target.value);
-                    if (errors.city) setErrors((prev) => ({ ...prev, city: "" }));
-                  }}
-                  placeholder="e.g. London"
-                  className="h-11"
-                />
-                {errors.city && <p className="mt-1 text-sm text-red-600">{errors.city}</p>}
-              </div>
-
-              <div>
-                <Label htmlFor="property-postcode" className="mb-1.5 block text-sm font-medium text-gray-700">
-                  Postcode
-                </Label>
-                <Input
-                  id="property-postcode"
-                  value={postcode}
-                  onChange={(e) => {
-                    setPostcode(e.target.value);
-                    if (errors.postcode) setErrors((prev) => ({ ...prev, postcode: "" }));
-                  }}
-                  placeholder="e.g. SW1A 1AA"
-                  className="h-11"
-                />
-                {errors.postcode && <p className="mt-1 text-sm text-red-600">{errors.postcode}</p>}
-              </div>
-
-              <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-between">
+              <div className="mt-6 flex flex-col gap-3 pt-2 sm:flex-row sm:justify-between">
                 <Button
                   type="button"
                   variant="outline"
@@ -227,7 +548,7 @@ export default function CustomQuoteDetailsPage() {
                   {submitting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Submitting...
+                      {isLoggedIn ? "Submitting..." : "Creating account & signing in..."}
                     </>
                   ) : (
                     "Submit custom quote"
@@ -238,19 +559,6 @@ export default function CustomQuoteDetailsPage() {
           </Card>
         </div>
       </main>
-
-      <CustomQuoteSubmittedModal
-        open={successModalOpen}
-        onOpenChange={setSuccessModalOpen}
-        onViewQuoteRequests={() => {
-          setSuccessModalOpen(false);
-          navigate("/customer/dashboard/quote-requests");
-        }}
-        onBrowseServices={() => {
-          setSuccessModalOpen(false);
-          navigate("/services");
-        }}
-      />
     </div>
   );
 }

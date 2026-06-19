@@ -154,8 +154,8 @@ export function ProfessionalPayoutList() {
                         </p>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3 border-t border-gray-200 pt-3">
-                        <div>
+                      <div className="flex items-start justify-between gap-4 border-t border-gray-200 pt-3">
+                        <div className="min-w-0">
                           <p className="mb-1.5 text-xs font-medium text-gray-500">Booking status</p>
                           <Badge
                             variant="custom"
@@ -164,7 +164,7 @@ export function ProfessionalPayoutList() {
                             {formatStatusLabel(bookingStatus)}
                           </Badge>
                         </div>
-                        <div>
+                        <div className="shrink-0 text-right">
                           <p className="mb-1.5 text-xs font-medium text-gray-500">Payout status</p>
                           <Badge
                             variant="custom"

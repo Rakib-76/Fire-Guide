@@ -30,6 +30,7 @@ import { emitProfessionalNotificationsMutated } from "../lib/professionalNotific
 interface Notification {
   id: number;
   type: "booking" | "payment" | "system" | "review";
+  sourceCategory?: string;
   title: string;
   message: string;
   timestamp: string;
@@ -103,6 +104,7 @@ export function ProfessionalNotifications() {
     dataArray.map((item) => ({
       id: item.id,
       type: mapCategoryToType(item.category),
+      sourceCategory: item.source_category,
       title: item.title?.trim() || "Notification",
       message: item.content?.trim() || "",
       timestamp: formatTimestamp(item.created_at),
@@ -282,8 +284,10 @@ export function ProfessionalNotifications() {
       id: notification.id,
       category: notification.type,
       type: notification.type,
+      source_category: notification.sourceCategory,
       title: notification.title,
       content: notification.message,
+      message: notification.message,
     });
   };
 
@@ -432,8 +436,8 @@ export function ProfessionalNotifications() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full min-w-0">
-        <div className="min-w-0 w-full overflow-x-auto overscroll-x-contain scroll-smooth [-webkit-overflow-scrolling:touch] md:overflow-visible">
-          <TabsList className="inline-flex h-auto w-max min-w-full flex-nowrap justify-start gap-1 p-1 md:grid md:w-full md:grid-cols-4 md:overflow-visible">
+        <div className="min-w-0 w-full md:overflow-visible">
+          <TabsList className="flex h-auto w-full flex-nowrap justify-between gap-1 p-1 md:grid md:grid-cols-4 md:overflow-visible">
             <TabsTrigger value="all" className="relative shrink-0 text-xs md:text-sm">
               All
               {allNotifications.length > 0 && (
@@ -506,24 +510,23 @@ export function ProfessionalNotifications() {
                       </div>
                       
                       <div className="flex-1 min-w-0">
-                        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 md:gap-4 mb-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <div className="mb-2">
+                          <div className="mb-1 flex items-start justify-between gap-2">
+                            <div className="flex min-w-0 flex-1 items-center gap-2">
                               <h3 className={`${!notification.read ? 'font-semibold' : 'font-medium'} text-gray-900 break-words`}>
                                 {notification.title}
                               </h3>
                               {!notification.read && (
-                                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getUnreadDotClass(tone)}`}></div>
+                                <div className={`h-2 w-2 flex-shrink-0 rounded-full ${getUnreadDotClass(tone)}`}></div>
                               )}
                             </div>
-                            <p className="text-sm text-gray-600 break-words">
-                              {notification.message}
-                            </p>
+                            <Badge className={`${getPriorityColor(notification.priority, tone)} flex-shrink-0 capitalize`} variant="outline">
+                              {notification.priority}
+                            </Badge>
                           </div>
-                          
-                          <Badge className={`${getPriorityColor(notification.priority, tone)} flex-shrink-0`} variant="outline">
-                            {notification.priority}
-                          </Badge>
+                          <p className="text-sm text-gray-600 break-words">
+                            {notification.message}
+                          </p>
                         </div>
 
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">

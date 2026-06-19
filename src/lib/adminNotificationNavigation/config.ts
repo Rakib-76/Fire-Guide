@@ -1,5 +1,40 @@
 import type { CategoryNavigationRule, ContentNavigationRule } from "./types";
 
+/** Professional verification / profile submissions — open Admin Professionals listing. */
+export const ADMIN_NOTIFICATION_PROFESSIONAL_DOC_CATEGORY_PATTERN =
+  /identity|insurance|certificate|certification|qualification|experience|membership/;
+
+/**
+ * Checked before generic category rules so identity/insurance/etc. win over "system".
+ */
+export const ADMIN_NOTIFICATION_PROFESSIONAL_DOC_CONTENT_RULES: readonly ContentNavigationRule[] = [
+  {
+    id: "content-identity",
+    module: "professionals",
+    pattern: /\bidentity\b|\bid document\b|\bgovernment.?issued id\b/i,
+  },
+  {
+    id: "content-insurance",
+    module: "professionals",
+    pattern: /\binsurance\b|\bpublic liability\b|\bprofessional indemnity\b|\bindemnity cover\b/i,
+  },
+  {
+    id: "content-certificate",
+    module: "professionals",
+    pattern: /\bcertificate\b|\bcertification\b|\bqualification\b|\bqualifications\b/i,
+  },
+  {
+    id: "content-experience",
+    module: "professionals",
+    pattern: /\bexperience\b|\byears of experience\b/i,
+  },
+  {
+    id: "content-membership",
+    module: "professionals",
+    pattern: /\bmembership\b|\bprofessional body\b|\bmember since\b/i,
+  },
+];
+
 /** Categories that are too generic — skip to title/content rules instead. */
 export const GENERIC_ADMIN_NOTIFICATION_CATEGORIES = new Set([
   "",
@@ -42,9 +77,16 @@ export const ADMIN_NOTIFICATION_CATEGORY_RULES: readonly CategoryNavigationRule[
     match: (c) => /report/.test(c),
   },
   {
+    id: "category-professional-verification",
+    module: "professionals",
+    match: (c) => ADMIN_NOTIFICATION_PROFESSIONAL_DOC_CATEGORY_PATTERN.test(c),
+  },
+  {
     id: "category-professional",
     module: "professionals",
-    match: (c) => /professional|verification|certif/.test(c),
+    match: (c) =>
+      /professional/.test(c) &&
+      !ADMIN_NOTIFICATION_PROFESSIONAL_DOC_CATEGORY_PATTERN.test(c),
   },
   {
     id: "category-customer",

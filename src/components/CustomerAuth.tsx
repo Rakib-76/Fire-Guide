@@ -389,7 +389,8 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
             <img src={logoImage} alt="Fire Guide" className="h-7 md:h-12 w-auto flex-shrink-0" />
           </Link>
           
-          <nav className="hidden md:flex items-center gap-8 text-lg">
+          <nav className="hidden lg:block">
+            <div className="flex items-center gap-8 text-lg">
             <button type="button" onClick={handleNavigateHome} className="relative py-2 text-white hover:text-red-600 transition-colors group cursor-pointer">
               Home
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
@@ -410,9 +411,11 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
               Contact
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
             </button>
+            </div>
           </nav>
 
-          <div className="hidden md:flex items-center gap-4">
+          <div className="hidden lg:block">
+            <div className="flex items-center gap-4">
             <Button 
               variant="ghost" 
               onClick={onBack}
@@ -421,11 +424,12 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
               <User className="w-5 h-5 mr-2 shrink-0" />
               Login/Register
             </Button>
+            </div>
           </div>
 
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden"
+            className="lg:hidden"
           >
             <Menu className="w-6 h-6 text-white" />
           </button>
@@ -433,7 +437,7 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden bg-transparent border-t border-white/10 mt-4 py-6">
+          <div className="lg:hidden bg-transparent border-t border-white/10 mt-4 py-6">
             <nav className="flex flex-col gap-1 px-4">
               <button 
                 type="button"
@@ -612,7 +616,7 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
                       {isGoogleLoading ? "Connecting..." : "Continue with Google"}
                     </Button>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <Button
                         type="button"
                         variant="outline"

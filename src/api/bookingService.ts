@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import axios from 'axios';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
+import { formatApiErrorMessage } from '../lib/apiValidationMessage';
 import { getApiToken, handleTokenExpired, isTokenExpiredError } from '../lib/auth';
 import {
   getBookingPaymentStatusKey,
@@ -23,6 +24,8 @@ export interface ProfessionalBookingStoreRequest {
   last_name: string;
   email: string;
   phone: string;
+  /** Required by backend on store for guest checkout / account linking. */
+  password?: string;
   property_address: string;
   longitude: number;
   latitude: number;
@@ -39,9 +42,78 @@ export interface ProfessionalBookingStoreRequest {
 }
 
 export interface ProfessionalBookingStoreResponse {
-  status: string;
-  message: string;
-  data?: any;
+  status?: string | boolean;
+  message?: string;
+  success?: boolean;
+  data?: Record<string, unknown> & {
+    booking?: { id?: number | string };
+    id?: number | string;
+    booking_id?: number | string;
+    api_token?: string;
+  };
+}
+
+export function isBookingStoreSuccess(response: ProfessionalBookingStoreResponse): boolean {
+  const status = response.status;
+  if (
+    status === "success" ||
+    status === true ||
+    response.success === true ||
+    String(status ?? "").toLowerCase() === "success"
+  ) {
+    return true;
+  }
+  const { bookingId } = extractBookingStoreResult(response);
+  return bookingId != null && !String(response.message ?? "").toLowerCase().includes("fail");
+}
+
+export function extractBookingStoreResult(response: ProfessionalBookingStoreResponse): {
+  bookingId: number | null;
+  bookingApiToken: string | null;
+} {
+  const root = response as Record<string, unknown>;
+  const data =
+    response.data && typeof response.data === "object"
+      ? (response.data as Record<string, unknown>)
+      : undefined;
+  const booking =
+    data?.booking && typeof data.booking === "object"
+      ? (data.booking as Record<string, unknown>)
+      : undefined;
+  const professionalBooking =
+    data?.professional_booking && typeof data.professional_booking === "object"
+      ? (data.professional_booking as Record<string, unknown>)
+      : undefined;
+
+  const candidates = [
+    booking?.id,
+    professionalBooking?.id,
+    data?.id,
+    data?.booking_id,
+    data?.professional_booking_id,
+    root.id,
+    root.booking_id,
+  ];
+
+  let bookingId: number | null = null;
+  for (const candidate of candidates) {
+    const parsed = Number(candidate);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      bookingId = parsed;
+      break;
+    }
+  }
+
+  const tokenCandidates = [data?.api_token, root.api_token, professionalBooking?.api_token];
+  let bookingApiToken: string | null = null;
+  for (const candidate of tokenCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      bookingApiToken = candidate.trim();
+      break;
+    }
+  }
+
+  return { bookingId, bookingApiToken };
 }
 
 export interface CalculatePriceForBookingResponse {
@@ -110,10 +182,12 @@ export const storeProfessionalBooking = async (
     console.error('Error storing professional booking:', error);
     if (axios.isAxiosError(error)) {
       if (error.response) {
+        const responseData = error.response.data as Record<string, unknown> | undefined;
         throw {
           success: false,
-          message: error.response.data?.message || 'Failed to submit booking',
-          error: error.response.data?.error || error.message,
+          message: formatApiErrorMessage(responseData, 'Failed to submit booking'),
+          error: (responseData?.error as string | undefined) || error.message,
+          data: responseData?.data ?? responseData?.errors,
           status: error.response.status,
         };
       } else if (error.request) {

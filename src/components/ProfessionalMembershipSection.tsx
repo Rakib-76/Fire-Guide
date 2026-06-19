@@ -237,7 +237,7 @@ function getMembershipVerificationDisplay(
     return {
       label: "Pending Review",
       sublabel: dateLabel ? `Submitted on ${dateLabel}` : "Awaiting admin review",
-      className: "border border-amber-300 bg-amber-100 text-amber-950",
+      className: "border border-yellow-200 bg-yellow-100 text-yellow-800",
     };
   }
   return {
@@ -896,20 +896,23 @@ export function ProfessionalMembershipSection({
               </div>
             </div>
 
-            <div className="flex items-center gap-3 sm:shrink-0">
-              <div className="min-w-0 text-right">
-                <Badge variant="outline" className={`whitespace-normal ${verificationDisplay.className}`}>
+            <div className="flex items-center gap-3 max-sm:w-full max-sm:items-start max-sm:justify-between max-sm:gap-4 sm:shrink-0">
+              <div className="min-w-0 max-sm:text-left sm:text-right">
+                <Badge
+                  variant="custom"
+                  className={`inline-flex w-fit whitespace-nowrap text-xs sm:text-sm ${verificationDisplay.className}`}
+                >
                   {statusKey === "verified" ? (
-                    <CheckCircle2 className="mr-1 inline h-3 w-3" />
+                    <CheckCircle2 className="mr-1 inline h-3 w-3 shrink-0" />
                   ) : null}
                   {statusKey === "pending" ? (
-                    <Clock className="mr-1 inline h-3 w-3" />
+                    <Clock className="mr-1 inline h-3 w-3 shrink-0" />
                   ) : null}
                   {statusKey === "rejected" ? (
-                    <XCircle className="mr-1 inline h-3 w-3" />
+                    <XCircle className="mr-1 inline h-3 w-3 shrink-0" />
                   ) : null}
                   {statusKey !== "verified" && statusKey !== "pending" && statusKey !== "rejected" ? (
-                    <Info className="mr-1 inline h-3 w-3" />
+                    <Info className="mr-1 inline h-3 w-3 shrink-0" />
                   ) : null}
                   {verificationDisplay.label}
                 </Badge>
@@ -919,6 +922,7 @@ export function ProfessionalMembershipSection({
               </div>
 
               {(hasCertificate || hasLogo) && (
+                <div className="max-sm:shrink-0 sm:ml-0">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0">
@@ -950,6 +954,7 @@ export function ProfessionalMembershipSection({
                     ) : null}
                   </DropdownMenuContent>
                 </DropdownMenu>
+                </div>
               )}
             </div>
           </div>
@@ -1084,15 +1089,16 @@ export function ProfessionalMembershipSection({
             else setMembershipFormOpen(true);
           }}
         >
-          <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-xl text-[#0A1A2F]">Add Professional Membership</DialogTitle>
+          <DialogContent className="flex max-h-[min(92dvh,calc(100vh-5rem))] max-w-4xl flex-col overflow-hidden p-0">
+            <DialogHeader className="shrink-0 border-b border-gray-100 px-5 pt-6 pb-4 text-left sm:px-6 pr-12">
+              <DialogTitle className="pr-8 text-xl text-[#0A1A2F]">Add Professional Membership</DialogTitle>
               <DialogDescription>
                 Add your professional body membership details and upload supporting documents for review.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="grid gap-6 py-2 lg:grid-cols-2">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
+            <div className="grid gap-6 lg:grid-cols-2">
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="membership-organization">Professional Body / Organization*</Label>
@@ -1229,7 +1235,7 @@ export function ProfessionalMembershipSection({
               </div>
             </div>
 
-            <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <div className="mt-6 flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
               <Checkbox
                 id="membership-confirm"
                 checked={membershipConfirmed}
@@ -1240,14 +1246,15 @@ export function ProfessionalMembershipSection({
                 organization.
               </Label>
             </div>
+            </div>
 
-            <DialogFooter className="mt-6 gap-2 sm:gap-0">
-              <Button type="button" variant="outline" onClick={closeMembershipForm}>
+            <DialogFooter className="mt-0 shrink-0 flex-col-reverse gap-2 border-t border-gray-100 bg-white sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={closeMembershipForm}>
                 Cancel
               </Button>
               <Button
                 type="button"
-                className="bg-red-600 hover:bg-red-700"
+                className="w-full bg-red-600 hover:bg-red-700 sm:w-auto"
                 onClick={() => void handleAddMembership()}
                 disabled={isSavingMembership || !membershipConfirmed}
               >

@@ -10,8 +10,12 @@ import type {
   ProfessionalSidebarNavigationResult,
 } from "./types";
 
-function normalizeCategory(category?: string, type?: string): string {
-  const raw = category?.trim() || type?.trim() || "";
+function normalizeCategory(
+  category?: string,
+  type?: string,
+  sourceCategory?: string
+): string {
+  const raw = sourceCategory?.trim() || category?.trim() || type?.trim() || "";
   return raw.toLowerCase().replace(/\s+/g, "_");
 }
 
@@ -40,7 +44,11 @@ function buildResult(
 export function resolveProfessionalSidebarNavigation(
   notification: ProfessionalNotificationPayload
 ): ProfessionalSidebarNavigationResult {
-  const category = normalizeCategory(notification.category, notification.type);
+  const category = normalizeCategory(
+    notification.category,
+    notification.type,
+    notification.source_category
+  );
   const combinedText = getCombinedText(notification);
   const textLower = combinedText.toLowerCase();
 

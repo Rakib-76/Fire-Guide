@@ -19,6 +19,8 @@ export interface ProfessionalNotificationPayload {
   id?: number;
   category?: string;
   type?: string;
+  /** Raw API category before UI tab coercion (e.g. identity, insurance, certificate). */
+  source_category?: string;
   title?: string;
   content?: string;
   message?: string;

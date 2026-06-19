@@ -95,10 +95,12 @@ export const registerUser = async (
       // Handle axios errors
       if (error.response) {
         // Server responded with error status
+        const responseData = error.response.data as Record<string, unknown> | undefined;
         throw {
           success: false,
-          message: error.response.data?.message || 'Registration failed',
-          error: error.response.data?.error || error.message,
+          message: formatApiErrorMessage(responseData, "Registration failed"),
+          error: (responseData?.error as string | undefined) || error.message,
+          data: responseData?.data ?? responseData?.errors,
           status: error.response.status,
         };
       } else if (error.request) {

@@ -10,6 +10,8 @@ export interface NotificationApiItem {
   content: string;
   priority: "low" | "medium" | "high";
   category: "system" | "reviews" | "payments" | "bookings";
+  /** Original API category/type before UI coercion (e.g. identity, insurance, qualification). */
+  source_category?: string;
   is_read: boolean;
   created_at: string;
   updated_at: string;
@@ -109,6 +111,7 @@ export function normalizeNotificationFeedRow(row: unknown): NotificationApiItem 
 
   const title = strField(row, "title", "subject", "heading", "name") || "Notification";
   const content = strField(row, "content", "message", "body", "description", "text", "details");
+  const sourceCategory = strField(row, "category", "type", "notification_type");
   const created_at = strField(row, "created_at", "updated_at", "date", "sent_at") || new Date().toISOString();
   const updated_at = strField(row, "updated_at", "created_at") || created_at;
 
@@ -118,7 +121,8 @@ export function normalizeNotificationFeedRow(row: unknown): NotificationApiItem 
     title,
     content,
     priority: coercePriority(row.priority),
-    category: coerceCategory(row.category ?? row.type),
+    category: coerceCategory(sourceCategory),
+    ...(sourceCategory ? { source_category: sourceCategory } : {}),
     is_read: readFlag(row),
     created_at,
     updated_at,

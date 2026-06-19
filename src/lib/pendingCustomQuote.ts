@@ -6,12 +6,25 @@ export function customQuoteDetailsPath(serviceId: number): string {
   return `/services/${serviceId}/custom-quote/details`;
 }
 
+export type PendingCustomQuoteContact = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  property_address: string;
+  city: string;
+  post_code: string;
+  notes?: string;
+};
+
 export type PendingCustomQuote = {
   serviceId: number;
   requestData: CustomQuoteRequestData;
   serviceName?: string;
   /** Questionnaire URL to return to if submission fails after auth. */
   returnPath: string;
+  /** Contact + property fields entered before sign-in redirect. */
+  contactDetails?: PendingCustomQuoteContact;
 };
 
 export function savePendingCustomQuote(pending: PendingCustomQuote): void {
@@ -45,6 +58,11 @@ export function readPendingCustomQuote(): PendingCustomQuote | null {
         ? { serviceName: parsed.serviceName.trim() }
         : {}),
       returnPath,
+      ...(parsed.contactDetails &&
+      typeof parsed.contactDetails === "object" &&
+      !Array.isArray(parsed.contactDetails)
+        ? { contactDetails: parsed.contactDetails as PendingCustomQuoteContact }
+        : {}),
     };
   } catch {
     return null;

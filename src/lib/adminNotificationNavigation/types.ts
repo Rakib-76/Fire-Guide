@@ -16,6 +16,9 @@ export type AdminNotificationModule =
 export interface AdminNotificationPayload {
   id?: number;
   category?: string;
+  type?: string;
+  /** Raw API category/type (e.g. identity, insurance, certificate). */
+  source_category?: string;
   title?: string;
   content?: string;
   /** Admin API field name for body text. */

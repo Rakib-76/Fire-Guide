@@ -2285,6 +2285,7 @@ export interface AdminProfessionalSingleData {
   completed_booking?: number | string | null;
   rating: number | null;
   review: number | null;
+  radius?: string | number | null;
   professional_image: string | null;
   services: AdminProfessionalService[];
   certificates: AdminProfessionalCertificate[];
@@ -2333,18 +2334,21 @@ export const getAdminProfessionalSingle = async (
 
 export interface AdminProfessionalUpdateRequest {
   api_token: string;
-  professional_id: number;
+  /** Professional row id (admin list / single-get). */
+  id: number;
+  /** Same as `id` — sent for APIs that expect `professional_id`. */
+  professional_id?: number;
   name?: string;
   business_name?: string;
+  about?: string;
   email?: string;
   number?: string;
   business_location?: string;
   post_code?: string;
-  about?: string;
+  radius?: string;
   response_time?: string;
-  professional_image?: string;
-  /** When set, update is sent as multipart/form-data (same endpoint). */
-  file?: File;
+  rating?: string;
+  review?: string;
 }
 
 export interface AdminProfessionalUploadImageResponse {
@@ -2362,50 +2366,100 @@ export interface AdminProfessionalUpdateResponse {
   data?: AdminProfessionalSingleData;
 }
 
+function normalizeAdminProfessionalUpdateResponse(raw: unknown): AdminProfessionalUpdateResponse {
+  if (raw == null || typeof raw !== "object") {
+    return { success: false, message: "Invalid response from server" };
+  }
+  const r = raw as Record<string, unknown>;
+  const message = typeof r.message === "string" ? r.message : "";
+  const success =
+    r.success === true ||
+    r.status === true ||
+    r.status === "success" ||
+    (typeof r.status === "string" && r.status.toLowerCase() === "success");
+  const failed =
+    r.success === false ||
+    r.status === false ||
+    r.status === "failed" ||
+    r.status === "error";
+  return {
+    success: failed ? false : success || Boolean(message && !failed),
+    message,
+    data: r.data as AdminProfessionalSingleData | undefined,
+  };
+}
+
+function isProfessionalNotFoundMessage(message: string): boolean {
+  return /professional not found/i.test(message);
+}
+
+function buildProfessionalUpdatePayload(data: AdminProfessionalUpdateRequest) {
+  const professionalId = data.professional_id ?? data.id;
+  const location = data.business_location?.trim();
+  return {
+    api_token: data.api_token,
+    id: professionalId,
+    professional_id: professionalId,
+    ...(data.name != null && { name: data.name }),
+    ...(data.business_name != null && { business_name: data.business_name }),
+    ...(data.about != null && { about: data.about }),
+    ...(data.email != null && { email: data.email }),
+    ...(data.number != null && { number: data.number }),
+    ...(location && { business_location: location, location }),
+    ...(data.post_code != null && { post_code: data.post_code }),
+    ...(data.radius != null && { radius: data.radius }),
+    ...(data.response_time != null && { response_time: data.response_time }),
+    ...(data.rating != null && { rating: data.rating }),
+    ...(data.review != null && { review: data.review }),
+  };
+}
+
+function buildAdminProfessionalLegacyUpdatePayload(data: AdminProfessionalUpdateRequest) {
+  const professionalId = data.professional_id ?? data.id;
+  return {
+    api_token: data.api_token,
+    professional_id: professionalId,
+    ...(data.name != null && { name: data.name }),
+    ...(data.business_name != null && { business_name: data.business_name }),
+    ...(data.about != null && { about: data.about }),
+    ...(data.email != null && { email: data.email }),
+    ...(data.number != null && { number: data.number }),
+    ...(data.business_location != null && { business_location: data.business_location }),
+    ...(data.post_code != null && { post_code: data.post_code }),
+    ...(data.response_time != null && { response_time: data.response_time }),
+  };
+}
+
 /**
- * Update professional profile fields (admin)
- * POST /admin_professional/update
+ * Update professional profile fields (admin edit modal).
+ * Tries POST /professional/update first; falls back to POST /admin_professional/update
+ * when the admin token cannot resolve a professional on the shared route.
  */
 export const adminProfessionalUpdate = async (
   data: AdminProfessionalUpdateRequest
 ): Promise<AdminProfessionalUpdateResponse> => {
-  if (data.file) {
-    const formData = new FormData();
-    formData.append('api_token', data.api_token);
-    formData.append('professional_id', String(data.professional_id));
-    formData.append('professional_image', data.file);
-    if (data.name != null) formData.append('name', data.name);
-    if (data.business_name != null) formData.append('business_name', data.business_name);
-    if (data.email != null) formData.append('email', data.email);
-    if (data.number != null) formData.append('number', data.number);
-    if (data.business_location != null) formData.append('business_location', data.business_location);
-    if (data.post_code != null) formData.append('post_code', data.post_code);
-    if (data.about != null) formData.append('about', data.about);
-    if (data.response_time != null) formData.append('response_time', data.response_time);
-    const response = await apiClient.post<AdminProfessionalUpdateResponse>(
-      '/admin_professional/update',
-      formData
-    );
-    return response.data;
+  const primaryPayload = buildProfessionalUpdatePayload(data);
+
+  try {
+    const response = await apiClient.post<unknown>('/professional/update', primaryPayload);
+    const normalized = normalizeAdminProfessionalUpdateResponse(response.data);
+    if (normalized.success || !isProfessionalNotFoundMessage(normalized.message)) {
+      return normalized;
+    }
+  } catch (error) {
+    if (!axios.isAxiosError(error)) throw error;
+    const msg =
+      (error.response?.data as { message?: string } | undefined)?.message ?? error.message;
+    if (!isProfessionalNotFoundMessage(msg)) {
+      throw error;
+    }
   }
 
-  const response = await apiClient.post<AdminProfessionalUpdateResponse>(
+  const fallbackResponse = await apiClient.post<unknown>(
     '/admin_professional/update',
-    {
-      api_token: data.api_token,
-      professional_id: data.professional_id,
-      ...(data.name != null && { name: data.name }),
-      ...(data.business_name != null && { business_name: data.business_name }),
-      ...(data.email != null && { email: data.email }),
-      ...(data.number != null && { number: data.number }),
-      ...(data.business_location != null && { business_location: data.business_location }),
-      ...(data.post_code != null && { post_code: data.post_code }),
-      ...(data.about != null && { about: data.about }),
-      ...(data.response_time != null && { response_time: data.response_time }),
-      ...(data.professional_image != null && { professional_image: data.professional_image }),
-    }
+    buildAdminProfessionalLegacyUpdatePayload(data)
   );
-  return response.data;
+  return normalizeAdminProfessionalUpdateResponse(fallbackResponse.data);
 };
 
 /**
@@ -3052,6 +3106,8 @@ export interface AdminNotificationItem {
   priority: string;
   message: string;
   category: string;
+  /** Raw API category/type before UI coercion (e.g. identity, insurance). */
+  source_category?: string;
   is_read: number;
   date: string;
   actions: { can_mark_read: boolean; can_delete: boolean };
@@ -3099,7 +3155,8 @@ function normalizeAdminNotificationListRow(row: unknown): AdminNotificationItem 
   if (!Number.isFinite(id) || id <= 0) return null;
   const title = adminNotifStrField(row, "title", "subject", "heading", "name") || "Notification";
   const message = adminNotifStrField(row, "message", "content", "body", "description", "text", "details");
-  const category = adminNotifStrField(row, "category", "type") || "general";
+  const sourceCategory = adminNotifStrField(row, "category", "type", "notification_type");
+  const category = sourceCategory || "general";
   const date =
     adminNotifStrField(row, "date", "created_at", "sent_at", "updated_at") ||
     (typeof row.created_at === "string" ? row.created_at : "");
@@ -3117,6 +3174,7 @@ function normalizeAdminNotificationListRow(row: unknown): AdminNotificationItem 
     priority: coerceAdminListPriority(row.priority),
     message,
     category,
+    source_category: sourceCategory || undefined,
     is_read: read ? 1 : 0,
     date,
     actions: { can_mark_read: canMark, can_delete: canDel },

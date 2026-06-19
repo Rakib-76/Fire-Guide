@@ -95,7 +95,8 @@ export function Header({
           <img src={logoImage} alt="Fire Guide" className="h-12" />
         </Link>
         
-        <nav className="hidden md:flex items-center gap-8 text-lg">
+        <nav className="hidden lg:block">
+          <div className="flex items-center gap-8 text-lg">
           <button type="button" onClick={handleNavigateHome} className="relative py-2 hover:text-red-600 transition-colors group cursor-pointer">
             Home
             <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
@@ -116,9 +117,11 @@ export function Header({
             Contact
             <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
           </button>
+          </div>
         </nav>
 
-        <div className="hidden md:flex items-center gap-4">
+        <div className="hidden lg:block">
+          <div className="flex items-center gap-4">
           {currentUser ? (
             <Button 
               variant="ghost" 
@@ -138,11 +141,13 @@ export function Header({
               Login/Register
             </Button>
           )}
+          </div>
         </div>
 
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="md:hidden"
+          className="lg:hidden"
+          aria-label="Open menu"
         >
           <Menu className="w-6 h-6" />
         </button>
@@ -150,7 +155,7 @@ export function Header({
 
       {/* Mobile Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden bg-white/95 backdrop-blur-md border-t border-gray-200 mt-4 py-6">
+        <div className="lg:hidden bg-white/95 backdrop-blur-md border-t border-gray-200 mt-4 py-6">
           <nav className="flex flex-col gap-1 px-4 md:px-6 text-lg">
             <button
               type="button"

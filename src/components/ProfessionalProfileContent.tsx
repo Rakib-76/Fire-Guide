@@ -177,6 +177,13 @@ export function ProfessionalProfileContent() {
   /** Shown first after signup redirect; hidden after save or when profile completion reaches 100%. */
   const [completeProfileIntroModalOpen, setCompleteProfileIntroModalOpen] = useState(computeShowProfileOnboardingReminder);
   const [introModalDismissedByUser, setIntroModalDismissedByUser] = useState(false);
+  const [membershipFormOpen, setMembershipFormOpen] = useState(false);
+
+  const hideProfileStickyFooter =
+    membershipFormOpen ||
+    isCertificationModalOpen ||
+    isExperienceModalOpen ||
+    completeProfileIntroModalOpen;
 
   const syncOnboardingVisibility = (completionPct: number) => {
     if (isProfileFullyComplete(completionPct)) {
@@ -2310,7 +2317,11 @@ export function ProfessionalProfileContent() {
             </CardContent>
           </Card>
 
-          <ProfessionalMembershipSection mode="manage" />
+          <ProfessionalMembershipSection
+            mode="manage"
+            addFormOpen={membershipFormOpen}
+            onAddFormOpenChange={setMembershipFormOpen}
+          />
         </div>
 
         {/* Sidebar - large screens only */}
@@ -2322,8 +2333,12 @@ export function ProfessionalProfileContent() {
         </div>
       </div>
 
-      {/* Save Button - sticky on mobile within content width */}
-      <div className="sticky bottom-0 z-10 mt-6 border-t bg-white p-4 shadow-lg min-w-0 w-full lg:static lg:z-auto lg:shadow-none lg:border-0">
+      {/* Save Button - sticky on mobile within content width; hidden while modals are open */}
+      <div
+        className={`sticky bottom-0 z-10 mt-6 border-t bg-white p-4 shadow-lg min-w-0 w-full lg:static lg:z-auto lg:shadow-none lg:border-0 ${
+          hideProfileStickyFooter ? "hidden lg:block" : ""
+        }`}
+      >
         <div className="flex flex-col md:flex-row gap-3 w-full min-w-0">
           <Button 
             className="flex-1 bg-red-600 hover:bg-red-700 h-12"

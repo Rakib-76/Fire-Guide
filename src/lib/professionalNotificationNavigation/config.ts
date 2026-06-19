@@ -46,9 +46,36 @@ export const PROFESSIONAL_NOTIFICATION_CATEGORY_RULES: readonly CategoryNavigati
     match: (c) => /report/.test(c),
   },
   {
+    id: "category-identity",
+    module: "verification",
+    match: (c) => /identity/.test(c),
+  },
+  {
+    id: "category-insurance",
+    module: "verification",
+    match: (c) => /insurance/.test(c),
+  },
+  {
+    id: "category-certificate",
+    module: "profile",
+    match: (c) => /certificate|certification|qualification/.test(c),
+  },
+  {
+    id: "category-experience",
+    module: "profile",
+    match: (c) => /experience/.test(c),
+  },
+  {
+    id: "category-membership",
+    module: "profile",
+    match: (c) => /membership/.test(c),
+  },
+  {
     id: "category-verification",
     module: "verification",
-    match: (c) => /verif|certif|approval|compliance/.test(c),
+    match: (c) =>
+      /verif|approval|compliance/.test(c) &&
+      !/certificate|certification|qualification/.test(c),
   },
   {
     id: "category-admin-message",
@@ -82,6 +109,31 @@ export const PROFESSIONAL_NOTIFICATION_CATEGORY_RULES: readonly CategoryNavigati
  */
 export const PROFESSIONAL_NOTIFICATION_CONTENT_RULES: readonly ContentNavigationRule[] = [
   {
+    id: "content-identity",
+    module: "verification",
+    pattern: /\bidentity\b|\bid document\b|\bgovernment.?issued id\b/i,
+  },
+  {
+    id: "content-insurance",
+    module: "verification",
+    pattern: /\binsurance\b|\bpublic liability\b|\bprofessional indemnity\b|\bindemnity cover\b/i,
+  },
+  {
+    id: "content-certificate",
+    module: "profile",
+    pattern: /\bcertificate\b|\bcertification\b|\bqualification\b|\bqualifications\b/i,
+  },
+  {
+    id: "content-experience",
+    module: "profile",
+    pattern: /\bexperience\b|\byears of experience\b/i,
+  },
+  {
+    id: "content-membership",
+    module: "profile",
+    pattern: /\bmembership\b|\bprofessional body\b|\bmember since\b/i,
+  },
+  {
     id: "content-custom-quote",
     module: "custom-quote",
     pattern: /custom quote|quote request/i,
@@ -109,7 +161,8 @@ export const PROFESSIONAL_NOTIFICATION_CONTENT_RULES: readonly ContentNavigation
   {
     id: "content-verification",
     module: "verification",
-    pattern: /\bverif(y|ication)\b|\bcertif|\bapprov(ed|al)\b|\breject(ed|ion)\b|\bdeclin(ed|e)\b/i,
+    pattern:
+      /\bverif(y|ication)\b|\bapprov(ed|al)\b|\breject(ed|ion)\b|\bdeclin(ed|e)\b/i,
   },
   {
     id: "content-admin-message",

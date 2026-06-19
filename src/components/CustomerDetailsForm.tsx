@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -15,16 +15,40 @@ import {
   Phone,
   MapPin,
   AlertCircle,
-  Loader2
+  Loader2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 import type { BookingData } from "./BookingFlow";
-import { storeProfessionalBooking, ProfessionalBookingStoreRequest } from "../api/bookingService";
+import {
+  storeProfessionalBooking,
+  ProfessionalBookingStoreRequest,
+  isBookingStoreSuccess,
+  extractBookingStoreResult,
+} from "../api/bookingService";
 import { storeCustomQuoteRequest } from "../api/customQuoteRequestsService";
 import { toast } from "sonner";
 import { getApiToken } from "../lib/auth";
+import { registerAndLoginCustomer } from "../lib/customerGuestAuth";
+import { formatApiErrorMessage } from "../lib/apiValidationMessage";
+import { useApp } from "../contexts/AppContext";
+import { createBookingSelectedSession } from "../lib/createBookingSelectedSession";
 
 const BOOKING_SESSION_ID_KEY = "fireguide_booking_session_id";
+const QUESTIONNAIRE_STORAGE_KEY = "fireguide_questionnaire_data";
+
+function readQuestionnaireData(contextData: unknown): Record<string, unknown> | null {
+  if (contextData && typeof contextData === "object") {
+    return contextData as Record<string, unknown>;
+  }
+  try {
+    const stored = sessionStorage.getItem(QUESTIONNAIRE_STORAGE_KEY);
+    return stored ? (JSON.parse(stored) as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
 
 interface CustomerDetailsFormProps {
   service: BookingData["service"];
@@ -66,18 +90,32 @@ export function CustomerDetailsForm({
   customQuoteRequestData,
   serviceIdForQuote,
 }: CustomerDetailsFormProps) {
-  const useCustomQuoteFlow = Boolean(isCustomQuote && !forceNormalBooking);
+  const { setIsCustomerLoggedIn, setCurrentUser, locationSearchData, questionnaireData } = useApp();
+  const useCustomQuoteFlow = Boolean(isCustomQuote && !forceNormalBooking && !(pricing.total > 0));
+  const needsPasswordForBooking = !initialData.professionalBookingId;
   const [formData, setFormData] = useState<BookingData["customer"]>(initialData);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCustomQuoteWaiting, setShowCustomQuoteWaiting] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => Boolean(getApiToken()));
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  useEffect(() => {
+    setIsLoggedIn(Boolean(getApiToken()));
+  }, []);
+
+  const clearError = (field: string) => {
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: "" }));
+    }
+  };
 
   const updateFormData = (field: keyof BookingData["customer"], value: string) => {
     setFormData({ ...formData, [field]: value });
-    if (errors[field]) {
-      setErrors({ ...errors, [field]: "" });
-    }
+    clearError(field);
   };
 
   const validateForm = () => {
@@ -98,6 +136,12 @@ export function CustomerDetailsForm({
     if (!formData.address.trim()) newErrors.address = "Address is required";
     if (!formData.city.trim()) newErrors.city = "City is required";
     if (!formData.postcode.trim()) newErrors.postcode = "Postcode is required";
+    if (needsPasswordForBooking && !password.trim()) newErrors.password = "Password is required";
+    if (needsPasswordForBooking && !confirmPassword.trim()) {
+      newErrors.confirmPassword = "Please confirm your password";
+    } else if (needsPasswordForBooking && password !== confirmPassword) {
+      newErrors.confirmPassword = "Passwords do not match";
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -130,6 +174,17 @@ export function CustomerDetailsForm({
 
   const handleContinue = async () => {
     if (!validateForm()) {
+      return;
+    }
+
+    if (initialData.professionalBookingId) {
+      onContinue({
+        ...formData,
+        longitude: formData.longitude ?? initialData.longitude,
+        latitude: formData.latitude ?? initialData.latitude,
+        professionalBookingId: initialData.professionalBookingId,
+        bookingApiToken: initialData.bookingApiToken ?? getApiToken() ?? undefined,
+      });
       return;
     }
 
@@ -170,12 +225,65 @@ export function CustomerDetailsForm({
     setIsSubmitting(true);
 
     const CUSTOM_QUOTE_REQUEST_ID_KEY = "fireguide_custom_quote_request_id";
+    const wasGuest = !getApiToken();
 
     try {
-      // Get coordinates
       const coordinates = await getCoordinates(formData.address, formData.city, formData.postcode);
-      
-      const token = getApiToken();
+
+      let token = getApiToken();
+      let signedInWithExistingAccount = false;
+      if (!token) {
+        const auth = await registerAndLoginCustomer(
+          {
+            firstName: formData.firstName.trim(),
+            lastName: formData.lastName.trim(),
+            email: formData.email.trim(),
+            phone: formData.phone.trim(),
+          },
+          password
+        );
+        token = auth.token;
+        signedInWithExistingAccount = auth.usedExistingAccount;
+        setIsLoggedIn(true);
+        setIsCustomerLoggedIn(true);
+        setCurrentUser({
+          name: formData.firstName.trim() || formData.email.trim(),
+          role: "customer",
+        });
+        toast.success(
+          signedInWithExistingAccount
+            ? "Signed in successfully. Saving your booking..."
+            : "Account created and signed in. Saving your booking..."
+        );
+      }
+
+      let bookingSessionId = effectiveSessionId;
+      const shouldRefreshSession =
+        Boolean(token) &&
+        !initialData.professionalBookingId &&
+        (wasGuest || isLoggedIn);
+      if (shouldRefreshSession) {
+        const qData = readQuestionnaireData(questionnaireData);
+        if (qData && locationSearchData && professionalId && serviceId != null) {
+          const refreshed = await createBookingSelectedSession({
+            professionalId: Number(professionalId),
+            serviceId: Number(serviceId),
+            questionnaireData: qData,
+            locationSearchData,
+          });
+          if (refreshed.sessionId != null) {
+            bookingSessionId = refreshed.sessionId;
+            try {
+              sessionStorage.setItem(BOOKING_SESSION_ID_KEY, String(refreshed.sessionId));
+            } catch {
+              /* ignore */
+            }
+          } else if (refreshed.error) {
+            console.warn("Could not refresh booking session after sign-in:", refreshed.error);
+          }
+        }
+      }
+
       let customQuoteRequestId: number | undefined;
 
       // Custom quote: create quote first so backend can find it when creating the booking (only when not forceNormalBooking)
@@ -201,8 +309,7 @@ export function CustomerDetailsForm({
           }
         } catch (quoteErr) {
           console.error("Custom quote request failed:", quoteErr);
-          toast.error("Custom quote request failed. Please try again.");
-          return;
+          throw new Error("Custom quote request failed. Please try again.");
         }
       }
 
@@ -227,22 +334,24 @@ export function CustomerDetailsForm({
         professional_id: professionalId,
         price: isCustomQuoteWithId ? 0 : Number(pricing.total),
       };
+      if (password.trim()) {
+        bookingPayload.password = password.trim();
+      }
       if (token) {
         bookingPayload.api_token = token;
       }
-      bookingPayload.session_id = effectiveSessionId;
+      bookingPayload.session_id = bookingSessionId;
       if (isCustomQuoteWithId && customQuoteRequestId != null) {
         bookingPayload.custom_quote_request_id = customQuoteRequestId;
         bookingPayload.custom_quote_id = customQuoteRequestId;
       }
 
       if (useCustomQuoteFlow && !customQuoteRequestId) {
-        toast.error("Custom quote could not be created. Please try again.");
-        return;
+        throw new Error("Custom quote could not be created. Please try again.");
       }
 
       const response = await storeProfessionalBooking(bookingPayload);
-      if (response.status === "success") {
+      if (isBookingStoreSuccess(response)) {
         try {
           const sid = professionalId;
           if (sid != null && !Number.isNaN(Number(sid))) {
@@ -264,27 +373,62 @@ export function CustomerDetailsForm({
           return;
         }
         toast.success("Booking submitted successfully!");
-        const bookingId =
-          response.data?.booking?.id ??
-          response.data?.id ??
-          response.data?.booking_id ??
-          null;
-        const bookingApiToken =
-          typeof response.data?.api_token === "string" ? response.data.api_token : null;
+        const { bookingId, bookingApiToken } = extractBookingStoreResult(response);
+        if (!bookingId) {
+          console.warn("Booking store response missing id:", response);
+          throw new Error(
+            response.message ||
+              "Booking could not be confirmed. Please click Continue to Payment again."
+          );
+        }
         const updatedFormData = {
           ...formData,
           longitude: coordinates.longitude,
           latitude: coordinates.latitude,
           professionalBookingId: bookingId,
-          bookingApiToken: bookingApiToken ?? undefined,
+          bookingApiToken: bookingApiToken ?? token ?? undefined,
         };
         onContinue(updatedFormData);
       } else {
-        throw new Error(response.message || "Failed to submit booking");
+        const failMessage = formatApiErrorMessage(response, response.message || "Failed to submit booking");
+        throw Object.assign(new Error(failMessage), { data: (response as { data?: unknown }).data });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Booking submission error:", error);
-      toast.error(error.message || "Failed to submit booking. Please try again.");
+      const message =
+        error instanceof Error
+          ? error.message
+          : error && typeof error === "object" && "message" in error
+            ? formatApiErrorMessage(error, String((error as { message?: string }).message))
+            : "Failed to submit booking. Please try again.";
+      const fieldBag =
+        error && typeof error === "object" && "data" in error
+          ? (error as { data?: unknown }).data
+          : undefined;
+      if (fieldBag && typeof fieldBag === "object" && !Array.isArray(fieldBag)) {
+        const passwordErrors = (fieldBag as Record<string, unknown>).password;
+        const passwordMsg = Array.isArray(passwordErrors)
+          ? String(passwordErrors[0] ?? "")
+          : typeof passwordErrors === "string"
+            ? passwordErrors
+            : "";
+        if (passwordMsg.trim()) {
+          setErrors((prev) => ({ ...prev, password: passwordMsg.trim() }));
+        }
+      }
+      if (message.toLowerCase().includes("email or password is wrong")) {
+        setErrors((prev) => ({
+          ...prev,
+          email: "Email or password is wrong.",
+          password: "Email or password is wrong.",
+        }));
+      } else if (getApiToken() && wasGuest) {
+        toast.error(
+          `Booking could not be saved: ${message}. You're signed in — please click Continue to Payment again.`
+        );
+        return;
+      }
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -355,6 +499,20 @@ export function CustomerDetailsForm({
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
+                    {isLoggedIn && needsPasswordForBooking ? (
+                      <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+                        You&apos;re signed in. Enter your password below to complete your booking.
+                      </p>
+                    ) : isLoggedIn && !needsPasswordForBooking ? (
+                      <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+                        You&apos;re signed in. Continue to payment when your details are correct.
+                      </p>
+                    ) : null}
+                    {initialData.professionalBookingId ? (
+                      <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                        Your booking is saved. Click continue to return to payment.
+                      </p>
+                    ) : null}
                     {/* Name */}
                     <div className="grid md:grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -434,6 +592,83 @@ export function CustomerDetailsForm({
                       )}
                       <p className="text-xs text-gray-500">The professional may call to confirm details</p>
                     </div>
+
+                    {needsPasswordForBooking ? (
+                      <>
+                        <div className="space-y-2">
+                          <Label htmlFor="password">Password *</Label>
+                          <div className="relative">
+                            <Input
+                              id="password"
+                              type={showPassword ? "text" : "password"}
+                              placeholder="Create a strong password"
+                              value={password}
+                              onChange={(e) => {
+                                setPassword(e.target.value);
+                                clearError("password");
+                                if (errors.confirmPassword) clearError("confirmPassword");
+                              }}
+                              className={`pr-10 ${errors.password ? "border-red-500" : ""}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword((prev) => !prev)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                              aria-label={showPassword ? "Hide password" : "Show password"}
+                            >
+                              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                          {errors.password ? (
+                            <p className="text-sm text-red-600 flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" />
+                              {errors.password}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-gray-500">
+                              {isLoggedIn
+                                ? "Required by the booking system to complete your reservation"
+                                : "We'll create your account when you continue to payment"}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="confirm-password">Confirm Password *</Label>
+                          <div className="relative">
+                            <Input
+                              id="confirm-password"
+                              type={showConfirmPassword ? "text" : "password"}
+                              placeholder="Re-enter your password"
+                              value={confirmPassword}
+                              onChange={(e) => {
+                                setConfirmPassword(e.target.value);
+                                clearError("confirmPassword");
+                              }}
+                              className={`pr-10 ${errors.confirmPassword ? "border-red-500" : ""}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowConfirmPassword((prev) => !prev)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                              aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                            >
+                              {showConfirmPassword ? (
+                                <EyeOff className="w-4 h-4" />
+                              ) : (
+                                <Eye className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
+                          {errors.confirmPassword && (
+                            <p className="text-sm text-red-600 flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" />
+                              {errors.confirmPassword}
+                            </p>
+                          )}
+                        </div>
+                      </>
+                    ) : null}
 
                     {/* Address */}
                     <div className="space-y-2">
@@ -602,11 +837,11 @@ export function CustomerDetailsForm({
                     {isSubmitting ? (
                       <>
                         <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                        Submitting...
+                        {isLoggedIn ? "Submitting..." : "Creating account & signing in..."}
                       </>
                     ) : (
                       <>
-                        Continue to Payment
+                        {initialData.professionalBookingId ? "Continue to Payment" : "Continue to Payment"}
                         <ChevronRight className="w-5 h-5 ml-2" />
                       </>
                     )}

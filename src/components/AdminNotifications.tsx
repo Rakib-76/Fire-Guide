@@ -314,8 +314,10 @@ export function AdminNotifications() {
     navigateFromNotification({
       id: notification.id,
       category: notification.category,
+      source_category: notification.source_category ?? notification.category,
       title: notification.title,
       message: notification.message,
+      content: notification.message,
     });
   };
 

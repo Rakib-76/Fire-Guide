@@ -1,6 +1,8 @@
 import {
   ADMIN_NOTIFICATION_CATEGORY_RULES,
   ADMIN_NOTIFICATION_CONTENT_RULES,
+  ADMIN_NOTIFICATION_PROFESSIONAL_DOC_CATEGORY_PATTERN,
+  ADMIN_NOTIFICATION_PROFESSIONAL_DOC_CONTENT_RULES,
   GENERIC_ADMIN_NOTIFICATION_CATEGORIES,
 } from "./config";
 import { logUnmappedAdminNotification } from "./logger";
@@ -10,11 +12,13 @@ import type {
   AdminSidebarNavigationResult,
 } from "./types";
 
-function normalizeCategory(category?: string): string {
-  return String(category ?? "")
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, "_");
+function normalizeCategory(
+  category?: string,
+  type?: string,
+  sourceCategory?: string
+): string {
+  const raw = sourceCategory?.trim() || category?.trim() || type?.trim() || "";
+  return raw.toLowerCase().replace(/\s+/g, "_");
 }
 
 function getCombinedText(notification: AdminNotificationPayload): string {
@@ -43,9 +47,23 @@ function buildResult(
 export function resolveAdminSidebarNavigation(
   notification: AdminNotificationPayload
 ): AdminSidebarNavigationResult {
-  const category = normalizeCategory(notification.category);
+  const category = normalizeCategory(
+    notification.category,
+    notification.type,
+    notification.source_category
+  );
   const combinedText = getCombinedText(notification);
   const textLower = combinedText.toLowerCase();
+
+  if (ADMIN_NOTIFICATION_PROFESSIONAL_DOC_CATEGORY_PATTERN.test(category)) {
+    return buildResult("professionals", "category", "category-professional-verification");
+  }
+
+  for (const rule of ADMIN_NOTIFICATION_PROFESSIONAL_DOC_CONTENT_RULES) {
+    if (rule.pattern.test(combinedText) || rule.pattern.test(textLower)) {
+      return buildResult(rule.module, "content", rule.id);
+    }
+  }
 
   if (!GENERIC_ADMIN_NOTIFICATION_CATEGORIES.has(category)) {
     for (const rule of ADMIN_NOTIFICATION_CATEGORY_RULES) {
