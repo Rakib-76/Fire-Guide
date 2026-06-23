@@ -27,6 +27,13 @@ apiClient.interceptors.response.use(
 
 export interface AdminOverviewSummaryRequest {
   api_token: string;
+  start_date?: string | null;
+  end_date?: string | null;
+}
+
+export interface AdminOverviewSummaryFilter {
+  start_date: string | null;
+  end_date: string | null;
 }
 
 export interface AdminOverviewSummaryData {
@@ -37,6 +44,7 @@ export interface AdminOverviewSummaryData {
   total_customers?: number;
   active_professionals: number;
   total_experiences?: number;
+  filter?: AdminOverviewSummaryFilter;
 }
 
 export interface AdminOverviewSummaryResponse {
@@ -53,9 +61,16 @@ export interface AdminOverviewSummaryResponse {
 export const getAdminOverviewSummary = async (
   data: AdminOverviewSummaryRequest
 ): Promise<AdminOverviewSummaryResponse> => {
+  const body: Record<string, unknown> = { api_token: data.api_token };
+  if (data.start_date != null && data.start_date !== "") {
+    body.start_date = data.start_date;
+  }
+  if (data.end_date != null && data.end_date !== "") {
+    body.end_date = data.end_date;
+  }
   const response = await apiClient.post<AdminOverviewSummaryResponse>(
     '/admin_overview/summary',
-    { api_token: data.api_token }
+    body
   );
   return response.data;
 };

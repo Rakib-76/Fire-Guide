@@ -22,10 +22,23 @@ import {
   Flame,
   MessageSquare,
   Wallet,
+  Filter,
+  Loader2,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
+import { Label } from "./ui/label";
+import { Input } from "./ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
+import { toast } from "sonner";
 import { getApiToken } from "../lib/auth";
 import { ADMIN_NOTIFICATION_SUMMARY_UPDATED } from "../lib/adminNotificationSummaryEvents";
 import {
@@ -58,6 +71,27 @@ function formatBookingStatusLabel(status: string): string {
   const s = String(status ?? "").trim();
   if (!s) return "—";
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+function formatFilterDateLabel(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const parsed = new Date(iso.includes("T") ? iso : `${iso}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return parsed.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function isRevenueFilterActive(filter?: { start_date: string | null; end_date: string | null } | null): boolean {
+  return Boolean(filter?.start_date || filter?.end_date);
+}
+
+function formatRevenueFilterRangeLabel(filter?: { start_date: string | null; end_date: string | null } | null): string {
+  if (!filter) return "";
+  const start = filter.start_date ? formatFilterDateLabel(filter.start_date) : "";
+  const end = filter.end_date ? formatFilterDateLabel(filter.end_date) : "";
+  if (start && end) return `${start} – ${end}`;
+  if (start) return `From ${start}`;
+  if (end) return `Until ${end}`;
+  return "";
 }
 
 /** Recent bookings + overview status pills (aligned with Admin Bookings semantics). */
@@ -100,6 +134,10 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [summary, setSummary] = useState<AdminOverviewSummaryData | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [revenueFilterModalOpen, setRevenueFilterModalOpen] = useState(false);
+  const [revenueStartDay, setRevenueStartDay] = useState("");
+  const [revenueEndDay, setRevenueEndDay] = useState("");
+  const [revenueFilterLoading, setRevenueFilterLoading] = useState(false);
   const [recentBookings, setRecentBookings] = useState<AdminRecentBookingItem[]>([]);
   const [recentBookingsLoading, setRecentBookingsLoading] = useState(false);
   const [adminUnreadNotificationCount, setAdminUnreadNotificationCount] = useState(0);
@@ -147,26 +185,82 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
     if (currentView === "notifications") void refreshAdminHeaderUnread();
   }, [currentView, refreshAdminHeaderUnread]);
 
+  const fetchOverviewSummary = useCallback(
+    async (options?: { start_date?: string | null; end_date?: string | null }) => {
+      const token = getApiToken();
+      if (!token) return;
+      setSummaryLoading(true);
+      try {
+        const res = await getAdminOverviewSummary({
+          api_token: token,
+          start_date: options?.start_date ?? null,
+          end_date: options?.end_date ?? null,
+        });
+        const ok = res && (res.success === true || res.status === true) && res.data;
+        if (ok) setSummary(res.data);
+        else setSummary(null);
+      } catch {
+        setSummary(null);
+      } finally {
+        setSummaryLoading(false);
+      }
+    },
+    []
+  );
+
+  const openRevenueFilterModal = useCallback(() => {
+    if (isRevenueFilterActive(summary?.filter)) {
+      setRevenueStartDay(summary?.filter?.start_date?.split("T")[0] ?? "");
+      setRevenueEndDay(summary?.filter?.end_date?.split("T")[0] ?? "");
+    } else {
+      setRevenueStartDay("");
+      setRevenueEndDay("");
+    }
+    setRevenueFilterModalOpen(true);
+  }, [summary]);
+
+  const handleCancelRevenueFilter = useCallback(() => {
+    setRevenueFilterModalOpen(false);
+  }, []);
+
+  const handleApplyRevenueFilter = useCallback(async () => {
+    if (!revenueStartDay) {
+      toast.error("Select a start date.");
+      return;
+    }
+    if (revenueEndDay && revenueStartDay > revenueEndDay) {
+      toast.error("Start date must be before end date.");
+      return;
+    }
+    setRevenueFilterLoading(true);
+    try {
+      await fetchOverviewSummary({
+        start_date: revenueStartDay,
+        end_date: revenueEndDay || null,
+      });
+      setRevenueFilterModalOpen(false);
+    } finally {
+      setRevenueFilterLoading(false);
+    }
+  }, [fetchOverviewSummary, revenueEndDay, revenueStartDay]);
+
+  const handleClearRevenueFilter = useCallback(async () => {
+    setRevenueStartDay("");
+    setRevenueEndDay("");
+    setRevenueFilterModalOpen(false);
+    setRevenueFilterLoading(true);
+    try {
+      await fetchOverviewSummary();
+    } finally {
+      setRevenueFilterLoading(false);
+    }
+  }, [fetchOverviewSummary]);
+
   // Fetch admin overview summary when dashboard view is shown
   useEffect(() => {
     if (currentView !== "dashboard") return;
-    const token = getApiToken();
-    if (!token) return;
-    let cancelled = false;
-    setSummaryLoading(true);
-    getAdminOverviewSummary({ api_token: token })
-      .then((res) => {
-        const ok = res && (res.success === true || res.status === true) && res.data;
-        if (!cancelled && ok) setSummary(res.data);
-      })
-      .catch(() => {
-        if (!cancelled) setSummary(null);
-      })
-      .finally(() => {
-        if (!cancelled) setSummaryLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [currentView]);
+    void fetchOverviewSummary();
+  }, [currentView, fetchOverviewSummary]);
 
   // Fetch recent bookings when dashboard view is shown
   useEffect(() => {
@@ -229,18 +323,46 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-white border border-gray-200 shadow-sm">
+        <Card className="bg-white border border-gray-200 shadow-sm overflow-hidden">
           <CardContent className="p-5">
-            <div className="mb-3">
-              <p className="text-xs text-gray-500 mb-1">Total Revenue</p>
-              <p className="text-gray-900">
-                {summaryLoading ? "—" : summary != null ? `£${Number(summary.total_revenue).toLocaleString()}` : "—"}
-              </p>
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-gray-500 mb-1">Total Revenue</p>
+                <p className="text-2xl font-semibold text-gray-900 tabular-nums">
+                  {summaryLoading ? "—" : summary != null ? `£${Number(summary.total_revenue).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` : "—"}
+                </p>
+                {isRevenueFilterActive(summary?.filter) ? (
+                  <p className="text-xs text-emerald-700 mt-1.5 flex items-center gap-1">
+                    <Filter className="w-3 h-3 shrink-0" />
+                    <span className="truncate">
+                      {formatRevenueFilterRangeLabel(summary?.filter)}
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-1.5">All time</p>
+                )}
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={openRevenueFilterModal}
+                  disabled={revenueFilterLoading || summaryLoading}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors disabled:opacity-50"
+                  aria-label="Filter revenue"
+                  title="Filter revenue"
+                >
+                  {revenueFilterLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Filter className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
               <p className="text-xs text-green-600 flex items-center gap-1">
                 <TrendingUp className="w-3 h-3" />
-                +12.5% from last month
+                {isRevenueFilterActive(summary?.filter) ? "Filtered revenue" : "+12.5% from last month"}
               </p>
               <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
                 <DollarSign className="w-5 h-5 text-green-600" />
@@ -392,6 +514,87 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog
+        open={revenueFilterModalOpen}
+        onOpenChange={(open) => {
+          setRevenueFilterModalOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-[#0A1A2F]">Filter revenue</DialogTitle>
+            <DialogDescription>
+              Choose a start date and optional end date. Total revenue will reflect bookings in this range.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleApplyRevenueFilter();
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-2 px-6">
+              <Label htmlFor="revenue-filter-start">Start date *</Label>
+              <Input
+                id="revenue-filter-start"
+                type="date"
+                required
+                value={revenueStartDay}
+                onChange={(e) => setRevenueStartDay(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            <div className="space-y-2 px-6">
+              <Label htmlFor="revenue-filter-end">End date</Label>
+              <Input
+                id="revenue-filter-end"
+                type="date"
+                value={revenueEndDay}
+                min={revenueStartDay || undefined}
+                onChange={(e) => setRevenueEndDay(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            <DialogFooter className="px-6 pb-6 justify-between sm:justify-between">
+              {/* <Button
+                type="button"
+                variant="ghost"
+                className="text-gray-600"
+                onClick={() => void handleClearRevenueFilter()}
+                disabled={revenueFilterLoading || summaryLoading || !isRevenueFilterActive(summary?.filter)}
+              >
+                Clear filter
+              </Button> */}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCancelRevenueFilter}
+                  disabled={revenueFilterLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="bg-red-600 hover:bg-red-700"
+                  disabled={revenueFilterLoading || summaryLoading}
+                >
+                  {revenueFilterLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Applying…
+                    </>
+                  ) : (
+                    "Apply filter"
+                  )}
+                </Button>
+              </div>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 
