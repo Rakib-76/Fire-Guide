@@ -1,5 +1,5 @@
 // Script to fix module preload order in index.html
-// Ensures react-core loads before vendor chunks
+// Ensures react-vendor loads before other vendor chunks and main vendor loads last.
 
 const fs = require('fs');
 const path = require('path');
@@ -13,7 +13,6 @@ if (!fs.existsSync(buildIndexPath)) {
 
 let html = fs.readFileSync(buildIndexPath, 'utf8');
 
-// Find all modulepreload links
 const modulePreloadRegex = /<link rel="modulepreload"[^>]*>/g;
 const modulePreloadMatches = html.match(modulePreloadRegex) || [];
 
@@ -22,43 +21,46 @@ if (modulePreloadMatches.length === 0) {
   process.exit(0);
 }
 
-// Separate chunks by priority - CRITICAL: vendor must load AFTER react-vendor
-const reactVendorLinks = modulePreloadMatches.filter(link => link.includes('react-vendor'));
-const vendorLinks = modulePreloadMatches.filter(link => 
-  link.includes('vendor') && 
-  !link.includes('react-vendor')
-);
-const otherLinks = modulePreloadMatches.filter(link => 
-  !link.includes('vendor')
-);
+function chunkKind(link) {
+  if (link.includes('react-vendor')) return 'react';
+  if (link.includes('router-vendor')) return 'router';
+  if (link.includes('ui-vendor')) return 'ui';
+  if (link.includes('charts-vendor')) return 'charts';
+  if (/\/vendor-[^"']+\.js/.test(link)) return 'main-vendor';
+  return 'other';
+}
 
-// Remove all modulepreload links
+const reactVendorLinks = modulePreloadMatches.filter((link) => chunkKind(link) === 'react');
+const routerVendorLinks = modulePreloadMatches.filter((link) => chunkKind(link) === 'router');
+const uiVendorLinks = modulePreloadMatches.filter((link) => chunkKind(link) === 'ui');
+const chartsVendorLinks = modulePreloadMatches.filter((link) => chunkKind(link) === 'charts');
+const otherLinks = modulePreloadMatches.filter((link) => chunkKind(link) === 'other');
+const mainVendorLinks = modulePreloadMatches.filter((link) => chunkKind(link) === 'main-vendor');
+
 html = html.replace(modulePreloadRegex, '');
 
-// Find the position after the title tag (before scripts)
 const titleMatch = html.match(/<title>[^<]*<\/title>/);
 if (titleMatch) {
   const titleEnd = html.indexOf(titleMatch[0]) + titleMatch[0].length;
-  
-  // CRITICAL ORDER: react-vendor FIRST, then others, vendor LAST
-  // Vendor must load AFTER React is available
+
   const orderedLinks = [
-    ...reactVendorLinks,  // React MUST load first
-    ...otherLinks,        // Other chunks
-    ...vendorLinks        // Vendor loads LAST (after React is available)
+    ...reactVendorLinks,
+    ...routerVendorLinks,
+    ...uiVendorLinks,
+    ...chartsVendorLinks,
+    ...otherLinks,
+    ...mainVendorLinks,
   ];
   const newPreloadLinks = orderedLinks.join('\n    ');
-  
-  // Insert before the main script tag
+
   html = html.slice(0, titleEnd) + '\n    ' + newPreloadLinks + html.slice(titleEnd);
-  
+
   fs.writeFileSync(buildIndexPath, html, 'utf8');
   console.log('✓ Fixed module preload order in index.html');
   console.log(`  - react-vendor loads FIRST (${reactVendorLinks.length} link(s))`);
-  console.log(`  - other chunks load second (${otherLinks.length} link(s))`);
-  console.log(`  - vendor loads LAST (${vendorLinks.length} link(s))`);
-  
-  // Verify react-vendor is first
+  console.log(`  - router/ui/charts load next (${routerVendorLinks.length + uiVendorLinks.length + chartsVendorLinks.length} link(s))`);
+  console.log(`  - main vendor loads LAST (${mainVendorLinks.length} link(s))`);
+
   const finalHtml = fs.readFileSync(buildIndexPath, 'utf8');
   const firstPreload = finalHtml.match(/<link rel="modulepreload"[^>]*>/);
   if (firstPreload && firstPreload[0].includes('react-vendor')) {

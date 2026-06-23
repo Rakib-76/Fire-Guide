@@ -1,4 +1,10 @@
-import { publicAssetUrl } from "./publicAssetUrl";
+import alarmImage from "../assets/services/Alarm.png";
+import consultationImage from "../assets/services/Consultation.png";
+import extinguisherImage from "../assets/services/Extinguisher.png";
+import fraIconImage from "../assets/services/fra-icon.png";
+import fraImage from "../assets/services/FRA.png";
+import lightImage from "../assets/services/Light.png";
+import trainingImage from "../assets/services/Training.png";
 
 export type ServiceCardTheme = {
   key: string;
@@ -9,12 +15,21 @@ export type ServiceCardTheme = {
   imageSrc: string;
 };
 
+const SERVICE_IMAGES: Record<string, string> = {
+  "FRA.png": fraImage,
+  "Alarm.png": alarmImage,
+  "Extinguisher.png": extinguisherImage,
+  "Light.png": lightImage,
+  "Training.png": trainingImage,
+  "Consultation.png": consultationImage,
+};
+
 function theme(
   partial: Omit<ServiceCardTheme, "imageSrc"> & { imageFile: string }
 ): ServiceCardTheme {
   return {
     ...partial,
-    imageSrc: publicAssetUrl(`images/services/${partial.imageFile}`),
+    imageSrc: SERVICE_IMAGES[partial.imageFile],
   };
 }
 
@@ -83,4 +98,4 @@ export function getServiceCardTheme(serviceName: string | undefined): ServiceCar
   return DEFAULT_THEME;
 }
 
-export const FRA_ICON_FALLBACK = publicAssetUrl("images/services/fra-icon.png");
+export const FRA_ICON_FALLBACK = fraIconImage;

@@ -44,26 +44,33 @@ export default defineConfig({
     cssCodeSplit: true,
     rollupOptions: {
       output: {
-        chunkFileNames: 'js/[name]-[hash].js',
-        entryFileNames: 'js/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash][extname]',
         manualChunks: (id) => {
           if (!id.includes('node_modules')) return;
+
+          const normalized = id.replace(/\\/g, '/');
+
+          // Keep React + motion together — splitting motion out caused circular chunk init errors.
           if (
-            id.includes('/react/') ||
-            id.includes('/react-dom/') ||
-            id.includes('react/jsx-runtime') ||
-            id.includes('react/jsx-dev-runtime')
+            /\/react\//.test(normalized) ||
+            /\/react-dom\//.test(normalized) ||
+            normalized.includes('react/jsx-runtime') ||
+            normalized.includes('react/jsx-dev-runtime') ||
+            normalized.includes('scheduler') ||
+            normalized.includes('use-sync-external-store') ||
+            normalized.includes('framer-motion') ||
+            normalized.includes('/motion/') ||
+            normalized.includes('motion-dom') ||
+            normalized.includes('motion-utils')
           ) {
             return 'react-vendor';
           }
-          if (id.includes('react-router')) {
+          if (normalized.includes('react-router')) {
             return 'router-vendor';
           }
-          if (id.includes('@radix-ui') || id.includes('lucide-react') || id.includes('vaul')) {
+          if (normalized.includes('@radix-ui') || normalized.includes('lucide-react') || normalized.includes('vaul')) {
             return 'ui-vendor';
           }
-          if (id.includes('recharts') || id.includes('leaflet') || id.includes('motion')) {
+          if (normalized.includes('recharts') || normalized.includes('leaflet')) {
             return 'charts-vendor';
           }
           return 'vendor';
@@ -97,17 +104,10 @@ export default defineConfig({
         secure: true,
       },
       // Membership and insurance assets are served from /image on the API host (incl. ?path=...&api_token=...).
-      // Must not match /images/* — local static assets live under public/images/.
       '/image': {
         target: 'https://firesafety-backend.fireguide.co.uk',
         changeOrigin: true,
         secure: true,
-        bypass(req) {
-          const url = req.url ?? '';
-          if (url.startsWith('/images')) {
-            return url;
-          }
-        },
       },
     },
   },
