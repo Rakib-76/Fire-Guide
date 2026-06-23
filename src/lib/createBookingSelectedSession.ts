@@ -8,6 +8,13 @@ import {
   createFireConsultationSelectedService,
 } from "../api/servicesService";
 
+/** When customer skips optional questionnaire steps, send null to the API. */
+function resolveNullableOptionId(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 /** Pull session id from various selected-service API response shapes. */
 export function getSessionIdFromApiResponse(
   response: { data?: Record<string, unknown> | number | string | null } | null | undefined
@@ -84,7 +91,7 @@ export async function createBookingSelectedSession(
 
   try {
     if (isFireAlarm) {
-      const alarmRes = await createFireAlarmSelectedService({
+      const alarmPayload: Parameters<typeof createFireAlarmSelectedService>[0] = {
         ...(apiToken && { api_token: apiToken }),
         professional_id: professionalId,
         service_id: serviceIdNum,
@@ -93,28 +100,30 @@ export async function createBookingSelectedSession(
         floor_id: Number(q.fire_alarm_floor_id ?? 0),
         panel_id: Number(q.fire_alarm_panel_id ?? 0),
         system_type_id: Number(q.fire_alarm_system_type_id ?? 0),
-        last_service_id: Number(q.fire_alarm_last_service_id ?? 0),
+        last_service_id: resolveNullableOptionId(q.fire_alarm_last_service_id),
         access_note: String(q.access_note ?? ""),
         post_code: locationSearchData.post_code,
         search_radius: locationSearchData.search_radius,
-      });
+      };
+      const alarmRes = await createFireAlarmSelectedService(alarmPayload);
       const sid = getSessionIdFromApiResponse(alarmRes);
       return sid != null ? { sessionId: sid } : {};
     }
     if (isFireExtinguisher) {
-      const extRes = await createFireExtinguisherSelectedService({
+      const extPayload: Parameters<typeof createFireExtinguisherSelectedService>[0] = {
         ...(apiToken && { api_token: apiToken }),
         professional_id: professionalId,
         service_id: serviceIdNum,
         extinguisher_id: Number(q.extinguisher_id ?? 0),
         floor_id: Number(q.floor_id ?? 0),
-        type_id: Number(q.type_id ?? 0),
-        last_service_id: Number(q.last_service_id ?? 0),
+        type_id: resolveNullableOptionId(q.type_id ?? q.extinguisher_type_id),
+        last_service_id: resolveNullableOptionId(q.last_service_id ?? q.extinguisher_last_service_id),
         access_note: String(q.access_note ?? ""),
         post_code: locationSearchData.post_code,
         search_radius: locationSearchData.search_radius,
         preffered_date: String(q.preferred_date ?? ""),
-      });
+      };
+      const extRes = await createFireExtinguisherSelectedService(extPayload);
       const sid = getSessionIdFromApiResponse(extRes);
       return sid != null ? { sessionId: sid } : {};
     }
@@ -124,16 +133,14 @@ export async function createBookingSelectedSession(
         | undefined;
       const lightTypeIdRaw = q.emergency_light_type_id ?? requestData?.emergency_light_type_id;
       const lightTestIdRaw = q.emergency_light_test_id ?? requestData?.emergency_light_test_id;
-      const lightTypeId = lightTypeIdRaw != null ? Number(lightTypeIdRaw) : 0;
-      const lightTestId = lightTestIdRaw != null ? Number(lightTestIdRaw) : 0;
       const elRes = await createEmergencyLightSelectedService({
         ...(apiToken && { api_token: apiToken }),
         professional_id: professionalId,
         service_id: serviceIdNum,
         light_id: q.emergency_light_id != null ? Number(q.emergency_light_id) : 1,
         floor_id: q.emergency_floor_id != null ? Number(q.emergency_floor_id) : 1,
-        light_type_id: lightTypeId,
-        light_test_id: lightTestId,
+        light_type_id: resolveNullableOptionId(lightTypeIdRaw),
+        light_test_id: resolveNullableOptionId(lightTestIdRaw),
         access_note: String(q.access_note ?? ""),
         post_code: locationSearchData.post_code,
         search_radius: locationSearchData.search_radius,
@@ -149,7 +156,7 @@ export async function createBookingSelectedSession(
       const peopleId = q.people_id ?? marshalReq?.people_id;
       const placeId = q.place_id ?? marshalReq?.place_id;
       const buildingTypeId = q.building_type_id ?? marshalReq?.building_type_id;
-      const experienceId = q.experience_id ?? marshalReq?.experience_id;
+      const experienceIdRaw = q.experience_id ?? marshalReq?.experience_id;
       const marshalRes = await createFireMarshalSelectedService({
         ...(apiToken && { api_token: apiToken }),
         professional_id: professionalId,
@@ -157,7 +164,7 @@ export async function createBookingSelectedSession(
         people_id: peopleId != null ? Number(peopleId) : 1,
         place_id: placeId != null ? Number(placeId) : 1,
         building_type_id: buildingTypeId != null ? Number(buildingTypeId) : 1,
-        experience_id: experienceId != null ? Number(experienceId) : 1,
+        experience_id: resolveNullableOptionId(experienceIdRaw),
         access_note: String(q.access_note ?? ""),
         post_code: locationSearchData.post_code,
         search_radius: locationSearchData.search_radius,

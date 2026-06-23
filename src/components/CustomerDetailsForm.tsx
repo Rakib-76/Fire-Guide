@@ -62,6 +62,7 @@ interface CustomerDetailsFormProps {
   selectedTime: string;
   pricing: BookingData["pricing"];
   pricingErrorMessage?: string;
+  isPricingLoading?: boolean;
   initialData: BookingData["customer"];
   onContinue: (customerData: BookingData["customer"]) => void;
   onBack: () => void;
@@ -82,6 +83,7 @@ export function CustomerDetailsForm({
   selectedTime,
   pricing,
   pricingErrorMessage,
+  isPricingLoading,
   initialData,
   onContinue,
   onBack,
@@ -791,7 +793,12 @@ export function CustomerDetailsForm({
                       </div>
 
                       {/* Pricing */}
-                      {pricingErrorMessage ? (
+                      {isPricingLoading ? (
+                        <div className="flex items-center justify-center py-6 text-gray-600 pt-4 border-t">
+                          <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                          Loading price…
+                        </div>
+                      ) : pricingErrorMessage ? (
                         <div className="pt-4 border-t rounded-lg border-amber-200 bg-amber-50 p-3">
                           <p className="text-sm text-amber-800">{pricingErrorMessage}</p>
                           <p className="text-xs text-amber-700 mt-1">Contact the professional or support for pricing.</p>

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { getApiToken } from "../lib/auth";
 import {
   createPlatformCommission,
+  createCustomerCommission,
+  getPlatformCommission,
   getAdminPaymentSummary,
   getAdminPaymentFilter,
   type AdminPaymentFilterPeriod,
@@ -119,13 +121,20 @@ type TransactionRow = {
   transactionFee: number;
 };
 
+function getPaymentServiceName(item: AdminPaymentListItem): string {
+  if (item.service?.name) return item.service.name;
+  if (Array.isArray(item.services) && item.services.length > 0) {
+    return item.services.map((s) => s.name).filter(Boolean).join(", ");
+  }
+  return "";
+}
+
 function mapAdminPaymentListToRows(data: AdminPaymentListItem[]): TransactionRow[] {
   return data.map((item, idx) => {
     const parties = item.Parties || "";
     const [customer, professional] = parties.includes(" to ")
       ? parties.split(" to ").map((s) => s.trim())
       : [parties, ""];
-    const serviceName = item.services?.[0]?.name ?? "";
     return {
       id: item.reference || `pay-${idx}`,
       reference: item.reference || "",
@@ -134,9 +143,7 @@ function mapAdminPaymentListToRows(data: AdminPaymentListItem[]): TransactionRow
       customerEmail: "",
       professional: professional || "",
       professionalEmail: "",
-      service: Array.isArray(item.services)
-        ? item.services.map((s) => s.name).join(", ")
-        : serviceName,
+      service: getPaymentServiceName(item),
       amount: parseFloat(String(item.amount)) || 0,
       commission: parseFloat(String(item.commission?.amount ?? item.commission)) || 0,
       commissionRate: item.commission?.rate ?? "",
@@ -163,6 +170,31 @@ function getPayoutStatusBadgeClass(status: string): string {
   }
 }
 
+const COMMISSION_MODAL_CLASS =
+  "w-[92%] max-w-[360px] mx-auto p-4 pb-5 max-h-[85vh] overflow-y-auto md:max-w-lg md:p-6";
+
+function formatCommissionRateDisplay(rate: string | number | undefined): string {
+  if (rate == null || rate === "") return "—";
+  const text = String(rate).trim();
+  return text.endsWith("%") ? text : `${text}%`;
+}
+
+function stripPercent(rate: string): string {
+  return rate.replace(/%$/, "").trim();
+}
+
+function formatGbpAmount(amount: string | number | undefined): string {
+  if (amount == null || amount === "") return "—";
+  const text = String(amount).trim().replace(/^£\s*/, "").replace(/%$/, "");
+  const num = parseFloat(text);
+  if (isNaN(num)) return `£${text}`;
+  return `£${num.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function stripGbpForInput(value: string): string {
+  return value.replace(/^£\s*/, "").replace(/%$/, "").trim();
+}
+
 export function AdminPayments() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchPlaceholder, setSearchPlaceholder] = useState("Search transactions...");
@@ -170,11 +202,15 @@ export function AdminPayments() {
   const [filterPeriod, setFilterPeriod] = useState<AdminPaymentFilterPeriod>("all");
   const [isLoadingList, setIsLoadingList] = useState(false);
   const [commissionModalOpen, setCommissionModalOpen] = useState(false);
+  const [customerCommissionModalOpen, setCustomerCommissionModalOpen] = useState(false);
   // const [payoutModalOpen, setPayoutModalOpen] = useState(false);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [commissionRate, setCommissionRate] = useState<string>("");
+  const [customerCommissionAmount, setCustomerCommissionAmount] = useState<string>("");
   const [newCommissionRate, setNewCommissionRate] = useState("15");
+  const [newCustomerCommissionAmount, setNewCustomerCommissionAmount] = useState("");
   const [commissionUpdating, setCommissionUpdating] = useState(false);
+  const [customerCommissionUpdating, setCustomerCommissionUpdating] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
   const [isExporting, setIsExporting] = useState(false);
   // const [selectedProfessionals, setSelectedProfessionals] = useState<number[]>([]);
@@ -251,9 +287,28 @@ export function AdminPayments() {
     }
   };
 
+  const fetchPlatformCommissionSettings = async (token: string) => {
+    try {
+      const res = await getPlatformCommission(token);
+      if (res.success && res.data) {
+        if (res.data.commission_rate != null) {
+          setCommissionRate(formatCommissionRateDisplay(res.data.commission_rate));
+        }
+        if (res.data.customer_commission != null) {
+          setCustomerCommissionAmount(formatGbpAmount(res.data.customer_commission));
+        }
+        return res.data;
+      }
+    } catch {
+      // Fall back to summary values if get fails
+    }
+    return null;
+  };
+
   useEffect(() => {
     const token = getApiToken();
     if (!token) return;
+    void fetchPlatformCommissionSettings(token);
     getAdminPaymentSummary({ api_token: token })
       .then((res) => {
         if (res.success && res.data) {
@@ -264,11 +319,44 @@ export function AdminPayments() {
             pendingPayouts: Number(d.pending_payouts) || 0,
             transactionCount: Number(d.total_transactions) || 0
           });
-          if (d.commission_rate) setCommissionRate(d.commission_rate);
+          if (d.commission_rate) setCommissionRate(formatCommissionRateDisplay(d.commission_rate));
+          if (d.customer_commission_amount ?? d.customer_commission_rate) {
+            setCustomerCommissionAmount(
+              formatGbpAmount(d.customer_commission_amount ?? d.customer_commission_rate)
+            );
+          }
         }
       })
       .catch(() => { });
   }, []);
+
+  useEffect(() => {
+    if (!commissionModalOpen) return;
+    const token = getApiToken();
+    if (!token) return;
+    void (async () => {
+      const data = await fetchPlatformCommissionSettings(token);
+      if (data?.commission_rate != null) {
+        setNewCommissionRate(stripPercent(formatCommissionRateDisplay(data.commission_rate)));
+      } else {
+        setNewCommissionRate(stripPercent(commissionRate) || "");
+      }
+    })();
+  }, [commissionModalOpen]);
+
+  useEffect(() => {
+    if (!customerCommissionModalOpen) return;
+    const token = getApiToken();
+    if (!token) return;
+    void (async () => {
+      const data = await fetchPlatformCommissionSettings(token);
+      if (data?.customer_commission != null) {
+        setNewCustomerCommissionAmount(stripGbpForInput(formatGbpAmount(data.customer_commission)));
+      } else {
+        setNewCustomerCommissionAmount(stripGbpForInput(customerCommissionAmount));
+      }
+    })();
+  }, [customerCommissionModalOpen]);
 
   useEffect(() => {
     void fetchPaymentTransactions(filterPeriod);
@@ -290,40 +378,50 @@ export function AdminPayments() {
       const res = await createPlatformCommission({ api_token: token, commission_rate: rate });
       if (res.success && res.data) {
         const updatedRate = res.data.commission_rate ?? String(rate);
-        setCommissionRate(String(updatedRate).endsWith("%") ? String(updatedRate) : `${updatedRate}%`);
-        setNewCommissionRate(String(updatedRate).replace(/%$/, "") || String(rate));
-        toast.success(res.message || `Commission rate updated to ${updatedRate}%`);
+        setCommissionRate(formatCommissionRateDisplay(updatedRate));
+        setNewCommissionRate(stripPercent(String(updatedRate)) || String(rate));
+        toast.success(res.message || `Professional commission rate updated to ${updatedRate}%`);
         setCommissionModalOpen(false);
       } else {
-        toast.error(res.message || "Failed to update commission rate");
+        toast.error(res.message || "Failed to update professional commission rate");
       }
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || e?.message || "Failed to update commission rate");
+      toast.error(e?.response?.data?.message || e?.message || "Failed to update professional commission rate");
     } finally {
       setCommissionUpdating(false);
     }
   };
 
-  // const handlePayoutSelected = () => {
-  //   if (selectedProfessionals.length === 0) {
-  //     toast.error("Please select at least one professional");
-  //     return;
-  //   }
-  //   toast.success(`Processing payouts for ${selectedProfessionals.length} professional(s)`);
-  //   setSelectedProfessionals([]);
-  //   setPayoutModalOpen(false);
-  // };
-
-  // const toggleProfessionalSelection = (id: number) => {
-  //   setSelectedProfessionals(prev =>
-  //     prev.includes(id) ? prev.filter(pid => pid !== id) : [...prev, id]
-  //   );
-  // };
-
-  // const totalSelectedPayout = selectedProfessionals.reduce((sum, id) => {
-  //   const prof = pendingPayouts.find(p => p.id === id);
-  //   return sum + (prof?.amount || 0);
-  // }, 0);
+  const handleCustomerCommissionUpdate = async () => {
+    const amount = parseFloat(newCustomerCommissionAmount || "0");
+    if (isNaN(amount) || amount < 0) {
+      toast.error("Please enter a valid commission amount");
+      return;
+    }
+    const token = getApiToken();
+    if (!token) {
+      toast.error("Not authenticated");
+      return;
+    }
+    setCustomerCommissionUpdating(true);
+    try {
+      const res = await createCustomerCommission({ api_token: token, customer_commission: amount });
+      if (res.success) {
+        const updatedAmount =
+          res.data?.customer_commission ?? res.data?.commission_amount ?? String(amount);
+        setCustomerCommissionAmount(formatGbpAmount(updatedAmount));
+        setNewCustomerCommissionAmount(stripGbpForInput(String(updatedAmount)) || amount.toFixed(2));
+        toast.success(res.message || `Customer commission updated to ${formatGbpAmount(updatedAmount)}`);
+        setCustomerCommissionModalOpen(false);
+      } else {
+        toast.error(res.message || "Failed to update customer commission");
+      }
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || e?.message || "Failed to update customer commission");
+    } finally {
+      setCustomerCommissionUpdating(false);
+    }
+  };
 
   const handleExportReport = async () => {
     if (filteredTransactions.length === 0) {
@@ -514,9 +612,13 @@ export function AdminPayments() {
           <p className="text-gray-600">Manage payments, commissions, and payouts</p>
         </div>
         <div className="flex flex-col md:flex-row gap-2">
-          <Button variant="outline" onClick={() => { setNewCommissionRate(commissionRate.replace(/%$/, "") || ""); setCommissionModalOpen(true); }} className="w-full md:w-auto">
+          <Button variant="outline" onClick={() => setCommissionModalOpen(true)} className="w-full md:w-auto">
             <Settings className="w-4 h-4 mr-2" />
-            <span className="md:inline">Commission Settings</span>
+            <span className="md:inline">Professional Commission</span>
+          </Button>
+          <Button variant="outline" onClick={() => setCustomerCommissionModalOpen(true)} className="w-full md:w-auto">
+            <Settings className="w-4 h-4 mr-2" />
+            <span className="md:inline">Customer Commission</span>
           </Button>
           <Button
             className="w-full bg-red-600 hover:bg-red-700 md:w-auto"
@@ -573,15 +675,7 @@ export function AdminPayments() {
                 <TrendingDown className="w-6 h-6 text-yellow-600" />
               </div>
             </div>
-            {/* Process Payouts entry — hidden with payout modal (restore if needed)
-            <Button
-              variant="link"
-              className="text-xs p-0 h-auto mt-1"
-              onClick={() => setPayoutModalOpen(true)}
-            >
-              Process Payouts →
-            </Button>
-            */}
+
           </CardContent>
         </Card>
         <Card>
@@ -709,20 +803,6 @@ export function AdminPayments() {
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
-                        {/* Payout (paper plane) — hidden with Process Payouts modal
-                        {(transaction.payoutStatus === "pending" || transaction.status === "completed" || transaction.status === "confirmed") && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedTransaction(transaction);
-                              setPayoutModalOpen(true);
-                            }}
-                          >
-                            <Send className="w-4 h-4" />
-                          </Button>
-                        )}
-                        */}
                       </div>
                     </td>
                   </tr>
@@ -822,16 +902,16 @@ export function AdminPayments() {
         </CardContent>
       </Card>
 
-      {/* Commission Settings Modal */}
+      {/* Professional Commission Modal */}
       <Dialog open={commissionModalOpen} onOpenChange={setCommissionModalOpen}>
-        <DialogContent className="w-[92%] max-w-[360px] mx-auto p-4 pb-5 max-h-[85vh] overflow-y-auto md:max-w-lg md:p-6">
+        <DialogContent className={COMMISSION_MODAL_CLASS}>
           <DialogHeader className="text-left mb-3">
             <DialogTitle className="text-lg leading-tight pr-6 flex items-center gap-2">
               <Settings className="w-5 h-5 text-blue-600 flex-shrink-0" />
-              Commission Settings
+              Professional Commission
             </DialogTitle>
             <DialogDescription className="text-sm mt-1.5">
-              Update the platform commission rate applied to all transactions
+              Update the platform commission rate applied to professional earnings
             </DialogDescription>
           </DialogHeader>
 
@@ -895,90 +975,86 @@ export function AdminPayments() {
         </DialogContent>
       </Dialog>
 
-      {/* Payout Management Modal — hidden by request (restore with state + pendingPayouts + handlers above)
-      <Dialog open={payoutModalOpen} onOpenChange={setPayoutModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-2xl text-[#0A1A2F] flex items-center gap-2">
-              <Send className="w-6 h-6 text-green-600" />
-              Process Payouts
+      {/* Customer Commission Modal */}
+      <Dialog open={customerCommissionModalOpen} onOpenChange={setCustomerCommissionModalOpen}>
+        <DialogContent className={COMMISSION_MODAL_CLASS}>
+          <DialogHeader className="text-left mb-3">
+            <DialogTitle className="text-lg leading-tight pr-6 flex items-center gap-2">
+              <Settings className="w-5 h-5 text-blue-600 flex-shrink-0" />
+              Customer Commission
             </DialogTitle>
-            <DialogDescription>
-              Select professionals to process pending payouts
+            <DialogDescription className="text-sm mt-1.5">
+              Set the fixed commission amount charged on customer transactions
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="p-4 bg-yellow-50 rounded-lg">
-              <p className="text-sm font-medium text-gray-900">Total Pending Payouts</p>
-              <p className="text-2xl text-orange-600 font-semibold mt-1">
-                £{pendingPayouts.reduce((sum, p) => sum + p.amount, 0).toFixed(2)}
-              </p>
-              <p className="text-sm text-orange-600 mt-1">
-                {pendingPayouts.length} professional(s) waiting for payment
+          <div className="flex flex-col gap-3">
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <p className="text-xs font-medium text-blue-900 mb-1">Current Commission Amount</p>
+              <p className="text-2xl text-blue-600 font-semibold">{customerCommissionAmount || "—"}</p>
+            </div>
+
+            <div>
+              <Label htmlFor="new-customer-commission" className="text-sm font-medium text-gray-700 mb-1.5 block">New Commission Amount (£)</Label>
+              <Input
+                id="new-customer-commission"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={newCustomerCommissionAmount}
+                onChange={(e) => setNewCustomerCommissionAmount(e.target.value)}
+                className="w-full h-11 text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1.5">
+                A fixed amount added to each customer transaction
               </p>
             </div>
 
-            <div className="space-y-3">
-              {pendingPayouts.map((payout) => (
-                <label
-                  key={payout.id}
-                  className="flex items-center gap-4 p-4 border rounded-lg cursor-pointer hover:bg-gray-50"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedProfessionals.includes(payout.id)}
-                    onChange={() => toggleProfessionalSelection(payout.id)}
-                    className="w-4 h-4 border-gray-300 rounded text-green-600 focus:ring-green-500"
-                  />
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">{payout.professional}</p>
-                    <p className="text-sm text-gray-600">{payout.email}</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {payout.transactions} transaction(s) • Oldest: {payout.oldestDate}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-semibold text-green-600">£{payout.amount.toFixed(2)}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
+            <div className="h-px bg-gray-200" />
 
-            {selectedProfessionals.length > 0 && (
-              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex flex-col gap-2">
+              <h4 className="text-sm font-medium text-gray-900">Impact Calculation</h4>
+              <div className="flex flex-col gap-1.5 text-sm">
                 <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-sm font-medium text-green-900">Selected for Payout</p>
-                    <p className="text-sm text-green-700 mt-1">
-                      {selectedProfessionals.length} professional(s)
-                    </p>
-                  </div>
-                  <p className="text-2xl font-semibold text-green-600">
-                    £{totalSelectedPayout.toFixed(2)}
-                  </p>
+                  <span className="text-gray-600 text-xs">Service price</span>
+                  <span className="font-semibold text-gray-900 text-sm">£100.00</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600 text-xs">Customer commission</span>
+                  <span className="font-semibold text-gray-900 text-sm">
+                    £{parseFloat(newCustomerCommissionAmount || "0").toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600 text-xs">Customer pays</span>
+                  <span className="font-semibold text-green-600 text-sm">
+                    £{(100 + parseFloat(newCustomerCommissionAmount || "0")).toFixed(2)}
+                  </span>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPayoutModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-green-600 hover:bg-green-700"
-              onClick={handlePayoutSelected}
-              disabled={selectedProfessionals.length === 0}
-            >
-              <Send className="w-4 h-4 mr-2" />
-              Process {selectedProfessionals.length} Payout(s)
-            </Button>
-          </DialogFooter>
+            <div className="flex flex-col gap-2.5 pt-2">
+              <Button
+                className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-sm font-medium justify-center"
+                onClick={() => void handleCustomerCommissionUpdate()}
+                disabled={customerCommissionUpdating}
+              >
+                <CheckCircle className="w-4 h-4 mr-2" />
+                {customerCommissionUpdating ? "Updating..." : "Update Commission Amount"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setCustomerCommissionModalOpen(false)}
+                className="w-full h-11 text-sm font-medium justify-center border-gray-300"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
-      */}
-
       {/* Transaction Details Modal */}
       <Dialog open={detailsModalOpen} onOpenChange={setDetailsModalOpen}>
         <DialogContent className="max-h-[90vh] w-[calc(100%-2rem)] max-w-4xl overflow-y-auto !px-8 !pb-10 sm:w-full">

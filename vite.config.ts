@@ -10,6 +10,10 @@ export default defineConfig({
   resolve: {
     extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
     alias: {
+      react: path.resolve(__dirname, './node_modules/react'),
+      'react-dom': path.resolve(__dirname, './node_modules/react-dom'),
+      'react/jsx-runtime': path.resolve(__dirname, './node_modules/react/jsx-runtime'),
+      'react/jsx-dev-runtime': path.resolve(__dirname, './node_modules/react/jsx-dev-runtime'),
       'sonner@2.0.3': 'sonner',
       'react-hook-form@7.55.0': 'react-hook-form',
       'figma:asset/e0dbc899d99d79876818127d318a196dc1afa811.png': path.resolve(__dirname, './src/assets/e0dbc899d99d79876818127d318a196dc1afa811.png'),
@@ -29,7 +33,7 @@ export default defineConfig({
       'figma:asset/06f1b3e41c2783f18bdafecd74ab9e64333871d6.png': path.resolve(__dirname, './src/assets/06f1b3e41c2783f18bdafecd74ab9e64333871d6.png'),
       '@': path.resolve(__dirname, './src'),
     },
-    dedupe: ['react', 'react-dom'],
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
   },
   build: {
     target: 'esnext',
@@ -40,13 +44,29 @@ export default defineConfig({
     cssCodeSplit: true,
     rollupOptions: {
       output: {
+        chunkFileNames: 'js/[name]-[hash].js',
+        entryFileNames: 'js/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash][extname]',
         manualChunks: (id) => {
-          if (id.includes('node_modules')) {
-            // Separate React from vendor to prevent createContext error
-            if (id.includes('react') || id.includes('react-dom')) {
-              return 'react-vendor';
-            }
+          if (!id.includes('node_modules')) return;
+          if (
+            id.includes('/react/') ||
+            id.includes('/react-dom/') ||
+            id.includes('react/jsx-runtime') ||
+            id.includes('react/jsx-dev-runtime')
+          ) {
+            return 'react-vendor';
           }
+          if (id.includes('react-router')) {
+            return 'router-vendor';
+          }
+          if (id.includes('@radix-ui') || id.includes('lucide-react') || id.includes('vaul')) {
+            return 'ui-vendor';
+          }
+          if (id.includes('recharts') || id.includes('leaflet') || id.includes('motion')) {
+            return 'charts-vendor';
+          }
+          return 'vendor';
         },
       },
     },
@@ -77,14 +97,28 @@ export default defineConfig({
         secure: true,
       },
       // Membership and insurance assets are served from /image on the API host (incl. ?path=...&api_token=...).
+      // Must not match /images/* — local static assets live under public/images/.
       '/image': {
         target: 'https://firesafety-backend.fireguide.co.uk',
         changeOrigin: true,
         secure: true,
+        bypass(req) {
+          const url = req.url ?? '';
+          if (url.startsWith('/images')) {
+            return url;
+          }
+        },
       },
     },
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom', 'jszip'],
+    include: [
+      'react',
+      'react-dom',
+      'react/jsx-runtime',
+      'react/jsx-dev-runtime',
+      'react-router-dom',
+      'jszip',
+    ],
   },
 });

@@ -23,7 +23,7 @@ White screen with error: "Cannot read properties of undefined (reading 'createCo
 ### 2. Build Process
 
 The build now:
-- Ensures React loads first in `react-core` chunk
+- Ensures React loads first in `react-vendor` chunk
 - Separates React Router into its own chunk
 - Properly bundles all dependencies
 - Uses relative paths for subdomain compatibility
@@ -48,7 +48,7 @@ The build now:
 
 4. **Verify build output:**
    - Check `build/index.html` exists
-   - Check `build/js/react-core-[hash].js` exists
+   - Check `build/js/react-vendor-[hash].js` exists
    - Check `.htaccess` is in build directory
 
 5. **Create deployment ZIP:**
@@ -101,7 +101,7 @@ The build now:
 
 **Issue:** React still undefined
 - **Fix:** Clear build folder and rebuild
-- **Fix:** Check `react-core-[hash].js` loads before other chunks
+- **Fix:** Check `react-vendor-[hash].js` loads before other chunks
 
 **Issue:** Routing doesn't work
 - **Fix:** Ensure `.htaccess` rewrite rules are active
@@ -114,7 +114,7 @@ public_html/
 ├── index.html          (Main entry point)
 ├── .htaccess          (Apache config - CRITICAL!)
 ├── js/
-│   ├── react-core-[hash].js    (React core - loads first)
+│   ├── react-vendor-[hash].js    (React core - loads first)
 │   ├── router-vendor-[hash].js
 │   ├── ui-vendor-[hash].js
 │   ├── icons-vendor-[hash].js

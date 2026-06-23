@@ -644,6 +644,26 @@ export function CustomerDashboard({
   const [approvingQuoteRequestId, setApprovingQuoteRequestId] = useState<number | null>(null);
   const [selectedQuoteRequest, setSelectedQuoteRequest] = useState<MyQuoteRequestItem | null>(null);
 
+  const refreshQuoteRequests = useCallback(async () => {
+    const token = getApiToken();
+    if (!token) {
+      setQuoteRequests([]);
+      return;
+    }
+    try {
+      const response = await getMyQuoteRequests(token);
+      if (response.status && response.data) {
+        setQuoteRequests(Array.isArray(response.data) ? response.data : []);
+      } else {
+        setQuoteRequests([]);
+      }
+    } catch (error: unknown) {
+      console.error("Error fetching quote requests:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to load quote requests");
+      setQuoteRequests([]);
+    }
+  }, []);
+
   const handleApproveAssignedQuoteRequest = useCallback(async (req: MyQuoteRequestItem) => {
     const token = getApiToken();
     if (!token) {
@@ -658,42 +678,16 @@ export function CustomerDashboard({
     setApprovingQuoteRequestId(req.id);
     try {
       const response = await updateQuoteRequestStatus(token, req.id, "accept");
-      const updated = response.data;
-      const nextStatus = updated?.status ?? "accept";
-      setQuoteRequests((prev) =>
-        prev.map((r) =>
-          r.id === req.id
-            ? {
-                ...r,
-                ...updated,
-                id: r.id,
-                status: nextStatus,
-                quoted_price: updated?.quoted_price ?? r.quoted_price,
-                professional: updated?.professional ?? r.professional,
-              }
-            : r
-        )
-      );
-      setSelectedQuoteRequest((prev) =>
-        prev?.id === req.id
-          ? {
-              ...prev,
-              ...updated,
-              id: prev.id,
-              status: nextStatus,
-              quoted_price: updated?.quoted_price ?? prev.quoted_price,
-              professional: updated?.professional ?? prev.professional,
-            }
-          : prev
-      );
       toast.success(response.message || "Quote approved. You can now proceed to payment.");
+      setSelectedQuoteRequest(null);
+      await refreshQuoteRequests();
     } catch (error: unknown) {
       console.error("Approve quote request error:", error);
       toast.error(error instanceof Error ? error.message : "Could not approve quote. Please try again.");
     } finally {
       setApprovingQuoteRequestId(null);
     }
-  }, []);
+  }, [refreshQuoteRequests]);
 
   const handlePayAssignedQuoteRequest = useCallback(async (req: MyQuoteRequestItem) => {
     const token = getApiToken();
@@ -1052,37 +1046,18 @@ export function CustomerDashboard({
     };
   }, [currentView]);
 
-  // Fetch quote requests when quote-requests view is shown
+  // Fetch quote requests when quote-requests view is shown (and when returning to this route)
   useEffect(() => {
-    const fetchQuoteRequests = async () => {
-      const token = getApiToken();
-      if (!token) {
-        setQuoteRequests([]);
-        setIsLoadingQuoteRequests(false);
-        return;
-      }
-
-      setIsLoadingQuoteRequests(true);
-      try {
-        const response = await getMyQuoteRequests(token);
-        if (response.status && response.data) {
-          setQuoteRequests(Array.isArray(response.data) ? response.data : []);
-        } else {
-          setQuoteRequests([]);
-        }
-      } catch (error: unknown) {
-        console.error("Error fetching quote requests:", error);
-        toast.error(error instanceof Error ? error.message : "Failed to load quote requests");
-        setQuoteRequests([]);
-      } finally {
-        setIsLoadingQuoteRequests(false);
-      }
+    if (currentView !== "quote-requests") return;
+    let cancelled = false;
+    setIsLoadingQuoteRequests(true);
+    void refreshQuoteRequests().finally(() => {
+      if (!cancelled) setIsLoadingQuoteRequests(false);
+    });
+    return () => {
+      cancelled = true;
     };
-
-    if (currentView === "quote-requests") {
-      fetchQuoteRequests();
-    }
-  }, [currentView]);
+  }, [currentView, location.pathname, refreshQuoteRequests]);
 
   useEffect(() => {
     if (currentView !== "quote-requests") return;

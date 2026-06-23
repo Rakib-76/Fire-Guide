@@ -3385,6 +3385,8 @@ export interface AdminPaymentSummaryData {
   total_revenue: number;
   platform_commission: string;
   commission_rate: string;
+  customer_commission_rate?: string;
+  customer_commission_amount?: string;
   pending_payouts: number;
   total_transactions: number;
 }
@@ -3413,7 +3415,8 @@ export interface AdminPaymentListItem {
   reference: string;
   date: string;
   Parties: string;
-  services: { id: number; name: string }[];
+  service?: { id: number; name: string };
+  services?: { id: number; name: string }[];
   amount: string;
   commission: { rate: string; amount: string };
   professional_earning: string;
@@ -3473,6 +3476,32 @@ export interface PlatformCommissionCreateResponse {
   data?: { id: number; commission_rate: string; created_at: string; updated_at: string };
 }
 
+export interface PlatformCommissionGetResponse {
+  success: boolean;
+  message: string;
+  data?: {
+    id?: number;
+    commission_rate?: string | number;
+    customer_commission?: string | number;
+    created_at?: string;
+    updated_at?: string;
+  };
+}
+
+/**
+ * Get current platform & customer commission settings
+ * POST /platform-commission/get
+ */
+export const getPlatformCommission = async (
+  api_token: string
+): Promise<PlatformCommissionGetResponse> => {
+  const response = await apiClient.post<PlatformCommissionGetResponse>(
+    '/platform-commission/get',
+    { api_token }
+  );
+  return response.data;
+};
+
 /**
  * Create/update platform commission rate
  * POST https://fireguide.attoexasolutions.com/api/platform-commission/create
@@ -3483,6 +3512,39 @@ export const createPlatformCommission = async (
   const response = await apiClient.post<PlatformCommissionCreateResponse>(
     '/platform-commission/create',
     { api_token: data.api_token, commission_rate: data.commission_rate }
+  );
+  return response.data;
+};
+
+// Customer commission (fixed amount per transaction)
+export interface CustomerCommissionCreateRequest {
+  api_token: string;
+  customer_commission: number;
+}
+
+export interface CustomerCommissionCreateResponse {
+  success: boolean;
+  message: string;
+  data?: {
+    id: number;
+    customer_commission: string | number;
+    commission_amount?: string;
+    commission_rate?: string;
+    created_at: string;
+    updated_at: string;
+  };
+}
+
+/**
+ * Create/update customer commission amount
+ * POST /customer-commission/create
+ */
+export const createCustomerCommission = async (
+  data: CustomerCommissionCreateRequest
+): Promise<CustomerCommissionCreateResponse> => {
+  const response = await apiClient.post<CustomerCommissionCreateResponse>(
+    '/customer-commission/create',
+    { api_token: data.api_token, customer_commission: data.customer_commission }
   );
   return response.data;
 };

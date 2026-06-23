@@ -8,7 +8,9 @@ function isLikelyStaleChunkError(error: unknown): boolean {
     msg.includes("Failed to fetch dynamically imported module") ||
     msg.includes("Importing a module script failed") ||
     msg.includes("error loading dynamically imported module") ||
-    msg.includes("Unable to preload CSS") // Vite sometimes surfaces related failures
+    msg.includes("Unable to preload CSS") ||
+    msg.includes("Unexpected token") ||
+    msg.includes("Invalid or unexpected token")
   );
 }
 

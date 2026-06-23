@@ -1,2179 +1,1217 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { ChevronRight, Building2, Users, Layers, Calendar, FileText, ChevronLeft, Loader2, HelpCircle, Clock } from "lucide-react";
-import { Button } from "./ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Input } from "./ui/input";
-import { Checkbox } from "./ui/checkbox";
-import { Textarea } from "./ui/textarea";
-import { Label } from "./ui/label";
-import { fetchPropertyTypes, PropertyTypeResponse, fetchApproximatePeople, ApproximatePeopleResponse, formatPeopleOptionLabel, getPeopleOptionSortKey, fetchFloorPricing, FloorPricingItem, fetchFraDurations, FraDurationItem, fetchFireAlarmOptions, FireAlarmOptionItem, fetchExtinguisherServiceOptions, ExtinguisherServiceOptionItem, fetchEmergencyLightOptions, EmergencyLightServiceOptionItem, fetchMarshalOptions, MarshalServiceOptionItem, fetchFireConsultationOptions, ConsultationOptionItem } from "../api/servicesService";
-import { type CustomQuoteRequestData } from "../api/customQuoteRequestsService";
-import { customQuoteDetailsPath, savePendingCustomQuote } from "../lib/pendingCustomQuote";
-import { getApiToken } from "../lib/auth";
-import { toast } from "sonner";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Building2, ChevronLeft, ChevronRight } from "lucide-react";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
-
-/** Label shown in SelectTrigger when options are `{ id, value }` and stored value is usually `String(id)` (also supports static items where value is the label text). */
-function marshalSelectTriggerLabel(
-  options: { id: number; value: string }[],
-  value: string,
-  placeholder: string
-): string {
-  const v = (value || "").trim();
-  if (!v) return placeholder;
-  const byId = options.find((o) => String(o.id) === v);
-  if (byId?.value) return byId.value;
-  const byValue = options.find((o) => (o.value || "").trim() === v);
-  if (byValue?.value) return byValue.value;
-  return v || placeholder;
-}
-
-/** `label` for SelectValue — undefined when empty so placeholder shows in gray. */
-function selectValueLabel(value: string, display: string | undefined | null): string | undefined {
-  if (!(value || "").trim()) return undefined;
-  const text = (display ?? "").trim();
-  return text || value.trim();
-}
-
-/**
- * Custom-quote dropdowns store option `id` in form state; using `parseInt(id)` as "floor count" is wrong
- * (e.g. option id 6 can mean "2–3 floors"). Prefer digits from the option label, then fall back to id.
- */
-function quoteFloorsNumericFromSelection(args: {
-  showCustomInput: boolean;
-  customNumericRaw: string;
-  presetIdOrRaw: string;
-  labelFromOption: string;
-}): number {
-  if (args.showCustomInput) {
-    const n = parseInt(String(args.customNumericRaw).trim(), 10);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-  }
-  const label = (args.labelFromOption || "").trim();
-  const matches = label.match(/\d+/g);
-  if (matches?.length) {
-    const nums = matches.map((m) => parseInt(m, 10)).filter((x) => Number.isFinite(x));
-    if (nums.length) return Math.max(...nums);
-  }
-  const idFallback = parseInt(String(args.presetIdOrRaw), 10);
-  return Number.isFinite(idFallback) && idFallback > 0 ? idFallback : 0;
-}
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Textarea } from "./ui/textarea";
+import {
+  OptionCardSelect,
+  QuestionnaireStepShell,
+} from "./questionnaire/QuestionnaireStepUI";
+import {
+  getQuestionnaireServiceKind,
+  getQuestionnaireStepMeta,
+} from "../lib/questionnaireStepMeta";
+import { resolveContextualStepMeta } from "../lib/questionnaireContextMeta";
+import {
+  isOtherPropertyTypeName,
+  QUESTIONNAIRE_OTHERS_LABEL,
+} from "../lib/questionnaireOptionLabels";
+import {
+  fetchApproximatePeople,
+  fetchEmergencyLightOptions,
+  fetchExtinguisherServiceOptions,
+  fetchFireAlarmOptions,
+  fetchFireConsultationOptions,
+  fetchFloorPricing,
+  fetchFraDurations,
+  fetchMarshalOptions,
+  fetchPropertyTypes,
+  formatPeopleOptionLabel,
+  getPeopleOptionSortKey,
+  type ApproximatePeopleResponse,
+  type ConsultationOptionItem,
+  type EmergencyLightServiceOptionItem,
+  type ExtinguisherServiceOptionItem,
+  type FireAlarmOptionItem,
+  type FloorPricingItem,
+  type FraDurationItem,
+  type MarshalServiceOptionItem,
+  type PropertyTypeResponse,
+} from "../api/servicesService";
+import type { CustomQuoteRequestData } from "../api/customQuoteRequestsService";
+import { getApiToken } from "../lib/auth";
+import {
+  customQuoteDetailsPath,
+  savePendingCustomQuote,
+} from "../lib/pendingCustomQuote";
 
 interface SmartQuestionnaireProps {
-  service: string;
+  service?: string;
   serviceId?: number;
-  /** When provided, used to show Fire Alarm–specific steps (e.g. smoke/heat detectors) only for Fire Alarm service */
   serviceName?: string;
-  onComplete: (formData: {
-    property_type_id: number;
-    approximate_people_id: number;
-    number_of_floors: string;
-    property_type_label?: string;
-    approximate_people_label?: string;
-    number_of_floors_id?: number;
-    preferred_date: string;
-    access_note: string;
-    duration_id?: number;
-    detector_count?: string;
-    isCustomQuote?: boolean;
-    request_data?: { building_type: string; people_count: string; floors: number };
-    service_id?: number;
-  }) => void;
+  onComplete: (data: Record<string, unknown>) => void;
   onBack: () => void;
-  /** Custom content rendered at the bottom, below the navigation buttons */
-  bottomContent?: React.ReactNode;
 }
 
-export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete, onBack, bottomContent }: SmartQuestionnaireProps) {
+type FormData = {
+  propertyType: string;
+  customPropertyType: string;
+  approximatePeople: string;
+  customApproximatePeople: string;
+  numberOfFloors: string;
+  customFloors: string;
+  duration: string;
+  assessmentDate: string;
+  accessNotes: string;
+  fireAlarmDetectors: string;
+  customFireAlarmDetectors: string;
+  fireAlarmCallPoints: string;
+  customFireAlarmCallPoints: string;
+  fireAlarmFloors: string;
+  customFireAlarmFloors: string;
+  fireAlarmPanels: string;
+  customFireAlarmPanels: string;
+  alarmSystemType: string;
+  lastServiced: string;
+  extinguisherCount: string;
+  customExtinguisherCount: string;
+  extinguisherFloors: string;
+  extinguisherTypeId: string;
+  extinguisherLastServiced: string;
+  emergencyLightsCount: string;
+  customEmergencyLightsCount: string;
+  emergencyFloors: string;
+  emergencyLightType: string;
+  emergencyLightTest: string;
+  trainingPeopleCount: string;
+  customTrainingPeopleCount: string;
+  trainingLocation: string;
+  buildingType: string;
+  staffTrainingBefore: string;
+  consultationType: string;
+  consultationHours: string;
+};
+
+const SKIP_VALUE = "__skip__";
+const CUSTOM_FA_DETECTORS = "__custom_fa_detectors__";
+const CUSTOM_FA_CALL_POINTS = "__custom_fa_call_points__";
+const CUSTOM_FA_FLOORS = "__custom_fa_floors__";
+const CUSTOM_FA_PANELS = "__custom_fa_panels__";
+const CUSTOM_EXTINGUISHERS = "__custom_extinguishers__";
+const CUSTOM_EMERGENCY_LIGHTS = "__custom_emergency_lights__";
+const CUSTOM_FLOORS = "__custom_floors__";
+const CUSTOM_TRAINING_PEOPLE = "__custom_training_people__";
+
+function isPeopleCustomQuoteLabel(text: string): boolean {
+  const t = (text ?? "").trim().toLowerCase();
+  return /100\+/.test(t) || /custom\s*quote/.test(t) || /more than 500|500\+/.test(t);
+}
+
+function isFloorCustomQuoteOption(opt: FloorPricingItem): boolean {
+  if (opt.custom_quote) return true;
+  const label = (opt.label ?? opt.floor ?? "").trim().toLowerCase();
+  return /custom\s*quote/.test(label) || /7\+|8\+|more than \d+/.test(label);
+}
+
+const CUSTOM_QUOTE_OPTION_VALUES = new Set([
+  CUSTOM_FA_DETECTORS,
+  CUSTOM_FA_CALL_POINTS,
+  CUSTOM_FA_FLOORS,
+  CUSTOM_FA_PANELS,
+  CUSTOM_EXTINGUISHERS,
+  CUSTOM_EMERGENCY_LIGHTS,
+  CUSTOM_FLOORS,
+  CUSTOM_TRAINING_PEOPLE,
+]);
+
+function isCustomQuoteOptionSelection(
+  field: keyof FormData,
+  value: string,
+  propertyTypes: PropertyTypeResponse[],
+  approximatePeopleOptions: ApproximatePeopleResponse[],
+  floorOptions: FloorPricingItem[]
+): boolean {
+  if (CUSTOM_QUOTE_OPTION_VALUES.has(value)) return true;
+  if (field === "propertyType") {
+    const opt = propertyTypes.find((p) => String(p.id) === value);
+    if (opt && isOtherPropertyTypeName(opt.property_type_name)) return true;
+  }
+  if (field === "approximatePeople") {
+    const opt = approximatePeopleOptions.find((p) => String(p.id) === value);
+    if (opt && isPeopleCustomQuoteLabel(opt.number_of_people)) return true;
+  }
+  if (field === "numberOfFloors") {
+    const opt = floorOptions.find((f) => String(f.id ?? f.floor) === value);
+    if (opt && isFloorCustomQuoteOption(opt)) return true;
+  }
+  return false;
+}
+
+const EMPTY_FORM: FormData = {
+  propertyType: "",
+  customPropertyType: "",
+  approximatePeople: "",
+  customApproximatePeople: "",
+  numberOfFloors: "",
+  customFloors: "",
+  duration: "",
+  assessmentDate: "",
+  accessNotes: "",
+  fireAlarmDetectors: "",
+  customFireAlarmDetectors: "",
+  fireAlarmCallPoints: "",
+  customFireAlarmCallPoints: "",
+  fireAlarmFloors: "",
+  customFireAlarmFloors: "",
+  fireAlarmPanels: "",
+  customFireAlarmPanels: "",
+  alarmSystemType: "",
+  lastServiced: "",
+  extinguisherCount: "",
+  customExtinguisherCount: "",
+  extinguisherFloors: "",
+  extinguisherTypeId: "",
+  extinguisherLastServiced: "",
+  emergencyLightsCount: "",
+  customEmergencyLightsCount: "",
+  emergencyFloors: "",
+  emergencyLightType: "",
+  emergencyLightTest: "",
+  trainingPeopleCount: "",
+  customTrainingPeopleCount: "",
+  trainingLocation: "",
+  buildingType: "",
+  staffTrainingBefore: "",
+  consultationType: "",
+  consultationHours: "",
+};
+
+function resolveServiceName(serviceName?: string, service?: string): string {
+  return (serviceName ?? "").trim() || String(service ?? "").trim();
+}
+
+function resolveServiceId(serviceId?: number, service?: string): number {
+  if (serviceId != null && !Number.isNaN(serviceId)) return serviceId;
+  if (service && /^\d+$/.test(service)) return parseInt(service, 10);
+  return 0;
+}
+
+function detectServiceFlags(name: string, serviceId: number) {
+  const n = name.toLowerCase();
+  const isFireAlarmService = n.includes("fire alarm") || serviceId === 42;
+  const isFireExtinguisherService = n.includes("extinguisher") || serviceId === 41;
+  const isEmergencyLightingService = n.includes("emergency") || serviceId === 39;
+  const isFireMarshalTrainingService =
+    n.includes("marshal") || n.includes("warden") || serviceId === 45;
+  const isFireSafetyConsultationService = n.includes("consultation") || serviceId === 46;
+  const isFireRiskAssessmentService =
+    n.includes("fire risk") ||
+    n.includes("assessment") ||
+    (!isFireAlarmService &&
+      !isFireExtinguisherService &&
+      !isEmergencyLightingService &&
+      !isFireMarshalTrainingService &&
+      !isFireSafetyConsultationService);
+
+  return {
+    isFireAlarmService,
+    isFireExtinguisherService,
+    isEmergencyLightingService,
+    isFireMarshalTrainingService,
+    isFireSafetyConsultationService,
+    isFireRiskAssessmentService,
+  };
+}
+
+function optionLabel(
+  options: { id: number; value: string }[],
+  value: string
+): string {
+  const match = options.find((o) => String(o.id) === value);
+  return match?.value?.trim() ?? "";
+}
+
+function parsePositiveInt(value: string): number | undefined {
+  const n = parseInt(String(value).trim(), 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+export function SmartQuestionnaire({
+  service,
+  serviceId,
+  serviceName,
+  onComplete,
+  onBack,
+}: SmartQuestionnaireProps) {
   const navigate = useNavigate();
-  const isFireAlarmService = (serviceName?.toLowerCase().includes("alarm") ?? false);
-  const isFireRiskAssessmentService = ((serviceName?.toLowerCase().includes("risk") && serviceName?.toLowerCase().includes("assessment")) ?? false);
-  const isFireExtinguisherService = (serviceName?.toLowerCase().includes("extinguisher") ?? false);
-  const isEmergencyLightingService = (serviceName?.toLowerCase().includes("lighting") ?? false);
-  const isFireSafetyConsultationService = (serviceName?.toLowerCase().includes("consultation") ?? false);
-  const isFireMarshalTrainingService = ((serviceName?.toLowerCase().includes("marshal") || serviceName?.toLowerCase().includes("warden") || serviceName?.toLowerCase().includes("training")) ?? false);
-  const totalSteps = isFireAlarmService ? 8 : isFireExtinguisherService ? 6 : isEmergencyLightingService ? 6 : isFireSafetyConsultationService ? 4 : isFireMarshalTrainingService ? 6 : isFireRiskAssessmentService ? 6 : 6;
+  const resolvedName = resolveServiceName(serviceName, service);
+  const resolvedServiceId = resolveServiceId(serviceId, service);
+  const flags = useMemo(
+    () => detectServiceFlags(resolvedName, resolvedServiceId),
+    [resolvedName, resolvedServiceId]
+  );
+
+  const {
+    isFireAlarmService,
+    isFireExtinguisherService,
+    isEmergencyLightingService,
+    isFireMarshalTrainingService,
+    isFireSafetyConsultationService,
+    isFireRiskAssessmentService,
+  } = flags;
+
+  const totalSteps = isFireAlarmService
+    ? 8
+    : isFireExtinguisherService || isEmergencyLightingService || isFireMarshalTrainingService
+      ? 6
+      : isFireSafetyConsultationService
+        ? 4
+        : 6;
 
   const [currentStep, setCurrentStep] = useState(1);
-  /** After Back, skip one auto-advance on `currentStep` so we do not immediately jump forward again. */
-  const wentBackRef = useRef(false);
-  const [formData, setFormData] = useState({
-    propertyTypeId: "",
-    customPropertyType: "",
-    approximatePeopleId: "",
-    customPeopleCount: "",
-    detectorCount: "",
-    customDetectorCount: "",
-    manualCallPoints: "",
-    customManualCallPoints: "",
-    fireAlarmFloors: "",
-    customFireAlarmFloors: "",
-    fireAlarmPanels: "",
-    customFireAlarmPanels: "",
-    alarmSystemType: "",
-    lastServiced: "",
-    numberOfFloors: "",
-    customFloorsCount: "",
-    extinguisherCount: "",
-    customExtinguisherCount: "",
-    extinguisherFloors: "",
-    customExtinguisherFloors: "",
-    extinguisherTypesKnow: "",
-    extinguisherTypesList: "",
-    extinguisherTypeId: "",
-    extinguisherLastServiced: "",
-    emergencyLightsCount: "",
-    customEmergencyLightsCount: "",
-    emergencyLightsFloors: "",
-    customEmergencyLightsFloors: "",
-    emergencyLightingType: "",
-    emergencyLightingTestFrequency: "",
-    consultationType: "",
-    consultationHours: "",
-    customConsultationHours: "",
-    trainingPeopleCount: "",
-    customTrainingPeopleCount: "",
-    trainingLocation: "",
-    buildingTypeForTraining: "",
-    staffTrainingBefore: "",
-    fraAssessmentType: "",
-    assessmentDate: "",
-    accessNotes: "",
-    durationId: ""
-  });
+  const [formData, setFormData] = useState<FormData>(EMPTY_FORM);
   const [propertyTypes, setPropertyTypes] = useState<PropertyTypeResponse[]>([]);
-  const [loadingPropertyTypes, setLoadingPropertyTypes] = useState<boolean>(true);
-  const [approximatePeople, setApproximatePeople] = useState<ApproximatePeopleResponse[]>([]);
-  const [loadingApproximatePeople, setLoadingApproximatePeople] = useState<boolean>(true);
-  const [floorPricing, setFloorPricing] = useState<FloorPricingItem[]>([]);
-  const [loadingFloorPricing, setLoadingFloorPricing] = useState<boolean>(true);
-  const [fraDurations, setFraDurations] = useState<FraDurationItem[]>([]);
-  const [loadingFraDurations, setLoadingFraDurations] = useState<boolean>(true);
+  const [approximatePeopleOptions, setApproximatePeopleOptions] = useState<ApproximatePeopleResponse[]>([]);
+  const [floorOptions, setFloorOptions] = useState<FloorPricingItem[]>([]);
+  const [durationOptions, setDurationOptions] = useState<FraDurationItem[]>([]);
   const [fireAlarmDetectorsOptions, setFireAlarmDetectorsOptions] = useState<FireAlarmOptionItem[]>([]);
   const [fireAlarmCallPointsOptions, setFireAlarmCallPointsOptions] = useState<FireAlarmOptionItem[]>([]);
   const [fireAlarmFloorsOptions, setFireAlarmFloorsOptions] = useState<FireAlarmOptionItem[]>([]);
   const [fireAlarmPanelsOptions, setFireAlarmPanelsOptions] = useState<FireAlarmOptionItem[]>([]);
   const [fireAlarmSystemTypeOptions, setFireAlarmSystemTypeOptions] = useState<FireAlarmOptionItem[]>([]);
   const [fireAlarmLastServiceOptions, setFireAlarmLastServiceOptions] = useState<FireAlarmOptionItem[]>([]);
-  const [loadingFireAlarmOptions, setLoadingFireAlarmOptions] = useState(false);
   const [extinguisherCountOptions, setExtinguisherCountOptions] = useState<ExtinguisherServiceOptionItem[]>([]);
   const [extinguisherFloorOptions, setExtinguisherFloorOptions] = useState<ExtinguisherServiceOptionItem[]>([]);
   const [extinguisherTypeOptions, setExtinguisherTypeOptions] = useState<ExtinguisherServiceOptionItem[]>([]);
   const [extinguisherLastServiceOptions, setExtinguisherLastServiceOptions] = useState<ExtinguisherServiceOptionItem[]>([]);
-  const [loadingExtinguisherOptions, setLoadingExtinguisherOptions] = useState(false);
-  const [emergencyLightCountOptions, setEmergencyLightCountOptions] = useState<EmergencyLightServiceOptionItem[]>([]);
-  const [emergencyLightFloorOptions, setEmergencyLightFloorOptions] = useState<EmergencyLightServiceOptionItem[]>([]);
+  const [emergencyLightOptions, setEmergencyLightOptions] = useState<EmergencyLightServiceOptionItem[]>([]);
+  const [emergencyFloorOptions, setEmergencyFloorOptions] = useState<EmergencyLightServiceOptionItem[]>([]);
   const [emergencyLightTypeOptions, setEmergencyLightTypeOptions] = useState<EmergencyLightServiceOptionItem[]>([]);
   const [emergencyLightTestOptions, setEmergencyLightTestOptions] = useState<EmergencyLightServiceOptionItem[]>([]);
-  const [loadingEmergencyLightOptions, setLoadingEmergencyLightOptions] = useState(false);
   const [marshalPeopleOptions, setMarshalPeopleOptions] = useState<MarshalServiceOptionItem[]>([]);
   const [marshalPlaceOptions, setMarshalPlaceOptions] = useState<MarshalServiceOptionItem[]>([]);
-  const [marshalBuildingTypeOptions, setMarshalBuildingTypeOptions] = useState<MarshalServiceOptionItem[]>([]);
+  const [marshalBuildingOptions, setMarshalBuildingOptions] = useState<MarshalServiceOptionItem[]>([]);
   const [marshalExperienceOptions, setMarshalExperienceOptions] = useState<MarshalServiceOptionItem[]>([]);
-  const [loadingMarshalOptions, setLoadingMarshalOptions] = useState(false);
   const [consultationModeOptions, setConsultationModeOptions] = useState<ConsultationOptionItem[]>([]);
   const [consultationHourOptions, setConsultationHourOptions] = useState<ConsultationOptionItem[]>([]);
+  const [loadingFraOptions, setLoadingFraOptions] = useState(false);
+  const [loadingFireAlarmOptions, setLoadingFireAlarmOptions] = useState(false);
+  const [loadingExtinguisherOptions, setLoadingExtinguisherOptions] = useState(false);
+  const [loadingEmergencyOptions, setLoadingEmergencyOptions] = useState(false);
+  const [loadingMarshalOptions, setLoadingMarshalOptions] = useState(false);
   const [loadingConsultationOptions, setLoadingConsultationOptions] = useState(false);
 
-  const CUSTOM_PEOPLE_OPTION_VALUE = "More than 500 people";
-  const CUSTOM_FLOORS_OPTION_VALUE = "More than 5 floors"; // Same approach as people: one custom option that shows custom input
-  const isMoreThan500People = (value: string) =>
-    /more than 500|500\+|501\+/i.test(value) || value.toLowerCase().includes("500");
-  const showCustomPeopleInput = isMoreThan500People(formData.approximatePeopleId);
-  const peopleCountDisplay = showCustomPeopleInput && formData.customPeopleCount.trim()
-    ? formData.customPeopleCount.trim()
-    : formData.approximatePeopleId;
-  const isCustomFloorsOption = formData.numberOfFloors === CUSTOM_FLOORS_OPTION_VALUE;
-  const floorOptions = useMemo(() => {
-    const seen = new Set<string>();
-    return floorPricing.filter((item) => {
-      if (seen.has(item.label)) return false;
-      seen.add(item.label);
-      return true;
-    });
-  }, [floorPricing]);
-  const numberOfFloorsSelectLabel = formData.numberOfFloors
-    ? formData.numberOfFloors === CUSTOM_FLOORS_OPTION_VALUE
-      ? "More"
-      : (floorOptions.find((o) => o.floor === formData.numberOfFloors)?.label ?? formData.numberOfFloors)
-    : undefined;
-  const durationSelectLabel = formData.durationId
-    ? fraDurations.find((d) => String(d.id) === formData.durationId)?.duration
-    : undefined;
-  const propertyTypeSelectLabel = formData.propertyTypeId
-    ? formData.propertyTypeId === "__custom__"
-      ? "More"
-      : formData.propertyTypeId
-    : undefined;
-  const approximatePeopleSelectLabel = formData.approximatePeopleId
-    ? formatPeopleOptionLabel(formData.approximatePeopleId)
-    : undefined;
-  const CUSTOM_FA_DETECTORS = "__custom_fa_detectors__";
-  const CUSTOM_FA_CALL_POINTS = "__custom_fa_call_points__";
-  const CUSTOM_FA_FLOORS = "__custom_fa_floors__";
-  const CUSTOM_FA_PANELS = "__custom_fa_panels__";
-  const showCustomDetectorInput = formData.detectorCount === CUSTOM_FA_DETECTORS;
-  const detectorDisplay = showCustomDetectorInput && formData.customDetectorCount.trim()
-    ? formData.customDetectorCount.trim()
-    : (fireAlarmDetectorsOptions.find((o) => String(o.id) === formData.detectorCount)?.value ?? formData.detectorCount);
-  const showCustomManualCallPointsInput = formData.manualCallPoints === CUSTOM_FA_CALL_POINTS;
-  const manualCallPointsDisplay = showCustomManualCallPointsInput && formData.customManualCallPoints.trim()
-    ? formData.customManualCallPoints.trim()
-    : (fireAlarmCallPointsOptions.find((o) => String(o.id) === formData.manualCallPoints)?.value ?? formData.manualCallPoints);
+  const apiToken = getApiToken();
+
+  const showCustomFireAlarmDetectorsInput = formData.fireAlarmDetectors === CUSTOM_FA_DETECTORS;
+  const showCustomFireAlarmCallPointsInput = formData.fireAlarmCallPoints === CUSTOM_FA_CALL_POINTS;
   const showCustomFireAlarmFloorsInput = formData.fireAlarmFloors === CUSTOM_FA_FLOORS;
-  const fireAlarmFloorsDisplay = showCustomFireAlarmFloorsInput && formData.customFireAlarmFloors.trim()
-    ? formData.customFireAlarmFloors.trim()
-    : (fireAlarmFloorsOptions.find((o) => String(o.id) === formData.fireAlarmFloors)?.value ?? formData.fireAlarmFloors);
   const showCustomFireAlarmPanelsInput = formData.fireAlarmPanels === CUSTOM_FA_PANELS;
-  const fireAlarmPanelsDisplay = showCustomFireAlarmPanelsInput && formData.customFireAlarmPanels.trim()
-    ? formData.customFireAlarmPanels.trim()
-    : (fireAlarmPanelsOptions.find((o) => String(o.id) === formData.fireAlarmPanels)?.value ?? formData.fireAlarmPanels);
-  const alarmSystemTypeDisplay = fireAlarmSystemTypeOptions.find((o) => String(o.id) === formData.alarmSystemType)?.value ?? formData.alarmSystemType;
-  const lastServicedDisplay = formData.lastServiced === "__skip__" || !formData.lastServiced
-    ? ""
-    : (fireAlarmLastServiceOptions.find((o) => String(o.id) === formData.lastServiced)?.value ?? formData.lastServiced);
-  const CUSTOM_EXT_COUNT = "__custom_ext_count__";
-  const CUSTOM_EXT_FLOORS = "__custom_ext_floors__";
-  const showCustomExtinguisherInput = formData.extinguisherCount === CUSTOM_EXT_COUNT;
-  const extinguisherCountDisplay = showCustomExtinguisherInput && formData.customExtinguisherCount.trim()
-    ? formData.customExtinguisherCount.trim()
-    : (extinguisherCountOptions.find((o) => String(o.id) === formData.extinguisherCount)?.value ?? formData.extinguisherCount);
-  const showCustomExtinguisherFloorsInput = formData.extinguisherFloors === CUSTOM_EXT_FLOORS;
-  const extinguisherFloorsDisplay = showCustomExtinguisherFloorsInput && formData.customExtinguisherFloors.trim()
-    ? formData.customExtinguisherFloors.trim()
-    : (extinguisherFloorOptions.find((o) => String(o.id) === formData.extinguisherFloors)?.value ?? formData.extinguisherFloors);
-  const extinguisherTypeDisplay = formData.extinguisherTypeId && formData.extinguisherTypeId !== "__skip__"
-    ? (extinguisherTypeOptions.find((o) => String(o.id) === formData.extinguisherTypeId)?.value ?? "")
-    : "";
-  const extinguisherLastServicedDisplay = formData.extinguisherLastServiced && formData.extinguisherLastServiced !== "__skip__"
-    ? (extinguisherLastServiceOptions.find((o) => String(o.id) === formData.extinguisherLastServiced)?.value ?? formData.extinguisherLastServiced)
-    : "";
-  const CUSTOM_EL_LIGHTS = "__custom_el_lights__";
-  const CUSTOM_EL_FLOORS = "__custom_el_floors__";
-  const showCustomEmergencyLightsInput = formData.emergencyLightsCount === CUSTOM_EL_LIGHTS;
-  const emergencyLightsCountDisplay = showCustomEmergencyLightsInput && formData.customEmergencyLightsCount.trim()
-    ? formData.customEmergencyLightsCount.trim()
-    : (emergencyLightCountOptions.find((o) => String(o.id) === formData.emergencyLightsCount)?.value ?? formData.emergencyLightsCount);
-  const showCustomEmergencyLightsFloorsInput = formData.emergencyLightsFloors === CUSTOM_EL_FLOORS;
-  const emergencyLightsFloorsDisplay = showCustomEmergencyLightsFloorsInput && formData.customEmergencyLightsFloors.trim()
-    ? formData.customEmergencyLightsFloors.trim()
-    : (emergencyLightFloorOptions.find((o) => String(o.id) === formData.emergencyLightsFloors)?.value ?? formData.emergencyLightsFloors);
-  const showCustomConsultationHoursInput = formData.consultationHours === "4+";
-  const consultationHoursDisplay = showCustomConsultationHoursInput && formData.customConsultationHours.trim()
-    ? formData.customConsultationHours.trim()
-    : (consultationHourOptions.find((o) => String(o.id) === formData.consultationHours)?.value ?? formData.consultationHours);
-  const consultationTypeDisplay =
-    consultationModeOptions.find((o) => String(o.id) === formData.consultationType)?.value ??
-    consultationModeOptions.find((o) => (o.value || "").trim() === formData.consultationType)?.value ??
-    formData.consultationType;
-  const CUSTOM_MARSHAL_PEOPLE = "__custom_marshal_people__";
-  const showCustomTrainingPeopleInput = formData.trainingPeopleCount === CUSTOM_MARSHAL_PEOPLE || formData.trainingPeopleCount === "40+";
-  const trainingPeopleCountDisplay = showCustomTrainingPeopleInput && formData.customTrainingPeopleCount.trim()
-    ? formData.customTrainingPeopleCount.trim()
-    : (marshalPeopleOptions.find((o) => String(o.id) === formData.trainingPeopleCount)?.value ?? formData.trainingPeopleCount);
-  const trainingLocationDisplay =
-    marshalPlaceOptions.find((o) => String(o.id) === formData.trainingLocation)?.value ??
-    marshalPlaceOptions.find((o) => (o.value || "").trim() === formData.trainingLocation)?.value ??
-    formData.trainingLocation;
-  const buildingTypeForTrainingDisplay =
-    marshalBuildingTypeOptions.find((o) => String(o.id) === formData.buildingTypeForTraining)?.value ??
-    marshalBuildingTypeOptions.find((o) => (o.value || "").trim() === formData.buildingTypeForTraining)?.value ??
-    formData.buildingTypeForTraining;
-  const staffTrainingBeforeDisplay =
-    !formData.staffTrainingBefore || formData.staffTrainingBefore === "__skip__"
-      ? ""
-      : (marshalExperienceOptions.find((o) => String(o.id) === formData.staffTrainingBefore)?.value ??
-        marshalExperienceOptions.find((o) => (o.value || "").trim() === formData.staffTrainingBefore)?.value ??
-        formData.staffTrainingBefore);
-  const showCustomFloorsInput = isCustomFloorsOption;
-  const floorsDisplay = showCustomFloorsInput && formData.customFloorsCount.trim()
-    ? formData.customFloorsCount.trim()
-    : formData.numberOfFloors;
+  const showCustomExtinguisherCountInput = formData.extinguisherCount === CUSTOM_EXTINGUISHERS;
+  const showCustomEmergencyLightsInput = formData.emergencyLightsCount === CUSTOM_EMERGENCY_LIGHTS;
+  const showCustomFloorsInput =
+    formData.numberOfFloors === CUSTOM_FLOORS ||
+    floorOptions.some(
+      (opt) => isFloorCustomQuoteOption(opt) && String(opt.id ?? opt.floor) === formData.numberOfFloors
+    );
+  const showCustomTrainingPeopleInput = formData.trainingPeopleCount === CUSTOM_TRAINING_PEOPLE;
 
-  useEffect(() => {
-    const loadPropertyTypes = async () => {
-      try {
-        setLoadingPropertyTypes(true);
-        const data = await fetchPropertyTypes();
-        setPropertyTypes(data);
-      } catch (err: any) {
-        console.error("Error loading property types:", err);
-        // Continue with empty array if fetch fails
-        setPropertyTypes([]);
-      } finally {
-        setLoadingPropertyTypes(false);
-      }
-    };
+  const sortedApproximatePeopleOptions = useMemo(
+    () =>
+      [...approximatePeopleOptions].sort(
+        (a, b) =>
+          getPeopleOptionSortKey(a.number_of_people) - getPeopleOptionSortKey(b.number_of_people)
+      ),
+    [approximatePeopleOptions]
+  );
 
-    loadPropertyTypes();
+  const selectedApproximatePeopleOption = useMemo(
+    () =>
+      sortedApproximatePeopleOptions.find((opt) => String(opt.id) === formData.approximatePeople) ??
+      null,
+    [sortedApproximatePeopleOptions, formData.approximatePeople]
+  );
+
+  const showCustomPeopleInput = Boolean(
+    selectedApproximatePeopleOption &&
+      isPeopleCustomQuoteLabel(selectedApproximatePeopleOption.number_of_people)
+  );
+
+  const selectedPropertyType = useMemo(
+    () => propertyTypes.find((p) => String(p.id) === formData.propertyType) ?? null,
+    [propertyTypes, formData.propertyType]
+  );
+
+  const showCustomPropertyTypeInput = Boolean(
+    selectedPropertyType && isOtherPropertyTypeName(selectedPropertyType.property_type_name)
+  );
+
+  const hasApiCustomFloorOption = useMemo(
+    () => floorOptions.some((opt) => isFloorCustomQuoteOption(opt)),
+    [floorOptions]
+  );
+
+  const serviceKind = getQuestionnaireServiceKind({
+    isFireAlarmService,
+    isFireExtinguisherService,
+    isEmergencyLightingService,
+    isFireSafetyConsultationService,
+    isFireMarshalTrainingService,
+    isFireRiskAssessmentService,
+  });
+  const baseStepMeta = getQuestionnaireStepMeta(serviceKind, currentStep, totalSteps);
+  const stepMeta = useMemo(() => {
+    const peopleLabel = selectedApproximatePeopleOption
+      ? formatPeopleOptionLabel(selectedApproximatePeopleOption.number_of_people)
+      : undefined;
+    const durationItem = durationOptions.find((item) => String(item.id) === formData.duration);
+    const selectedFloorOption = floorOptions.find(
+      (item) => String(item.id ?? item.floor) === formData.numberOfFloors
+    );
+    const floorLabel =
+      showCustomFloorsInput && formData.customFloors.trim()
+        ? `${formData.customFloors.trim()} floors`
+        : selectedFloorOption?.label ?? selectedFloorOption?.floor;
+
+    return resolveContextualStepMeta(baseStepMeta, currentStep, {
+      propertyTypeId: formData.propertyType || undefined,
+      propertyTypes,
+      approximatePeopleLabel: peopleLabel,
+      showCustomPeopleInput,
+      customApproximatePeople: formData.customApproximatePeople,
+      floorLabel,
+      showCustomFloorsInput,
+      customFloorsCount: formData.customFloors,
+      durationLabel: durationItem?.duration,
+    });
+  }, [
+    baseStepMeta,
+    currentStep,
+    durationOptions,
+    floorOptions,
+    formData.customApproximatePeople,
+    formData.customFloors,
+    formData.duration,
+    formData.numberOfFloors,
+    formData.propertyType,
+    propertyTypes,
+    selectedApproximatePeopleOption,
+    showCustomFloorsInput,
+    showCustomPeopleInput,
+  ]);
+
+  const updateFormData = useCallback((field: keyof FormData, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
   }, []);
 
   useEffect(() => {
-    const loadApproximatePeople = async () => {
-      try {
-        setLoadingApproximatePeople(true);
-        const data = await fetchApproximatePeople();
-        // Sort by serial range: 1–10, 11–25, 26–50, 51–100, 100+, then More than 500
-        const sortedData = [...data].sort(
-          (a, b) => getPeopleOptionSortKey(a.number_of_people) - getPeopleOptionSortKey(b.number_of_people)
-        );
-        setApproximatePeople(sortedData);
-      } catch (err: any) {
-        console.error("Error loading approximate people:", err);
-        // Continue with empty array if fetch fails
-        setApproximatePeople([]);
-      } finally {
-        setLoadingApproximatePeople(false);
-      }
-    };
-
-    loadApproximatePeople();
-  }, []);
-
-  useEffect(() => {
-    const loadFloorPricing = async () => {
-      try {
-        setLoadingFloorPricing(true);
-        const data = await fetchFloorPricing();
-        setFloorPricing(data);
-      } catch (err: any) {
-        console.error("Error loading floor pricing:", err);
-        setFloorPricing([]);
-      } finally {
-        setLoadingFloorPricing(false);
-      }
-    };
-    loadFloorPricing();
-  }, []);
-
-  useEffect(() => {
-    const loadFraDurations = async () => {
-      try {
-        setLoadingFraDurations(true);
-        const data = await fetchFraDurations();
-        setFraDurations(data);
-      } catch (err: any) {
-        console.error("Error loading FRA durations:", err);
-        setFraDurations([]);
-      } finally {
-        setLoadingFraDurations(false);
-      }
-    };
-    loadFraDurations();
-  }, []);
+    if (isFireRiskAssessmentService || (!isFireAlarmService && !isFireExtinguisherService && !isEmergencyLightingService && !isFireMarshalTrainingService && !isFireSafetyConsultationService)) {
+      setLoadingFraOptions(true);
+      Promise.all([fetchPropertyTypes(), fetchApproximatePeople(), fetchFloorPricing(), fetchFraDurations()])
+        .then(([types, people, floors, durations]) => {
+          setPropertyTypes(types);
+          setApproximatePeopleOptions(people);
+          setFloorOptions(floors);
+          setDurationOptions(durations);
+        })
+        .catch(() => {})
+        .finally(() => setLoadingFraOptions(false));
+    }
+  }, [isFireAlarmService, isFireExtinguisherService, isEmergencyLightingService, isFireMarshalTrainingService, isFireSafetyConsultationService, isFireRiskAssessmentService]);
 
   useEffect(() => {
     if (!isFireAlarmService) return;
-    const token = getApiToken();
-    const load = async () => {
-      setLoadingFireAlarmOptions(true);
-      try {
-        const [detectors, callPoints, floors, panels, systemType, lastService] = await Promise.all([
-          fetchFireAlarmOptions(token, "ditectors"),
-          fetchFireAlarmOptions(token, "call_points"),
-          fetchFireAlarmOptions(token, "floors"),
-          fetchFireAlarmOptions(token, "alarm_panels"),
-          fetchFireAlarmOptions(token, "system_type"),
-          fetchFireAlarmOptions(token, "last_service"),
-        ]);
+    setLoadingFireAlarmOptions(true);
+    const token = apiToken ?? null;
+    Promise.all([
+      fetchFireAlarmOptions(token, "ditectors"),
+      fetchFireAlarmOptions(token, "call_points"),
+      fetchFireAlarmOptions(token, "floors"),
+      fetchFireAlarmOptions(token, "alarm_panels"),
+      fetchFireAlarmOptions(token, "system_type"),
+      fetchFireAlarmOptions(token, "last_service"),
+    ])
+      .then(([detectors, callPoints, floors, panels, systemType, lastService]) => {
         setFireAlarmDetectorsOptions(detectors);
         setFireAlarmCallPointsOptions(callPoints);
         setFireAlarmFloorsOptions(floors);
         setFireAlarmPanelsOptions(panels);
         setFireAlarmSystemTypeOptions(systemType);
         setFireAlarmLastServiceOptions(lastService);
-      } catch (e) {
-        console.error("Error loading fire alarm options:", e);
-      } finally {
-        setLoadingFireAlarmOptions(false);
-      }
-    };
-    load();
-  }, [isFireAlarmService]);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingFireAlarmOptions(false));
+  }, [isFireAlarmService, apiToken]);
 
   useEffect(() => {
     if (!isFireExtinguisherService) return;
-    const load = async () => {
-      setLoadingExtinguisherOptions(true);
-      try {
-        const token = getApiToken() ?? "";
-        const [extinguisher, floor, metarials, lastService] = await Promise.all([
-          fetchExtinguisherServiceOptions(token, "extinguisher"),
-          fetchExtinguisherServiceOptions(token, "floor"),
-          fetchExtinguisherServiceOptions(token, "metarials"),
-          fetchExtinguisherServiceOptions(token, "last_service"),
-        ]);
-        setExtinguisherCountOptions(extinguisher);
-        setExtinguisherFloorOptions(floor);
-        setExtinguisherTypeOptions(metarials);
+    setLoadingExtinguisherOptions(true);
+    const token = apiToken ?? "";
+    Promise.all([
+      fetchExtinguisherServiceOptions(token, "extinguisher"),
+      fetchExtinguisherServiceOptions(token, "floor"),
+      fetchExtinguisherServiceOptions(token, "metarials"),
+      fetchExtinguisherServiceOptions(token, "last_service"),
+    ])
+      .then(([extinguishers, floors, types, lastService]) => {
+        setExtinguisherCountOptions(extinguishers);
+        setExtinguisherFloorOptions(floors);
+        setExtinguisherTypeOptions(types);
         setExtinguisherLastServiceOptions(lastService);
-      } catch (e) {
-        console.error("Error loading fire extinguisher options:", e);
-      } finally {
-        setLoadingExtinguisherOptions(false);
-      }
-    };
-    load();
-  }, [isFireExtinguisherService]);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingExtinguisherOptions(false));
+  }, [isFireExtinguisherService, apiToken]);
 
   useEffect(() => {
     if (!isEmergencyLightingService) return;
-    const load = async () => {
-      setLoadingEmergencyLightOptions(true);
-      try {
-        const [light, floor, lightType, lightTest] = await Promise.all([
-          fetchEmergencyLightOptions("light"),
-          fetchEmergencyLightOptions("floor"),
-          fetchEmergencyLightOptions("light_type"),
-          fetchEmergencyLightOptions("light_test"),
-        ]);
-        setEmergencyLightCountOptions(light);
-        setEmergencyLightFloorOptions(floor);
-        setEmergencyLightTypeOptions(lightType);
-        setEmergencyLightTestOptions(lightTest);
-      } catch (e) {
-        console.error("Error loading emergency light options:", e);
-      } finally {
-        setLoadingEmergencyLightOptions(false);
-      }
-    };
-    load();
+    setLoadingEmergencyOptions(true);
+    Promise.all([
+      fetchEmergencyLightOptions("light"),
+      fetchEmergencyLightOptions("floor"),
+      fetchEmergencyLightOptions("light_type"),
+      fetchEmergencyLightOptions("light_test"),
+    ])
+      .then(([lights, floors, types, tests]) => {
+        setEmergencyLightOptions(lights);
+        setEmergencyFloorOptions(floors);
+        setEmergencyLightTypeOptions(types);
+        setEmergencyLightTestOptions(tests);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingEmergencyOptions(false));
   }, [isEmergencyLightingService]);
 
   useEffect(() => {
     if (!isFireMarshalTrainingService) return;
-    const load = async () => {
-      setLoadingMarshalOptions(true);
-      try {
-        const apiToken = getApiToken();
-        const [people, place, buildingType, experience] = await Promise.all([
-          fetchMarshalOptions(apiToken ?? "", "people"),
-          fetchMarshalOptions(apiToken ?? "", "training_place"),
-          fetchMarshalOptions(apiToken ?? "", "building_type"),
-          fetchMarshalOptions(apiToken ?? "", "experience"),
-        ]);
+    setLoadingMarshalOptions(true);
+    const token = apiToken ?? "";
+    Promise.all([
+      fetchMarshalOptions(token, "people"),
+      fetchMarshalOptions(token, "training_place"),
+      fetchMarshalOptions(token, "building_type"),
+      fetchMarshalOptions(token, "experience"),
+    ])
+      .then(([people, place, building, experience]) => {
         setMarshalPeopleOptions(people);
         setMarshalPlaceOptions(place);
-        setMarshalBuildingTypeOptions(buildingType);
+        setMarshalBuildingOptions(building);
         setMarshalExperienceOptions(experience);
-      } catch (e) {
-        console.error("Error loading fire marshal options:", e);
-      } finally {
-        setLoadingMarshalOptions(false);
-      }
-    };
-    load();
-  }, [isFireMarshalTrainingService]);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingMarshalOptions(false));
+  }, [isFireMarshalTrainingService, apiToken]);
 
   useEffect(() => {
     if (!isFireSafetyConsultationService) return;
-    const load = async () => {
-      setLoadingConsultationOptions(true);
-      try {
-        const apiToken = getApiToken() ?? "";
-        const [mode, hour] = await Promise.all([
-          fetchFireConsultationOptions(apiToken, "mode"),
-          fetchFireConsultationOptions(apiToken, "hour"),
-        ]);
-        setConsultationModeOptions(mode);
-        setConsultationHourOptions(hour);
-      } catch (e) {
-        console.error("Error loading fire consultation options:", e);
-      } finally {
-        setLoadingConsultationOptions(false);
-      }
-    };
-    load();
-  }, [isFireSafetyConsultationService]);
+    setLoadingConsultationOptions(true);
+    const token = apiToken ?? "";
+    Promise.all([
+      fetchFireConsultationOptions(token, "mode"),
+      fetchFireConsultationOptions(token, "hour"),
+    ])
+      .then(([modes, hours]) => {
+        setConsultationModeOptions(modes);
+        setConsultationHourOptions(hours);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingConsultationOptions(false));
+  }, [isFireSafetyConsultationService, apiToken]);
 
-  const updateFormData = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const EXTINGUISHER_TYPES = ["Water", "Foam", "CO₂", "Powder", "Wet Chemical"];
-  const toggleExtinguisherType = (type: string) => {
-    setFormData((prev) => {
-      const current = (prev.extinguisherTypesList || "").split(",").map((s) => s.trim()).filter(Boolean);
-      const has = current.includes(type);
-      const next = has ? current.filter((t) => t !== type) : [...current, type];
-      return { ...prev, extinguisherTypesList: next.join(", ") };
-    });
-  };
-
-  const isFireAlarmCustomQuote = isFireAlarmService && (showCustomDetectorInput || showCustomManualCallPointsInput || showCustomFireAlarmFloorsInput || showCustomFireAlarmPanelsInput);
-
-  const isExtinguisherCustomQuote = isFireExtinguisherService && (showCustomExtinguisherInput || showCustomExtinguisherFloorsInput);
-
-  const isEmergencyLightingCustomQuote = isEmergencyLightingService && (showCustomEmergencyLightsInput || showCustomEmergencyLightsFloorsInput);
-
-  const isFireMarshalCustomQuote = isFireMarshalTrainingService && showCustomTrainingPeopleInput;
-
-  const isCustomQuoteFlow =
-    isFireAlarmCustomQuote ||
-    isExtinguisherCustomQuote ||
-    isEmergencyLightingCustomQuote ||
-    (isFireSafetyConsultationService && showCustomConsultationHoursInput) ||
-    isFireMarshalCustomQuote ||
-    formData.propertyTypeId === "__custom__" ||
-    isMoreThan500People(formData.approximatePeopleId) ||
-    showCustomFloorsInput;
-
-  /** Full payload for POST /custom-quote-requests/store — only used from handleComplete after all steps. */
-  const buildCustomQuoteStorePayload = (
-    ctx: {
-      propertyTypeDisplay: string;
-      peopleCountDisplayForComplete: string;
-      floorsNum: number;
-      durationIdNum: number | undefined;
-    }
-  ): CustomQuoteRequestData => {
-    const { propertyTypeDisplay, peopleCountDisplayForComplete, floorsNum, durationIdNum } = ctx;
-    const preferred_date = formData.assessmentDate?.trim() || undefined;
-    const access_note = formData.accessNotes?.trim() || undefined;
-    const durationEligible =
-      isFireRiskAssessmentService ||
-      (!isFireAlarmService &&
-        !isFireExtinguisherService &&
-        !isEmergencyLightingService &&
-        !isFireSafetyConsultationService &&
-        !isFireMarshalTrainingService);
-    const duration_id =
-      durationIdNum != null && !Number.isNaN(durationIdNum) && durationEligible ? durationIdNum : undefined;
-    const fra_assessment_type =
-      isFireRiskAssessmentService && formData.fraAssessmentType?.trim()
-        ? formData.fraAssessmentType.trim()
-        : undefined;
-
-    const common: Pick<
-      CustomQuoteRequestData,
-      "preferred_date" | "access_note" | "duration_id" | "fra_assessment_type"
-    > = {
-      ...(preferred_date && { preferred_date }),
-      ...(access_note && { access_note }),
-      ...(duration_id != null && { duration_id }),
-      ...(fra_assessment_type && { fra_assessment_type }),
-    };
-
-    if (isFireMarshalTrainingService) {
-      const marshalPeopleNum =
-        (showCustomTrainingPeopleInput
-          ? parseInt(formData.customTrainingPeopleCount, 10)
-          : parseInt(formData.trainingPeopleCount, 10)) || 0;
-      return { people: marshalPeopleNum, ...common };
-    }
-
+  const isCustomQuoteFlow = useMemo(() => {
     if (isFireAlarmService) {
-      const isCustomPt = formData.propertyTypeId === "__custom__";
-      const building =
-        isCustomPt ? formData.customPropertyType.trim() : (formData.propertyTypeId || propertyTypeDisplay || "Not specified");
-      const smokeDetectors =
-        (showCustomDetectorInput ? parseInt(formData.customDetectorCount, 10) : parseInt(formData.detectorCount, 10)) || 0;
-      const callPoint =
-        (showCustomManualCallPointsInput ? parseInt(formData.customManualCallPoints, 10) : parseInt(formData.manualCallPoints, 10)) || 0;
-      const panels =
-        (showCustomFireAlarmPanelsInput ? parseInt(formData.customFireAlarmPanels, 10) : parseInt(formData.fireAlarmPanels, 10)) || 0;
-      const floors = quoteFloorsNumericFromSelection({
-        showCustomInput: showCustomFireAlarmFloorsInput,
-        customNumericRaw: formData.customFireAlarmFloors,
-        presetIdOrRaw: formData.fireAlarmFloors,
-        labelFromOption: String(fireAlarmFloorsDisplay ?? ""),
-      });
-      return {
-        building_type: alarmSystemTypeDisplay?.trim() || building || "Not specified",
-        people_count: peopleCountDisplay || formData.approximatePeopleId || "Not specified",
-        floors,
-        smoke_detectors: smokeDetectors,
-        call_point: callPoint,
-        panels,
-        ...common,
-      };
-    }
-
-    if (isFireExtinguisherService) {
-      const extinguisherCount =
-        (showCustomExtinguisherInput ? parseInt(formData.customExtinguisherCount, 10) : parseInt(formData.extinguisherCount, 10)) || 0;
-      const floors = quoteFloorsNumericFromSelection({
-        showCustomInput: showCustomExtinguisherFloorsInput,
-        customNumericRaw: formData.customExtinguisherFloors,
-        presetIdOrRaw: formData.extinguisherFloors,
-        labelFromOption: String(extinguisherFloorsDisplay ?? ""),
-      });
-      return {
-        building_type: extinguisherTypeDisplay?.trim() || "Fire extinguisher service",
-        people_count: extinguisherCountDisplay?.trim() || "N/A",
-        floors,
-        extinguisher: extinguisherCount,
-        ...common,
-      };
-    }
-
-    if (isEmergencyLightingService) {
-      const emergencyLightCount =
-        (showCustomEmergencyLightsInput
-          ? parseInt(formData.customEmergencyLightsCount, 10)
-          : parseInt(formData.emergencyLightsCount, 10)) || 0;
-      const floors = quoteFloorsNumericFromSelection({
-        showCustomInput: showCustomEmergencyLightsFloorsInput,
-        customNumericRaw: formData.customEmergencyLightsFloors,
-        presetIdOrRaw: formData.emergencyLightsFloors,
-        labelFromOption: String(emergencyLightsFloorsDisplay ?? ""),
-      });
-      const lightingTypeLabel =
-        formData.emergencyLightingType && formData.emergencyLightingType !== "__skip__"
-          ? (emergencyLightTypeOptions.find((o) => String(o.id) === formData.emergencyLightingType)?.value ?? "").trim()
-          : "";
-      const testFreqLabel =
-        formData.emergencyLightingTestFrequency && formData.emergencyLightingTestFrequency !== "__skip__"
-          ? (emergencyLightTestOptions.find((o) => String(o.id) === formData.emergencyLightingTestFrequency)?.value ?? "").trim()
-          : "";
-      return {
-        building_type: lightingTypeLabel || "Emergency lighting",
-        people_count: testFreqLabel || "N/A",
-        floors,
-        emergency_light: emergencyLightCount,
-        ...common,
-      };
-    }
-
-    if (isFireSafetyConsultationService) {
-      const modeLabel =
-        consultationModeOptions.find((o) => String(o.id) === formData.consultationType)?.value ?? formData.consultationType;
-      const hoursLabel = consultationHoursDisplay;
-      return {
-        building_type: modeLabel || "Consultation",
-        people_count: hoursLabel || "Not specified",
-        floors: 1,
-        consultation_mode: modeLabel,
-        consultation_hours: hoursLabel,
-        ...common,
-      };
-    }
-
-    const peopleForRequest =
-      showCustomPeopleInput && formData.customPeopleCount.trim()
-        ? formData.customPeopleCount.trim()
-        : peopleCountDisplayForComplete;
-    return {
-      building_type: propertyTypeDisplay || "Not specified",
-      people_count: peopleForRequest || "Not specified",
-      floors: Number.isFinite(floorsNum) && !isNaN(floorsNum) ? floorsNum : 0,
-      ...common,
-    };
-  };
-
-  const handleNext = async () => {
-    if (currentStep < totalSteps) {
-      setCurrentStep(currentStep + 1);
-    } else {
-      handleComplete();
-    }
-  };
-
-  const handleBack = () => {
-    if (currentStep > 1) {
-      wentBackRef.current = true;
-      setCurrentStep(currentStep - 1);
-    } else {
-      onBack();
-    }
-  };
-
-  const isCustomPropertyType = formData.propertyTypeId === "__custom__";
-
-  /** True when the current step waits on a free-text custom quote field (typing "8" must not advance before "82"). */
-  const currentStepUsesCustomTextInput = (): boolean => {
-    if (isFireAlarmService) {
-      if (currentStep === 1) return formData.detectorCount === CUSTOM_FA_DETECTORS;
-      if (currentStep === 2) return formData.manualCallPoints === CUSTOM_FA_CALL_POINTS;
-      if (currentStep === 3) return formData.fireAlarmFloors === CUSTOM_FA_FLOORS;
-      if (currentStep === 4) return formData.fireAlarmPanels === CUSTOM_FA_PANELS;
-      return false;
-    }
-    if (isFireExtinguisherService) {
-      if (currentStep === 1) return formData.extinguisherCount === CUSTOM_EXT_COUNT;
-      if (currentStep === 2) return formData.extinguisherFloors === CUSTOM_EXT_FLOORS;
-      return false;
-    }
-    if (isEmergencyLightingService) {
-      if (currentStep === 1) return formData.emergencyLightsCount === CUSTOM_EL_LIGHTS;
-      if (currentStep === 2) return formData.emergencyLightsFloors === CUSTOM_EL_FLOORS;
-      return false;
-    }
-    if (isFireSafetyConsultationService) {
-      return currentStep === 2 && formData.consultationHours === "4+";
-    }
-    if (isFireMarshalTrainingService) {
       return (
-        currentStep === 1 &&
-        (formData.trainingPeopleCount === CUSTOM_MARSHAL_PEOPLE || formData.trainingPeopleCount === "40+")
+        formData.fireAlarmDetectors === CUSTOM_FA_DETECTORS ||
+        formData.fireAlarmCallPoints === CUSTOM_FA_CALL_POINTS ||
+        formData.fireAlarmFloors === CUSTOM_FA_FLOORS ||
+        formData.fireAlarmPanels === CUSTOM_FA_PANELS
       );
     }
-    if (isFireRiskAssessmentService) {
-      if (currentStep === 1) return formData.propertyTypeId === "__custom__";
-      if (currentStep === 2) return showCustomPeopleInput;
-      if (currentStep === 3) return isCustomFloorsOption;
-      return false;
-    }
-    if (currentStep === 1) return formData.propertyTypeId === "__custom__";
-    if (currentStep === 2) return showCustomPeopleInput;
-    if (currentStep === 3) return isCustomFloorsOption;
-    return false;
-  };
-
-  /** Custom-quote free-text steps require an explicit Next click (no auto-advance). */
-  const shouldBlockAutoAdvanceOnCurrentStep = (): boolean => currentStepUsesCustomTextInput();
-
-  const isStepValid = () => {
-    if (isFireAlarmService) {
-      switch (currentStep) {
-        case 1: return formData.detectorCount === CUSTOM_FA_DETECTORS ? formData.customDetectorCount.trim() !== "" : formData.detectorCount !== "";
-        case 2: return formData.manualCallPoints === CUSTOM_FA_CALL_POINTS ? formData.customManualCallPoints.trim() !== "" : formData.manualCallPoints !== "";
-        case 3: return formData.fireAlarmFloors === CUSTOM_FA_FLOORS ? formData.customFireAlarmFloors.trim() !== "" : formData.fireAlarmFloors !== "";
-        case 4: return formData.fireAlarmPanels === CUSTOM_FA_PANELS ? formData.customFireAlarmPanels.trim() !== "" : formData.fireAlarmPanels !== "";
-        case 5: return formData.alarmSystemType !== "";
-        /** Must pick an option or explicit Skip; `return true` here caused auto-advance to skip this step entirely. */
-        case 6: return formData.lastServiced !== "";
-        case 7: return formData.assessmentDate !== "";
-        /** Final step: notes optional; no auto-advance past totalSteps. */
-        case 8: return true;
-        default: return false;
-      }
-    }
     if (isFireExtinguisherService) {
-      switch (currentStep) {
-        case 1: return formData.extinguisherCount === CUSTOM_EXT_COUNT ? formData.customExtinguisherCount.trim() !== "" : formData.extinguisherCount !== "";
-        case 2: return formData.extinguisherFloors === CUSTOM_EXT_FLOORS ? formData.customExtinguisherFloors.trim() !== "" : formData.extinguisherFloors !== "";
-        /** Optional answers must still be chosen explicitly (`__skip__` counts), otherwise auto-advance skips these steps entirely. */
-        case 3: return formData.extinguisherTypeId !== "";
-        case 4: return formData.extinguisherLastServiced !== "";
-        case 5: return formData.assessmentDate !== "";
-        case 6: return true;
-        default: return false;
-      }
+      return formData.extinguisherCount === CUSTOM_EXTINGUISHERS;
     }
     if (isEmergencyLightingService) {
-      switch (currentStep) {
-        case 1: return formData.emergencyLightsCount === CUSTOM_EL_LIGHTS ? formData.customEmergencyLightsCount.trim() !== "" : formData.emergencyLightsCount !== "";
-        case 2: return formData.emergencyLightsFloors === CUSTOM_EL_FLOORS ? formData.customEmergencyLightsFloors.trim() !== "" : formData.emergencyLightsFloors !== "";
-        /** Same as extinguisher: optional UI until user picks an option or `__skip__`; avoids auto-advance skipping steps 3–4. */
-        case 3: return formData.emergencyLightingType !== "";
-        case 4: return formData.emergencyLightingTestFrequency !== "";
-        case 5: return formData.assessmentDate !== "";
-        case 6: return true;
-        default: return false;
-      }
-    }
-    if (isFireSafetyConsultationService) {
-      switch (currentStep) {
-        case 1: return formData.consultationType !== "";
-        case 2: return formData.consultationHours === "4+" ? formData.customConsultationHours.trim() !== "" : formData.consultationHours !== "";
-        case 3: return formData.assessmentDate !== ""; // Calendar - same as Fire Alarm
-        case 4: return true;
-        default: return false;
-      }
+      return formData.emergencyLightsCount === CUSTOM_EMERGENCY_LIGHTS;
     }
     if (isFireMarshalTrainingService) {
-      switch (currentStep) {
-        case 1: return (formData.trainingPeopleCount === CUSTOM_MARSHAL_PEOPLE || formData.trainingPeopleCount === "40+") ? formData.customTrainingPeopleCount.trim() !== "" : formData.trainingPeopleCount !== "";
-        case 2: return formData.trainingLocation !== "";
-        case 3: return formData.buildingTypeForTraining !== "";
-        /** Require explicit choice (including Skip); avoid auto-advance skipping this optional step. */
-        case 4: return formData.staffTrainingBefore !== "";
-        case 5: return formData.assessmentDate !== "";
-        case 6: return true;
-        default: return false;
-      }
+      return formData.trainingPeopleCount === CUSTOM_TRAINING_PEOPLE;
     }
     if (isFireRiskAssessmentService) {
+      return (
+        formData.numberOfFloors === CUSTOM_FLOORS ||
+        floorOptions.some(
+          (opt) => isFloorCustomQuoteOption(opt) && String(opt.id ?? opt.floor) === formData.numberOfFloors
+        ) ||
+        showCustomPeopleInput
+      );
+    }
+    return false;
+  }, [formData, flags, floorOptions, isFireAlarmService, isFireExtinguisherService, isEmergencyLightingService, isFireMarshalTrainingService, isFireRiskAssessmentService, showCustomPeopleInput]);
+
+  const isStepValid = useCallback((): boolean => {
+    if (isFireAlarmService) {
       switch (currentStep) {
-        case 1: return formData.propertyTypeId === "__custom__" ? formData.customPropertyType.trim() !== "" : formData.propertyTypeId !== "";
-        case 2: return showCustomPeopleInput ? formData.customPeopleCount.trim() !== "" : formData.approximatePeopleId !== "";
-        case 3: return isCustomFloorsOption ? formData.customFloorsCount.trim() !== "" : formData.numberOfFloors !== "";
-        case 4: return formData.durationId !== "";
-        case 5: return formData.assessmentDate !== "";
-        case 6: return true;
-        default: return false;
+        case 1:
+          return showCustomFireAlarmDetectorsInput
+            ? Boolean(formData.customFireAlarmDetectors.trim())
+            : Boolean(formData.fireAlarmDetectors);
+        case 2:
+          return showCustomFireAlarmCallPointsInput
+            ? Boolean(formData.customFireAlarmCallPoints.trim())
+            : Boolean(formData.fireAlarmCallPoints);
+        case 3:
+          return showCustomFireAlarmFloorsInput
+            ? Boolean(formData.customFireAlarmFloors.trim())
+            : Boolean(formData.fireAlarmFloors);
+        case 4:
+          return showCustomFireAlarmPanelsInput
+            ? Boolean(formData.customFireAlarmPanels.trim())
+            : Boolean(formData.fireAlarmPanels);
+        case 5:
+          return Boolean(formData.alarmSystemType);
+        case 6:
+          return Boolean(formData.lastServiced);
+        case 7:
+          return Boolean(formData.assessmentDate);
+        case 8:
+          return true;
+        default:
+          return false;
       }
     }
+
+    if (isFireExtinguisherService) {
+      switch (currentStep) {
+        case 1:
+          return showCustomExtinguisherCountInput
+            ? Boolean(formData.customExtinguisherCount.trim())
+            : Boolean(formData.extinguisherCount);
+        case 2:
+          return Boolean(formData.extinguisherFloors);
+        case 3:
+          return Boolean(formData.extinguisherTypeId);
+        case 4:
+          return Boolean(formData.extinguisherLastServiced);
+        case 5:
+          return Boolean(formData.assessmentDate);
+        case 6:
+          return true;
+        default:
+          return false;
+      }
+    }
+
+    if (isEmergencyLightingService) {
+      switch (currentStep) {
+        case 1:
+          return showCustomEmergencyLightsInput
+            ? Boolean(formData.customEmergencyLightsCount.trim())
+            : Boolean(formData.emergencyLightsCount);
+        case 2:
+          return Boolean(formData.emergencyFloors);
+        case 3:
+          return Boolean(formData.emergencyLightType);
+        case 4:
+          return Boolean(formData.emergencyLightTest);
+        case 5:
+          return Boolean(formData.assessmentDate);
+        case 6:
+          return true;
+        default:
+          return false;
+      }
+    }
+
+    if (isFireMarshalTrainingService) {
+      switch (currentStep) {
+        case 1:
+          return showCustomTrainingPeopleInput
+            ? Boolean(formData.customTrainingPeopleCount.trim())
+            : Boolean(formData.trainingPeopleCount);
+        case 2:
+          return Boolean(formData.trainingLocation);
+        case 3:
+          return Boolean(formData.buildingType);
+        case 4:
+          return Boolean(formData.staffTrainingBefore);
+        case 5:
+          return Boolean(formData.assessmentDate);
+        case 6:
+          return true;
+        default:
+          return false;
+      }
+    }
+
+    if (isFireSafetyConsultationService) {
+      switch (currentStep) {
+        case 1:
+          return Boolean(formData.consultationType);
+        case 2:
+          return Boolean(formData.consultationHours);
+        case 3:
+          return Boolean(formData.assessmentDate);
+        case 4:
+          return true;
+        default:
+          return false;
+      }
+    }
+
     switch (currentStep) {
       case 1:
-        if (formData.propertyTypeId === "__custom__") return formData.customPropertyType.trim() !== "";
-        return formData.propertyTypeId !== "";
+        return showCustomPropertyTypeInput
+          ? Boolean(formData.customPropertyType.trim())
+          : Boolean(formData.propertyType);
       case 2:
-        return showCustomPeopleInput ? formData.customPeopleCount.trim() !== "" : formData.approximatePeopleId !== "";
+        return showCustomPeopleInput
+          ? Boolean(formData.customApproximatePeople.trim())
+          : Boolean(formData.approximatePeople);
       case 3:
-        if (isCustomFloorsOption) return formData.customFloorsCount.trim() !== "";
-        return formData.numberOfFloors !== "";
+        return showCustomFloorsInput ? Boolean(formData.customFloors.trim()) : Boolean(formData.numberOfFloors);
       case 4:
-        return formData.durationId !== "";
+        return Boolean(formData.duration);
       case 5:
-        return formData.assessmentDate !== "";
+        return Boolean(formData.assessmentDate);
       case 6:
         return true;
       default:
         return false;
     }
+  }, [currentStep, formData, flags, showCustomEmergencyLightsInput, showCustomExtinguisherCountInput, showCustomFireAlarmCallPointsInput, showCustomFireAlarmDetectorsInput, showCustomFireAlarmFloorsInput, showCustomFireAlarmPanelsInput, showCustomFloorsInput, showCustomPeopleInput, showCustomPropertyTypeInput, showCustomTrainingPeopleInput]);
+
+  const buildCustomQuoteRequestData = (): CustomQuoteRequestData => {
+    const base: CustomQuoteRequestData = {
+      preferred_date: formData.assessmentDate,
+      access_note: formData.accessNotes.trim() || undefined,
+    };
+
+    if (isFireAlarmService) {
+      return {
+        ...base,
+        smoke_detectors: parsePositiveInt(
+          showCustomFireAlarmDetectorsInput
+            ? formData.customFireAlarmDetectors
+            : formData.fireAlarmDetectors
+        ),
+        call_point: parsePositiveInt(
+          showCustomFireAlarmCallPointsInput
+            ? formData.customFireAlarmCallPoints
+            : formData.fireAlarmCallPoints
+        ),
+        floors: parsePositiveInt(
+          showCustomFireAlarmFloorsInput ? formData.customFireAlarmFloors : formData.fireAlarmFloors
+        ),
+        panels: parsePositiveInt(
+          showCustomFireAlarmPanelsInput ? formData.customFireAlarmPanels : formData.fireAlarmPanels
+        ),
+      };
+    }
+
+    if (isFireExtinguisherService) {
+      return {
+        ...base,
+        extinguisher: parsePositiveInt(
+          showCustomExtinguisherCountInput
+            ? formData.customExtinguisherCount
+            : formData.extinguisherCount
+        ),
+      };
+    }
+
+    if (isEmergencyLightingService) {
+      return {
+        ...base,
+        emergency_light: parsePositiveInt(
+          showCustomEmergencyLightsInput
+            ? formData.customEmergencyLightsCount
+            : formData.emergencyLightsCount
+        ),
+      };
+    }
+
+    if (isFireMarshalTrainingService) {
+      return {
+        ...base,
+        people: parsePositiveInt(
+          showCustomTrainingPeopleInput
+            ? formData.customTrainingPeopleCount
+            : formData.trainingPeopleCount
+        ),
+        building_type: optionLabel(marshalBuildingOptions, formData.buildingType),
+      };
+    }
+
+    return {
+      ...base,
+      building_type: showCustomPropertyTypeInput
+        ? formData.customPropertyType.trim()
+        : optionLabel(propertyTypes.map((p) => ({ id: p.id, value: p.property_type_name })), formData.propertyType),
+      people_count: showCustomPeopleInput
+        ? `${formData.customApproximatePeople.trim()} people`
+        : optionLabel(
+            approximatePeopleOptions.map((p) => ({ id: p.id, value: p.number_of_people })),
+            formData.approximatePeople
+          ),
+      floors: parsePositiveInt(showCustomFloorsInput ? formData.customFloors : formData.numberOfFloors),
+      duration_id: parsePositiveInt(formData.duration),
+      fra_assessment_type: optionLabel(durationOptions.map((d) => ({ id: d.id, value: d.duration })), formData.duration),
+    };
   };
 
-  /**
-   * When the current step becomes valid, advance automatically — except custom-quote text fields,
-   * which require the user to click Next after entering a value.
-   */
-  useEffect(() => {
-    if (wentBackRef.current) return;
-    if (currentStep >= totalSteps) return;
-    if (shouldBlockAutoAdvanceOnCurrentStep()) return;
-    if (!isStepValid()) return;
+  const buildCompletionPayload = (): Record<string, unknown> => {
+    const preferred_date = formData.assessmentDate;
+    const access_note = formData.accessNotes.trim();
 
-    let cancelled = false;
-    const id = requestAnimationFrame(() => {
-      if (cancelled) return;
-      void handleNext();
-    });
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(id);
-    };
-  }, [formData]);
+    if (isFireAlarmService) {
+      const detectorLabel = showCustomFireAlarmDetectorsInput
+        ? `${formData.customFireAlarmDetectors.trim()} detectors`
+        : optionLabel(fireAlarmDetectorsOptions, formData.fireAlarmDetectors);
+      const callPointLabel = showCustomFireAlarmCallPointsInput
+        ? `${formData.customFireAlarmCallPoints.trim()} call points`
+        : optionLabel(fireAlarmCallPointsOptions, formData.fireAlarmCallPoints);
+      const floorLabel = showCustomFireAlarmFloorsInput
+        ? `${formData.customFireAlarmFloors.trim()} floors`
+        : optionLabel(fireAlarmFloorsOptions, formData.fireAlarmFloors);
+      const panelLabel = showCustomFireAlarmPanelsInput
+        ? `${formData.customFireAlarmPanels.trim()} panels`
+        : optionLabel(fireAlarmPanelsOptions, formData.fireAlarmPanels);
+      const systemLabel = optionLabel(fireAlarmSystemTypeOptions, formData.alarmSystemType);
+      const lastServiceLabel =
+        formData.lastServiced === SKIP_VALUE
+          ? ""
+          : optionLabel(fireAlarmLastServiceOptions, formData.lastServiced);
 
-  useEffect(() => {
-    if (wentBackRef.current) {
-      wentBackRef.current = false;
-      return;
-    }
-    if (currentStep >= totalSteps) return;
-    if (shouldBlockAutoAdvanceOnCurrentStep()) return;
-    if (!isStepValid()) return;
-    let cancelled = false;
-    const id = requestAnimationFrame(() => {
-      if (cancelled) return;
-      void handleNext();
-    });
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(id);
-    };
-  }, [currentStep]);
-
-  const handleComplete = async () => {
-    let propertyTypeId: number;
-    let approximatePeopleIdResolved: number;
-    let propertyTypeDisplay: string;
-    let peopleCountDisplayForComplete: string;
-
-    if (isFireAlarmService || isFireExtinguisherService || isEmergencyLightingService || isFireSafetyConsultationService || isFireMarshalTrainingService) {
-      propertyTypeId = propertyTypes[0]?.id ?? 0;
-      approximatePeopleIdResolved = approximatePeople[0]?.id ?? 0;
-      propertyTypeDisplay = "Not specified";
-      peopleCountDisplayForComplete = "Not specified";
-    } else {
-      const isCustom = formData.propertyTypeId === "__custom__";
-      propertyTypeDisplay = isCustom ? formData.customPropertyType.trim() : formData.propertyTypeId;
-      const selectedPropertyType = isCustom
-        ? null
-        : propertyTypes.find(pt => pt.property_type_name === formData.propertyTypeId);
-      const selectedApproximatePeople = approximatePeople.find(ap => ap.number_of_people === formData.approximatePeopleId);
-      let resolved = selectedApproximatePeople?.id;
-      if (resolved == null && isMoreThan500People(formData.approximatePeopleId)) {
-        resolved = approximatePeople.find(ap => isMoreThan500People(ap.number_of_people))?.id
-          ?? approximatePeople[approximatePeople.length - 1]?.id ?? 0;
-      }
-      if (resolved == null) return;
-      approximatePeopleIdResolved = resolved;
-      propertyTypeId = isCustom
-        ? (propertyTypes.find(pt => /other|custom/i.test(pt.property_type_name))?.id ?? propertyTypes[0]?.id ?? 0)
-        : (selectedPropertyType?.id ?? 0);
-      peopleCountDisplayForComplete = peopleCountDisplay || formData.approximatePeopleId;
-    }
-
-    const resolvedServiceId = serviceId ?? (typeof service === "string" && /^\d+$/.test(service) ? parseInt(service, 10) : undefined);
-
-    const parts: string[] = [];
-    const elLightingLabelForNote =
-      isEmergencyLightingService &&
-      formData.emergencyLightingType &&
-      formData.emergencyLightingType !== "__skip__"
-        ? (
-            emergencyLightTypeOptions.find((o) => String(o.id) === formData.emergencyLightingType)?.value ??
-            formData.emergencyLightingType
-          ).trim()
-        : "";
-    const elTestLabelForNote =
-      isEmergencyLightingService &&
-      formData.emergencyLightingTestFrequency &&
-      formData.emergencyLightingTestFrequency !== "__skip__"
-        ? (
-            emergencyLightTestOptions.find((o) => String(o.id) === formData.emergencyLightingTestFrequency)?.value ??
-            formData.emergencyLightingTestFrequency
-          ).trim()
-        : "";
-    if (isFireRiskAssessmentService && formData.fraAssessmentType) parts.push(`Assessment type: ${formData.fraAssessmentType}`);
-    if (!isFireAlarmService && !isFireExtinguisherService && !isEmergencyLightingService && !isFireSafetyConsultationService && !isFireMarshalTrainingService && formData.propertyTypeId) {
-      const isCustom = formData.propertyTypeId === "__custom__";
-      parts.push(`Property type: ${isCustom ? formData.customPropertyType.trim() : propertyTypeDisplay}`);
-    }
-    if (!isFireAlarmService && !isFireExtinguisherService && !isEmergencyLightingService && !isFireSafetyConsultationService && !isFireMarshalTrainingService && showCustomPeopleInput && formData.customPeopleCount.trim()) {
-      parts.push(`People count: ${formData.customPeopleCount.trim()}`);
-    }
-    if (isFireAlarmService && fireAlarmFloorsDisplay) parts.push(`Floors: ${fireAlarmFloorsDisplay}`);
-    else if (isFireExtinguisherService && extinguisherFloorsDisplay) parts.push(`Floors: ${extinguisherFloorsDisplay}`);
-    else if (isEmergencyLightingService && emergencyLightsFloorsDisplay) parts.push(`Floors: ${emergencyLightsFloorsDisplay}`);
-    if (isFireSafetyConsultationService && consultationTypeDisplay) parts.push(`Consultation type: ${consultationTypeDisplay}`);
-    if (isFireSafetyConsultationService && consultationHoursDisplay) parts.push(`Hours needed: ${consultationHoursDisplay}`);
-    if (isFireMarshalTrainingService && trainingPeopleCountDisplay) parts.push(`People for training: ${trainingPeopleCountDisplay}`);
-    if (isFireMarshalTrainingService && trainingLocationDisplay) parts.push(`Training location: ${trainingLocationDisplay}`);
-    if (isFireMarshalTrainingService && buildingTypeForTrainingDisplay) parts.push(`Building type: ${buildingTypeForTrainingDisplay}`);
-    if (isFireMarshalTrainingService && staffTrainingBeforeDisplay) parts.push(`Staff training before: ${staffTrainingBeforeDisplay}`);
-    if (!isFireMarshalTrainingService && showCustomFloorsInput && formData.customFloorsCount.trim()) {
-      parts.push(`Floors: ${formData.customFloorsCount.trim()}`);
-    } else if (formData.numberOfFloors) parts.push(`Floors: ${floorsDisplay}`);
-    if (isFireAlarmService && detectorDisplay) parts.push(`Detectors: ${detectorDisplay}`);
-    if (isFireAlarmService && manualCallPointsDisplay) parts.push(`Manual call points: ${manualCallPointsDisplay}`);
-    if (isFireAlarmService && fireAlarmPanelsDisplay) parts.push(`Fire alarm panels: ${fireAlarmPanelsDisplay}`);
-    if (isFireAlarmService && alarmSystemTypeDisplay) parts.push(`Alarm system: ${alarmSystemTypeDisplay}`);
-    if (isFireAlarmService && lastServicedDisplay) parts.push(`Last serviced: ${lastServicedDisplay}`);
-    if (isFireExtinguisherService && extinguisherCountDisplay) parts.push(`Fire extinguishers: ${extinguisherCountDisplay}`);
-    if (isFireExtinguisherService && extinguisherTypeDisplay) parts.push(`Extinguisher type: ${extinguisherTypeDisplay}`);
-    if (isFireExtinguisherService && extinguisherLastServicedDisplay) parts.push(`Last serviced: ${extinguisherLastServicedDisplay}`);
-    if (isEmergencyLightingService && emergencyLightsCountDisplay) parts.push(`Emergency lights: ${emergencyLightsCountDisplay}`);
-    if (elLightingLabelForNote) parts.push(`Lighting type: ${elLightingLabelForNote}`);
-    if (elTestLabelForNote) parts.push(`Test frequency: ${elTestLabelForNote}`);
-    if (formData.accessNotes?.trim()) parts.push(formData.accessNotes.trim());
-    if (formData.assessmentDate?.trim()) {
-      parts.push(`Preferred date: ${formData.assessmentDate.trim()}`);
-    }
-    const accessNote = parts.join(". ");
-
-    const isCustomQuote = isFireAlarmService
-      ? (showCustomDetectorInput || showCustomManualCallPointsInput || showCustomFireAlarmFloorsInput || showCustomFireAlarmPanelsInput)
-      : isFireExtinguisherService
-        ? showCustomExtinguisherInput || showCustomExtinguisherFloorsInput
-        : isEmergencyLightingService
-          ? showCustomEmergencyLightsInput || showCustomEmergencyLightsFloorsInput
-          : isFireSafetyConsultationService
-            ? showCustomConsultationHoursInput
-            : isFireMarshalTrainingService
-              ? showCustomTrainingPeopleInput
-              : (formData.propertyTypeId === "__custom__" || isMoreThan500People(formData.approximatePeopleId) || showCustomFloorsInput);
-    const floorsNum = isFireAlarmService
-      ? quoteFloorsNumericFromSelection({
-          showCustomInput: showCustomFireAlarmFloorsInput,
-          customNumericRaw: formData.customFireAlarmFloors,
-          presetIdOrRaw: formData.fireAlarmFloors,
-          labelFromOption: String(fireAlarmFloorsDisplay ?? ""),
-        })
-      : isFireExtinguisherService
-        ? quoteFloorsNumericFromSelection({
-            showCustomInput: showCustomExtinguisherFloorsInput,
-            customNumericRaw: formData.customExtinguisherFloors,
-            presetIdOrRaw: formData.extinguisherFloors,
-            labelFromOption: String(extinguisherFloorsDisplay ?? ""),
-          })
-        : isEmergencyLightingService
-          ? quoteFloorsNumericFromSelection({
-              showCustomInput: showCustomEmergencyLightsFloorsInput,
-              customNumericRaw: formData.customEmergencyLightsFloors,
-              presetIdOrRaw: formData.emergencyLightsFloors,
-              labelFromOption: String(emergencyLightsFloorsDisplay ?? ""),
-            })
-          : isFireSafetyConsultationService
-            ? 1
-            : isFireMarshalTrainingService
-              ? 1
-              : (showCustomFloorsInput ? parseInt(formData.customFloorsCount, 10) : parseInt(formData.numberOfFloors, 10));
-    const number_of_floors = isFireAlarmService
-      ? (fireAlarmFloorsDisplay || formData.fireAlarmFloors)
-      : isFireExtinguisherService
-        ? (extinguisherFloorsDisplay || formData.extinguisherFloors)
-        : isEmergencyLightingService
-          ? (emergencyLightsFloorsDisplay || formData.emergencyLightsFloors)
-          : isFireSafetyConsultationService
-            ? "1"
-            : isFireMarshalTrainingService
-              ? "1"
-              : (floorsDisplay || formData.numberOfFloors);
-    const selectedFloorOption = floorOptions.find((o) => o.floor === formData.numberOfFloors);
-    const number_of_floors_id = selectedFloorOption?.id;
-
-    const durationIdNum = formData.durationId ? parseInt(formData.durationId, 10) : undefined;
-    const hasDurationStep = isFireRiskAssessmentService || (!isFireAlarmService && !isFireExtinguisherService && !isEmergencyLightingService && !isFireSafetyConsultationService && !isFireMarshalTrainingService);
-
-    if (isCustomQuote && resolvedServiceId) {
-      const payload = buildCustomQuoteStorePayload({
-        propertyTypeDisplay,
-        peopleCountDisplayForComplete,
-        floorsNum,
-        durationIdNum,
-      });
-      const detailsPath = customQuoteDetailsPath(resolvedServiceId);
-      savePendingCustomQuote({
-        serviceId: resolvedServiceId,
-        requestData: payload,
-        ...(serviceName?.trim() ? { serviceName: serviceName.trim() } : {}),
-        returnPath: detailsPath,
-      });
-      navigate(detailsPath, {
-        state: serviceName?.trim() ? { serviceName: serviceName.trim() } : undefined,
-      });
-      return;
-    }
-
-    onComplete({
-      property_type_id: propertyTypeId,
-      approximate_people_id: approximatePeopleIdResolved,
-      number_of_floors,
-      property_type_label: propertyTypeDisplay,
-      approximate_people_label: peopleCountDisplayForComplete,
-      ...(number_of_floors_id != null && { number_of_floors_id }),
-      preferred_date: formData.assessmentDate,
-      access_note: accessNote,
-      ...(hasDurationStep && durationIdNum != null && !isNaN(durationIdNum) && { duration_id: durationIdNum }),
-      ...(isFireAlarmService && detectorDisplay && { detector_count: detectorDisplay }),
-      ...(isFireAlarmService && manualCallPointsDisplay && { manual_call_points_count: manualCallPointsDisplay }),
-      ...(isFireAlarmService && fireAlarmPanelsDisplay && { fire_alarm_panels_count: fireAlarmPanelsDisplay }),
-      ...(isFireAlarmService && alarmSystemTypeDisplay && { alarm_system_type: alarmSystemTypeDisplay }),
-      ...(isFireAlarmService && lastServicedDisplay && { last_serviced: lastServicedDisplay }),
-      ...(isFireExtinguisherService && extinguisherCountDisplay && { extinguisher_count: extinguisherCountDisplay }),
-      ...(isFireExtinguisherService && extinguisherTypeDisplay && { extinguisher_type: extinguisherTypeDisplay }),
-      ...(isFireExtinguisherService && extinguisherLastServicedDisplay && { last_serviced: extinguisherLastServicedDisplay }),
-      ...(isEmergencyLightingService && emergencyLightsCountDisplay && { emergency_lights_count: emergencyLightsCountDisplay }),
-      ...(isFireSafetyConsultationService && consultationTypeDisplay && { consultation_type: consultationTypeDisplay }),
-      ...(isFireSafetyConsultationService && consultationHoursDisplay && { consultation_hours: consultationHoursDisplay }),
-      ...(isFireSafetyConsultationService && {
-        mode_id: (() => { const v = formData.consultationType; const num = parseInt(String(v), 10); if (!Number.isNaN(num)) return num; const opt = consultationModeOptions.find((o) => String(o.id) === v) ?? consultationModeOptions.find((o) => (o.value || "").trim() === v); return opt?.id ?? consultationModeOptions[0]?.id ?? 1; })(),
-        hour_id: (() => { const v = formData.consultationHours === "4+" ? formData.customConsultationHours.trim() || "4" : formData.consultationHours; const num = parseInt(String(v), 10); if (!Number.isNaN(num)) return num; const opt = consultationHourOptions.find((o) => String(o.id) === v) ?? consultationHourOptions.find((o) => (o.value || "").trim() === v); return opt?.id ?? consultationHourOptions[0]?.id ?? 1; })(),
-      }),
-      ...(isFireMarshalTrainingService && trainingPeopleCountDisplay && { training_people_count: trainingPeopleCountDisplay }),
-      ...(isFireMarshalTrainingService && trainingLocationDisplay && { training_location: trainingLocationDisplay }),
-      ...(isFireMarshalTrainingService && buildingTypeForTrainingDisplay && { building_type: buildingTypeForTrainingDisplay }),
-      ...(isFireMarshalTrainingService && staffTrainingBeforeDisplay && { staff_training_before: staffTrainingBeforeDisplay }),
-      ...(isFireRiskAssessmentService && formData.fraAssessmentType && { fra_assessment_type: formData.fraAssessmentType }),
-      ...(isFireAlarmService && {
+      return {
         is_fire_alarm: true,
-        fire_alarm_smoke_detector_id: parseInt(String(formData.detectorCount), 10) || 0,
-        fire_alarm_call_point_id: parseInt(String(formData.manualCallPoints), 10) || 0,
+        fire_alarm_smoke_detector_id:
+          parseInt(String(formData.fireAlarmDetectors), 10) || 0,
+        fire_alarm_call_point_id: parseInt(String(formData.fireAlarmCallPoints), 10) || 0,
         fire_alarm_floor_id: parseInt(String(formData.fireAlarmFloors), 10) || 0,
         fire_alarm_panel_id: parseInt(String(formData.fireAlarmPanels), 10) || 0,
         fire_alarm_system_type_id: parseInt(String(formData.alarmSystemType), 10) || 0,
-        fire_alarm_last_service_id: formData.lastServiced && formData.lastServiced !== "__skip__" ? (parseInt(String(formData.lastServiced), 10) || 0) : 0,
-      }),
-      ...(isFireExtinguisherService && {
+        ...(formData.lastServiced && formData.lastServiced !== SKIP_VALUE
+          ? {
+              fire_alarm_last_service_id:
+                parseInt(String(formData.lastServiced), 10) || undefined,
+            }
+          : {}),
+        preferred_date,
+        access_note,
+        detector_count: detectorLabel,
+        manual_call_points_count: callPointLabel,
+        number_of_floors: floorLabel,
+        fire_alarm_panels_count: panelLabel,
+        alarm_system_type: systemLabel,
+        last_serviced: lastServiceLabel,
+      };
+    }
+
+    if (isFireExtinguisherService) {
+      const extinguisherLabel = showCustomExtinguisherCountInput
+        ? `${formData.customExtinguisherCount.trim()} extinguishers`
+        : optionLabel(extinguisherCountOptions, formData.extinguisherCount);
+      const floorLabel = optionLabel(extinguisherFloorOptions, formData.extinguisherFloors);
+      const typeLabel =
+        formData.extinguisherTypeId === SKIP_VALUE
+          ? ""
+          : optionLabel(extinguisherTypeOptions, formData.extinguisherTypeId);
+      const lastServiceLabel =
+        formData.extinguisherLastServiced === SKIP_VALUE
+          ? ""
+          : optionLabel(extinguisherLastServiceOptions, formData.extinguisherLastServiced);
+
+      return {
         is_fire_extinguisher: true,
         extinguisher_id: parseInt(String(formData.extinguisherCount), 10) || 0,
         floor_id: parseInt(String(formData.extinguisherFloors), 10) || 0,
-        type_id: formData.extinguisherTypeId && formData.extinguisherTypeId !== "__skip__" ? (parseInt(String(formData.extinguisherTypeId), 10) || 0) : 0,
-        last_service_id: formData.extinguisherLastServiced && formData.extinguisherLastServiced !== "__skip__" ? (parseInt(String(formData.extinguisherLastServiced), 10) || 0) : 0,
-      }),
-      ...(isEmergencyLightingService && {
-        emergency_light_id: (() => { const id = parseInt(String(formData.emergencyLightsCount), 10); return Number.isNaN(id) ? 0 : id; })(),
-        emergency_floor_id: (() => { const id = parseInt(String(formData.emergencyLightsFloors), 10); return Number.isNaN(id) ? 0 : id; })(),
-        emergency_light_type_id: formData.emergencyLightingType && formData.emergencyLightingType !== "__skip__" ? (parseInt(String(formData.emergencyLightingType), 10) || 0) : (emergencyLightTypeOptions[0]?.id ?? 0),
-        emergency_light_test_id: formData.emergencyLightingTestFrequency && formData.emergencyLightingTestFrequency !== "__skip__" ? (parseInt(String(formData.emergencyLightingTestFrequency), 10) || 0) : (emergencyLightTestOptions[0]?.id ?? 0),
-      }),
-      ...(isFireMarshalTrainingService && {
-        people_id: (() => { const v = formData.trainingPeopleCount; const num = parseInt(String(v), 10); if (!Number.isNaN(num)) return num; const opt = marshalPeopleOptions.find((o) => String(o.id) === v) ?? marshalPeopleOptions.find((o) => (o.value || "").trim() === v); return opt?.id ?? marshalPeopleOptions[0]?.id ?? 1; })(),
-        place_id: (() => { const v = formData.trainingLocation; const num = parseInt(String(v), 10); if (!Number.isNaN(num)) return num; const opt = marshalPlaceOptions.find((o) => String(o.id) === v) ?? marshalPlaceOptions.find((o) => (o.value || "").trim() === v); return opt?.id ?? marshalPlaceOptions[0]?.id ?? 1; })(),
-        building_type_id: (() => { const v = formData.buildingTypeForTraining; const num = parseInt(String(v), 10); if (!Number.isNaN(num)) return num; const opt = marshalBuildingTypeOptions.find((o) => String(o.id) === v) ?? marshalBuildingTypeOptions.find((o) => (o.value || "").trim() === v); return opt?.id ?? marshalBuildingTypeOptions[0]?.id ?? 1; })(),
-        experience_id: (() => { const v = formData.staffTrainingBefore; if (!v || v === "__skip__") return marshalExperienceOptions[0]?.id ?? 1; const num = parseInt(String(v), 10); if (!Number.isNaN(num)) return num; const opt = marshalExperienceOptions.find((o) => String(o.id) === v) ?? marshalExperienceOptions.find((o) => (o.value || "").trim() === v); return opt?.id ?? marshalExperienceOptions[0]?.id ?? 1; })(),
-      }),
-      ...(isCustomQuote && {
-        isCustomQuote: true,
-        service_id: resolvedServiceId,
+        ...(formData.extinguisherTypeId && formData.extinguisherTypeId !== SKIP_VALUE
+          ? { type_id: parseInt(String(formData.extinguisherTypeId), 10) || undefined }
+          : {}),
+        ...(formData.extinguisherLastServiced && formData.extinguisherLastServiced !== SKIP_VALUE
+          ? {
+              last_service_id:
+                parseInt(String(formData.extinguisherLastServiced), 10) || undefined,
+            }
+          : {}),
+        preferred_date,
+        access_note,
+        extinguisher_count: extinguisherLabel,
+        number_of_floors: floorLabel,
+        extinguisher_type: typeLabel,
+        last_serviced: lastServiceLabel,
+      };
+    }
+
+    if (isEmergencyLightingService) {
+      const lightsLabel = showCustomEmergencyLightsInput
+        ? `${formData.customEmergencyLightsCount.trim()} lights`
+        : optionLabel(emergencyLightOptions, formData.emergencyLightsCount);
+      const floorLabel = optionLabel(emergencyFloorOptions, formData.emergencyFloors);
+      const typeLabel =
+        formData.emergencyLightType === SKIP_VALUE
+          ? ""
+          : optionLabel(emergencyLightTypeOptions, formData.emergencyLightType);
+      const testLabel =
+        formData.emergencyLightTest === SKIP_VALUE
+          ? ""
+          : optionLabel(emergencyLightTestOptions, formData.emergencyLightTest);
+
+      const lightTypeId =
+        formData.emergencyLightType && formData.emergencyLightType !== SKIP_VALUE
+          ? parseInt(String(formData.emergencyLightType), 10) || null
+          : null;
+      const lightTestId =
+        formData.emergencyLightTest && formData.emergencyLightTest !== SKIP_VALUE
+          ? parseInt(String(formData.emergencyLightTest), 10) || null
+          : null;
+
+      const combinedAccessNote = [typeLabel && `Lighting type: ${typeLabel}`, testLabel && `Test frequency: ${testLabel}`, access_note]
+        .filter(Boolean)
+        .join(". ");
+
+      return {
+        emergency_light_id: parseInt(String(formData.emergencyLightsCount), 10) || 1,
+        emergency_floor_id: parseInt(String(formData.emergencyFloors), 10) || 1,
+        emergency_light_type_id: lightTypeId,
+        emergency_light_test_id: lightTestId,
+        preferred_date,
+        access_note: combinedAccessNote,
+        emergency_lights_count: lightsLabel,
+        number_of_floors: floorLabel,
         request_data: {
-          building_type: propertyTypeDisplay || "Not specified",
-          people_count: peopleCountDisplayForComplete,
-          floors: isNaN(floorsNum) ? 0 : floorsNum,
+          emergency_light_type_id: lightTypeId,
+          emergency_light_test_id: lightTestId,
         },
-      }),
-    });
+      };
+    }
+
+    if (isFireMarshalTrainingService) {
+      const peopleLabel = showCustomTrainingPeopleInput
+        ? `${formData.customTrainingPeopleCount.trim()} people`
+        : optionLabel(marshalPeopleOptions, formData.trainingPeopleCount);
+      const experienceId =
+        formData.staffTrainingBefore && formData.staffTrainingBefore !== SKIP_VALUE
+          ? parseInt(String(formData.staffTrainingBefore), 10) || null
+          : null;
+      const staffTrainingLabel =
+        formData.staffTrainingBefore === SKIP_VALUE
+          ? ""
+          : optionLabel(marshalExperienceOptions, formData.staffTrainingBefore);
+
+      return {
+        people_id: parseInt(String(formData.trainingPeopleCount), 10) || 1,
+        place_id: parseInt(String(formData.trainingLocation), 10) || 1,
+        building_type_id: parseInt(String(formData.buildingType), 10) || 1,
+        experience_id: experienceId,
+        preferred_date,
+        access_note,
+        training_people_count: peopleLabel,
+        building_type: optionLabel(marshalBuildingOptions, formData.buildingType),
+        training_location: optionLabel(marshalPlaceOptions, formData.trainingLocation),
+        staff_training_before: staffTrainingLabel,
+        request_data: {
+          people_id: parseInt(String(formData.trainingPeopleCount), 10) || 1,
+          place_id: parseInt(String(formData.trainingLocation), 10) || 1,
+          building_type_id: parseInt(String(formData.buildingType), 10) || 1,
+          experience_id: experienceId,
+        },
+      };
+    }
+
+    if (isFireSafetyConsultationService) {
+      return {
+        mode_id: parseInt(String(formData.consultationType), 10) || 1,
+        hour_id: parseInt(String(formData.consultationHours), 10) || 1,
+        preferred_date,
+        access_note,
+        consultation_type: optionLabel(consultationModeOptions, formData.consultationType),
+        consultation_hours: optionLabel(consultationHourOptions, formData.consultationHours),
+        request_data: {
+          mode_id: parseInt(String(formData.consultationType), 10) || 1,
+          hour_id: parseInt(String(formData.consultationHours), 10) || 1,
+        },
+      };
+    }
+
+    const propertyTypeLabel = showCustomPropertyTypeInput
+      ? formData.customPropertyType.trim()
+      : optionLabel(
+          propertyTypes.map((p) => ({ id: p.id, value: p.property_type_name })),
+          formData.propertyType
+        );
+    const peopleLabel = showCustomPeopleInput
+      ? `${formData.customApproximatePeople.trim()} people`
+      : optionLabel(
+          approximatePeopleOptions.map((p) => ({ id: p.id, value: p.number_of_people })),
+          formData.approximatePeople
+        );
+    const floorLabel = showCustomFloorsInput
+      ? `${formData.customFloors.trim()} floors`
+      : optionLabel(
+          floorOptions.map((f) => ({ id: f.id ?? 0, value: f.label ?? f.floor })),
+          formData.numberOfFloors
+        );
+    const durationLabel = optionLabel(
+      durationOptions.map((d) => ({ id: d.id, value: d.duration })),
+      formData.duration
+    );
+    const floorId = parseInt(String(formData.numberOfFloors), 10);
+
+    return {
+      property_type_id: parseInt(String(formData.propertyType), 10) || 0,
+      approximate_people_id: parseInt(String(formData.approximatePeople), 10) || 0,
+      number_of_floors: showCustomFloorsInput ? formData.customFloors.trim() : String(floorId || formData.numberOfFloors),
+      ...(floorId > 0 && !showCustomFloorsInput ? { number_of_floors_id: floorId } : {}),
+      duration_id: parseInt(String(formData.duration), 10) || undefined,
+      preferred_date,
+      access_note,
+      property_type_label: propertyTypeLabel,
+      approximate_people_label: peopleLabel,
+      fra_assessment_type: durationLabel,
+    };
   };
+
+  const handleStepBack = () => {
+    if (currentStep <= 1) {
+      onBack();
+      return;
+    }
+    setCurrentStep((s) => s - 1);
+  };
+
+  const assessmentStep =
+    isFireAlarmService ? 7 : isFireExtinguisherService || isEmergencyLightingService || isFireMarshalTrainingService ? 5 : isFireRiskAssessmentService ? 5 : isFireSafetyConsultationService ? 3 : 5;
+  const accessNotesStep =
+    isFireAlarmService ? 8 : isFireExtinguisherService || isEmergencyLightingService || isFireMarshalTrainingService ? 6 : isFireRiskAssessmentService ? 6 : isFireSafetyConsultationService ? 4 : 6;
+
+  const showCustomInputOnCurrentStep = useMemo(() => {
+    if (isFireAlarmService) {
+      if (currentStep === 1) return showCustomFireAlarmDetectorsInput;
+      if (currentStep === 2) return showCustomFireAlarmCallPointsInput;
+      if (currentStep === 3) return showCustomFireAlarmFloorsInput;
+      if (currentStep === 4) return showCustomFireAlarmPanelsInput;
+      return false;
+    }
+    if (isFireExtinguisherService) {
+      return currentStep === 1 && showCustomExtinguisherCountInput;
+    }
+    if (isEmergencyLightingService) {
+      return currentStep === 1 && showCustomEmergencyLightsInput;
+    }
+    if (isFireMarshalTrainingService) {
+      return currentStep === 1 && showCustomTrainingPeopleInput;
+    }
+    if (isFireRiskAssessmentService || (!isFireAlarmService && !isFireExtinguisherService && !isEmergencyLightingService && !isFireMarshalTrainingService && !isFireSafetyConsultationService)) {
+      if (currentStep === 1) return showCustomPropertyTypeInput;
+      if (currentStep === 2) return showCustomPeopleInput;
+      if (currentStep === 3) return showCustomFloorsInput;
+    }
+    return false;
+  }, [
+    currentStep,
+    isFireAlarmService,
+    isFireExtinguisherService,
+    isEmergencyLightingService,
+    isFireMarshalTrainingService,
+    isFireRiskAssessmentService,
+    isFireSafetyConsultationService,
+    showCustomFireAlarmCallPointsInput,
+    showCustomFireAlarmDetectorsInput,
+    showCustomFireAlarmFloorsInput,
+    showCustomFireAlarmPanelsInput,
+    showCustomExtinguisherCountInput,
+    showCustomEmergencyLightsInput,
+    showCustomFloorsInput,
+    showCustomPeopleInput,
+    showCustomPropertyTypeInput,
+    showCustomTrainingPeopleInput,
+  ]);
+
+  const showContinueButton =
+    showCustomInputOnCurrentStep || currentStep === totalSteps;
+
+  const advanceStep = useCallback(() => {
+    setCurrentStep((s) => (s < totalSteps ? s + 1 : s));
+  }, [totalSteps]);
+
+  const handleOptionSelect = useCallback(
+    (field: keyof FormData, value: string) => {
+      updateFormData(field, value);
+      if (!isCustomQuoteOptionSelection(field, value, propertyTypes, approximatePeopleOptions, floorOptions)) {
+        window.setTimeout(() => advanceStep(), 0);
+      }
+    },
+    [advanceStep, approximatePeopleOptions, floorOptions, propertyTypes, updateFormData]
+  );
+
+  const handleAssessmentDateChange = useCallback(
+    (value: string) => {
+      updateFormData("assessmentDate", value);
+      if (value.trim()) {
+        window.setTimeout(() => advanceStep(), 0);
+      }
+    },
+    [advanceStep, updateFormData]
+  );
+
+  const handleContinue = () => {
+    if (!isStepValid()) return;
+
+    if (currentStep < totalSteps) {
+      setCurrentStep((s) => s + 1);
+      return;
+    }
+
+    const sid = resolvedServiceId;
+    if (isCustomQuoteFlow && sid > 0) {
+      savePendingCustomQuote({
+        serviceId: sid,
+        requestData: buildCustomQuoteRequestData(),
+        serviceName: resolvedName || undefined,
+        returnPath: `/services/${sid}/questionnaire`,
+      });
+      navigate(customQuoteDetailsPath(sid), {
+        state: resolvedName ? { serviceName: resolvedName } : undefined,
+      });
+      return;
+    }
+
+    onComplete(buildCompletionPayload());
+  };
+
+  const continueLabel =
+    currentStep === totalSteps
+      ? isCustomQuoteFlow
+        ? "Continue to custom quote"
+        : "Continue to location"
+      : "Continue";
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm text-[#0A1A2F] py-3 px-4 md:px-6">
-        <div className="max-w-7xl mx-auto flex items-center">
-          <Link
-            to="/"
-            className="flex items-center cursor-pointer hover:opacity-90 transition-opacity"
-            aria-label="Go to home"
-          >
+      <header className="sticky top-0 z-40 border-b border-gray-200 bg-white px-4 py-3 shadow-sm md:px-6">
+        <div className="mx-auto flex max-w-7xl items-center">
+          <Link to="/" className="flex items-center transition-opacity hover:opacity-90" aria-label="Go to home">
             <img src={logoImage} alt="Fire Guide" className="h-12 w-auto" />
           </Link>
         </div>
       </header>
 
-      {/* Breadcrumb */}
-      <div className="bg-gray-50 py-4 px-4 md:px-6 border-b">
-        <div className="max-w-3xl mx-auto">
+      <div className="border-b bg-gray-50 px-4 py-4 md:px-6">
+        <div className="mx-auto max-w-7xl">
           <div className="flex items-center gap-2 text-sm text-gray-600">
-            <a href="/" className="hover:text-red-600 transition-colors">Home</a>
-            <ChevronRight className="w-4 h-4" />
-            <a href="#" className="hover:text-red-600 transition-colors">Select Service</a>
-            <ChevronRight className="w-4 h-4" />
+            <Link to="/" className="transition-colors hover:text-red-600">
+              Home
+            </Link>
+            <ChevronRight className="h-4 w-4" />
+            <Link to="/services" className="transition-colors hover:text-red-600">
+              Select Service
+            </Link>
+            <ChevronRight className="h-4 w-4" />
             <span className="text-gray-900">Details</span>
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <main className="py-12 px-4 md:px-6">
-        <div className="max-w-3xl mx-auto">
-          {/* Progress Bar */}
-          <div className="mb-12">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-gray-600">Step {currentStep} of {totalSteps}</span>
-              <span className="text-sm text-gray-600">{Math.round((currentStep / totalSteps) * 100)}% Complete</span>
+      <main className="px-4 py-10 md:px-6 md:py-12">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-8 text-center">
+            <div className="mb-3 flex items-center justify-center gap-3">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
+                <Building2 className="h-6 w-6" />
+              </span>
+              <h1 className="text-2xl font-semibold text-[#0A1A2F]">
+                {resolvedName || "Service questionnaire"}
+              </h1>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-red-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${(currentStep / totalSteps) * 100}%` }}
-              />
-            </div>
+            <p className="text-gray-600">Answer a few questions so we can match you with the right professionals.</p>
           </div>
 
-          {/* Question Container */}
-          <div className="bg-white border rounded-lg p-8 mb-8 min-h-[400px]">
-            {/* Step 1: Property Type (generic flow only), Step 1 for Fire Risk Assessment */}
-            {((currentStep === 1 && !isFireAlarmService && !isFireExtinguisherService && !isEmergencyLightingService && !isFireSafetyConsultationService && !isFireMarshalTrainingService && !isFireRiskAssessmentService) || (currentStep === 1 && isFireRiskAssessmentService)) && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <Building2 className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">What type of property is it?</h2>
-                </div>
+          <QuestionnaireStepShell
+            meta={stepMeta}
+            currentStep={currentStep}
+            totalSteps={totalSteps}
+            onBack={handleStepBack}
+            onContinue={handleContinue}
+            continueDisabled={!isStepValid()}
+            continueLabel={continueLabel}
+            showContinue={showContinueButton}
+          >
+            <div className="space-y-6">
+              {isFireAlarmService && currentStep === 1 && (
                 <div className="space-y-2">
-                  <Label htmlFor="propertyType">Select property type</Label>
-                  {loadingPropertyTypes ? (
-                    <div className="w-full p-3 border rounded-md bg-gray-50 text-gray-500 text-center">
-                      Loading property types...
-                    </div>
-                  ) : (
-                    <Select
-                      value={formData.propertyTypeId}
-                      onValueChange={(value) => updateFormData("propertyTypeId", value)}
-                    >
-                      <SelectTrigger id="propertyType" className="w-full">
-                        <SelectValue placeholder="Choose property type" label={propertyTypeSelectLabel} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {propertyTypes.length === 0 ? (
-                          <SelectItem value="no-data">No property types available</SelectItem>
-                        ) : (
-                          <>
-                            {propertyTypes.map((propertyType) => (
-                              <SelectItem key={propertyType.id} value={propertyType.property_type_name}>
-                                {propertyType.property_type_name}
-                              </SelectItem>
-                            ))}
-                            <SelectItem value="__custom__">More</SelectItem>
-                          </>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  {isCustomPropertyType && (
+                  <Label>Select number of detectors</Label>
+                  <OptionCardSelect
+                    value={formData.fireAlarmDetectors}
+                    onValueChange={(value) => handleOptionSelect("fireAlarmDetectors", value)}
+                    loading={loadingFireAlarmOptions}
+                    options={[
+                      ...fireAlarmDetectorsOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                      { value: CUSTOM_FA_DETECTORS, label: QUESTIONNAIRE_OTHERS_LABEL },
+                    ]}
+                  />
+                  {showCustomFireAlarmDetectorsInput && (
                     <div className="mt-4 space-y-2">
-                      <Label htmlFor="customPropertyType">Enter your property type</Label>
+                      <Label htmlFor="customFireAlarmDetectors">{QUESTIONNAIRE_OTHERS_LABEL}</Label>
                       <Input
-                        id="customPropertyType"
-                        placeholder="e.g. Warehouse, Mixed-use, Educational"
-                        value={formData.customPropertyType}
-                        onChange={(e) => updateFormData("customPropertyType", e.target.value)}
-                        className="w-full"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Step 2: Number of People (generic flow only), Step 2 for Fire Risk Assessment */}
-            {((currentStep === 2 && !isFireAlarmService && !isFireExtinguisherService && !isEmergencyLightingService && !isFireSafetyConsultationService && !isFireMarshalTrainingService && !isFireRiskAssessmentService) || (currentStep === 2 && isFireRiskAssessmentService)) && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <Users className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">How many people use the building?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="numberOfPeople">Select approximate number</Label>
-                  {loadingApproximatePeople ? (
-                    <div className="w-full p-3 border rounded-md bg-gray-50 text-gray-500 text-center">
-                      Loading options...
-                    </div>
-                  ) : (
-                    <Select
-                      value={formData.approximatePeopleId}
-                      onValueChange={(value) => updateFormData("approximatePeopleId", value)}
-                    >
-                      <SelectTrigger id="numberOfPeople" className="w-full">
-                        <SelectValue placeholder="Choose number of people" label={approximatePeopleSelectLabel} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {approximatePeople.length === 0 ? (
-                          <SelectItem value="no-data">No options available</SelectItem>
-                        ) : null}
-                        {approximatePeople.map((option) => (
-                          <SelectItem key={option.id} value={option.number_of_people}>
-                            {formatPeopleOptionLabel(option.number_of_people)}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value={CUSTOM_PEOPLE_OPTION_VALUE}>
-                          {formatPeopleOptionLabel(CUSTOM_PEOPLE_OPTION_VALUE)}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
-                  {showCustomPeopleInput && (
-                    <div className="mt-4 space-y-2">
-                      <Label htmlFor="customPeopleCount">Enter number of people</Label>
-                      <Input
-                        id="customPeopleCount"
-                        type="text"
-                        placeholder="e.g. 600, 750, 1000"
-                        value={formData.customPeopleCount}
-                        onChange={(e) => updateFormData("customPeopleCount", e.target.value)}
-                        className="w-full"
-                      />
-                      <p className="text-sm text-gray-500">Enter the approximate number of people using the building (optional)</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Step 1: Consultation type (Fire Safety Consultation) */}
-            {currentStep === 1 && isFireSafetyConsultationService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 1: How would you like the consultation?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="consultationType">Choose consultation type</Label>
-                  <p className="text-sm text-gray-500 mb-2">This decides <strong>which</strong> hourly rate is used.</p>
-                  <Select
-                    value={formData.consultationType}
-                    onValueChange={(value) => updateFormData("consultationType", value)}
-                  >
-                    <SelectTrigger id="consultationType" className="w-full" disabled={loadingConsultationOptions}>
-                      <SelectValue
-                        placeholder={loadingConsultationOptions ? "Loading..." : "Choose consultation type"}
-                        label={selectValueLabel(
-                          formData.consultationType,
-                          loadingConsultationOptions
-                            ? undefined
-                            : marshalSelectTriggerLabel(consultationModeOptions, formData.consultationType, "")
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {consultationModeOptions.length > 0 ? consultationModeOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      )) : (
-                        <>
-                          <SelectItem value="Phone / Video call">Phone / Video call</SelectItem>
-                          <SelectItem value="On-site visit">On-site visit</SelectItem>
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-
-            {/* Step 2: Consultation hours (Fire Safety Consultation) */}
-            {currentStep === 2 && isFireSafetyConsultationService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 2: How many hours do you need?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="consultationHours">Choose hours</Label>
-                  <Select
-                    value={formData.consultationHours}
-                    onValueChange={(value) => updateFormData("consultationHours", value)}
-                  >
-                    <SelectTrigger id="consultationHours" className="w-full" disabled={loadingConsultationOptions}>
-                      <SelectValue
-                        placeholder={loadingConsultationOptions ? "Loading..." : "Choose hours"}
-                        label={selectValueLabel(
-                          formData.consultationHours,
-                          loadingConsultationOptions
-                            ? undefined
-                            : formData.consultationHours === "4+"
-                              ? "More than 4 hours → Custom Quote"
-                              : marshalSelectTriggerLabel(consultationHourOptions, formData.consultationHours, "")
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {consultationHourOptions.length > 0 ? (
-                        <>
-                          {consultationHourOptions.map((opt) => (
-                            <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                          ))}
-                          <SelectItem value="4+">More than 4 hours → Custom Quote</SelectItem>
-                        </>
-                      ) : (
-                        <>
-                          <SelectItem value="1">1 hour</SelectItem>
-                          <SelectItem value="2">2 hours</SelectItem>
-                          <SelectItem value="3">3 hours</SelectItem>
-                          <SelectItem value="4">4 hours</SelectItem>
-                          <SelectItem value="4+">More than 4 hours → Custom Quote</SelectItem>
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {showCustomConsultationHoursInput && (
-                    <div className="mt-4 space-y-2">
-                      <Label htmlFor="customConsultationHours">Enter number of hours</Label>
-                      <Input
-                        id="customConsultationHours"
-                        type="text"
-                        placeholder="e.g. 5, 6, 8"
-                        value={formData.customConsultationHours}
-                        onChange={(e) => updateFormData("customConsultationHours", e.target.value)}
-                        className="w-full"
-                      />
-                      <p className="text-sm text-gray-500">Enter the number of hours for more than 4 (Custom Quote)</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Step 1: How many people need training? (Fire Marshal / Warden Training) */}
-            {currentStep === 1 && isFireMarshalTrainingService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <Users className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 1: How many people need training?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="trainingPeopleCount">Select number of people</Label>
-                  <Select
-                    value={formData.trainingPeopleCount}
-                    onValueChange={(value) => updateFormData("trainingPeopleCount", value)}
-                  >
-                    <SelectTrigger id="trainingPeopleCount" className="w-full" disabled={loadingMarshalOptions}>
-                      <SelectValue
-                        placeholder={loadingMarshalOptions ? "Loading..." : "Choose number of people"}
-                        label={selectValueLabel(
-                          formData.trainingPeopleCount,
-                          loadingMarshalOptions
-                            ? undefined
-                            : formData.trainingPeopleCount === CUSTOM_MARSHAL_PEOPLE ||
-                                formData.trainingPeopleCount === "40+"
-                              ? "More than 40 (Custom Quote)"
-                              : marshalSelectTriggerLabel(marshalPeopleOptions, formData.trainingPeopleCount, "")
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {marshalPeopleOptions.length > 0 ? marshalPeopleOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      )) : (
-                        <>
-                          <SelectItem value="1-5">1-5 people</SelectItem>
-                          <SelectItem value="6-10">6-10 people</SelectItem>
-                          <SelectItem value="11-20">11-20 people</SelectItem>
-                          <SelectItem value="21-40">21-40 people</SelectItem>
-                        </>
-                      )}
-                      <SelectItem value={CUSTOM_MARSHAL_PEOPLE}>More than 40 (Custom Quote)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {showCustomTrainingPeopleInput && (
-                    <div className="mt-4 space-y-2">
-                      <Label htmlFor="customTrainingPeopleCount">Enter number of people</Label>
-                      <Input
-                        id="customTrainingPeopleCount"
-                        type="text"
-                        placeholder="e.g. 50, 60, 80"
-                        value={formData.customTrainingPeopleCount}
-                        onChange={(e) => updateFormData("customTrainingPeopleCount", e.target.value)}
-                        className="w-full"
-                      />
-                      <p className="text-sm text-gray-500">Enter the number of people for more than 40 (Custom Quote)</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Step 2: Where will the training take place? (Fire Marshal / Warden Training) */}
-            {currentStep === 2 && isFireMarshalTrainingService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <Building2 className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 2: Where will the training take place?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="trainingLocation">Select location</Label>
-                  <Select
-                    value={formData.trainingLocation}
-                    onValueChange={(value) => updateFormData("trainingLocation", value)}
-                  >
-                    <SelectTrigger id="trainingLocation" className="w-full" disabled={loadingMarshalOptions}>
-                      <SelectValue
-                        placeholder={loadingMarshalOptions ? "Loading..." : "Choose location"}
-                        label={selectValueLabel(
-                          formData.trainingLocation,
-                          loadingMarshalOptions
-                            ? undefined
-                            : marshalSelectTriggerLabel(marshalPlaceOptions, formData.trainingLocation, "")
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {marshalPlaceOptions.length > 0 ? marshalPlaceOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      )) : (
-                        <>
-                          <SelectItem value="At our premises (on-site)">At our premises (on-site)</SelectItem>
-                          <SelectItem value="Online (video call)">Online (video call)</SelectItem>
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-
-            {/* Step 3: What type of building? (Fire Marshal / Warden Training) */}
-            {currentStep === 3 && isFireMarshalTrainingService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <Building2 className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 3: What type of building is this for?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="buildingTypeForTraining">Select building type</Label>
-                  <Select
-                    value={formData.buildingTypeForTraining}
-                    onValueChange={(value) => updateFormData("buildingTypeForTraining", value)}
-                  >
-                    <SelectTrigger id="buildingTypeForTraining" className="w-full" disabled={loadingMarshalOptions}>
-                      <SelectValue
-                        placeholder={loadingMarshalOptions ? "Loading..." : "Choose building type"}
-                        label={selectValueLabel(
-                          formData.buildingTypeForTraining,
-                          loadingMarshalOptions
-                            ? undefined
-                            : marshalSelectTriggerLabel(marshalBuildingTypeOptions, formData.buildingTypeForTraining, "")
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {marshalBuildingTypeOptions.length > 0 ? marshalBuildingTypeOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      )) : (
-                        <>
-                          <SelectItem value="Office">Office</SelectItem>
-                          <SelectItem value="Shop / Retail">Shop / Retail</SelectItem>
-                          <SelectItem value="Warehouse">Warehouse</SelectItem>
-                          <SelectItem value="School">School</SelectItem>
-                          <SelectItem value="Care Home">Care Home</SelectItem>
-                          <SelectItem value="Healthcare">Healthcare</SelectItem>
-                          <SelectItem value="Factory / Industrial">Factory / Industrial</SelectItem>
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-
-            {/* Step 4: Have staff had fire training before? (Fire Marshal / Warden Training - optional) */}
-            {currentStep === 4 && isFireMarshalTrainingService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 4 (OPTIONAL BUT REALISTIC): Have staff had fire training before?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="staffTrainingBefore">Select option</Label>
-                  <Select
-                    value={formData.staffTrainingBefore}
-                    onValueChange={(value) => updateFormData("staffTrainingBefore", value)}
-                  >
-                    <SelectTrigger id="staffTrainingBefore" className="w-full" disabled={loadingMarshalOptions}>
-                      <SelectValue
-                        placeholder={loadingMarshalOptions ? "Loading..." : "Choose (optional)"}
-                        label={selectValueLabel(
-                          formData.staffTrainingBefore,
-                          loadingMarshalOptions
-                            ? undefined
-                            : formData.staffTrainingBefore === "__skip__"
-                              ? "Skip (optional)"
-                              : marshalSelectTriggerLabel(marshalExperienceOptions, formData.staffTrainingBefore, "")
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__skip__">Skip (optional)</SelectItem>
-                      {marshalExperienceOptions.length > 0 ? marshalExperienceOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      )) : (
-                        <>
-                          <SelectItem value="Yes (refresher training)">Yes (refresher training)</SelectItem>
-                          <SelectItem value="No (first time)">No (first time)</SelectItem>
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-
-            {/* Step 1: Emergency lights (Emergency Lighting) */}
-            {currentStep === 1 && isEmergencyLightingService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 1: How many emergency lights?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="emergencyLightsCount">Select number of lights</Label>
-                  <Select
-                    value={formData.emergencyLightsCount}
-                    onValueChange={(value) => updateFormData("emergencyLightsCount", value)}
-                  >
-                    <SelectTrigger id="emergencyLightsCount" className="w-full" disabled={loadingEmergencyLightOptions}>
-                      <SelectValue
-                        placeholder={loadingEmergencyLightOptions ? "Loading..." : "Choose number of lights"}
-                        label={selectValueLabel(
-                          formData.emergencyLightsCount,
-                          loadingEmergencyLightOptions
-                            ? undefined
-                            : formData.emergencyLightsCount === CUSTOM_EL_LIGHTS
-                              ? "More than 100 (Custom Quote)"
-                              : emergencyLightCountOptions.find((o) => String(o.id) === formData.emergencyLightsCount)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {emergencyLightCountOptions.length === 0 && !loadingEmergencyLightOptions ? (
-                        <SelectItem value="">No options available</SelectItem>
-                      ) : (
-                        emergencyLightCountOptions.map((opt) => (
-                          <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                        ))
-                      )}
-                      <SelectItem value={CUSTOM_EL_LIGHTS}>More than 100 (Custom Quote)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {showCustomEmergencyLightsInput && (
-                    <div className="mt-4 space-y-2">
-                      <Label htmlFor="customEmergencyLightsCount">Enter number of lights</Label>
-                      <Input
-                        id="customEmergencyLightsCount"
-                        type="text"
-                        placeholder="e.g. 120, 150"
-                        value={formData.customEmergencyLightsCount}
-                        onChange={(e) => updateFormData("customEmergencyLightsCount", e.target.value)}
-                        className="w-full"
-                      />
-                      <p className="text-sm text-gray-500">Enter the number of lights for more than 100 (Custom Quote)</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Step 2: Emergency Lighting floors */}
-            {currentStep === 2 && isEmergencyLightingService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <Layers className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 2: How many floors does the building have?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="emergencyLightsFloors">Select number of floors</Label>
-                  <Select
-                    value={formData.emergencyLightsFloors}
-                    onValueChange={(value) => updateFormData("emergencyLightsFloors", value)}
-                  >
-                    <SelectTrigger id="emergencyLightsFloors" className="w-full" disabled={loadingEmergencyLightOptions}>
-                      <SelectValue
-                        placeholder={loadingEmergencyLightOptions ? "Loading..." : "Choose number of floors"}
-                        label={selectValueLabel(
-                          formData.emergencyLightsFloors,
-                          loadingEmergencyLightOptions
-                            ? undefined
-                            : formData.emergencyLightsFloors === CUSTOM_EL_FLOORS
-                              ? "7+ floors (Custom Quote)"
-                              : emergencyLightFloorOptions.find((o) => String(o.id) === formData.emergencyLightsFloors)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {emergencyLightFloorOptions.length === 0 && !loadingEmergencyLightOptions ? (
-                        <SelectItem value="">No options available</SelectItem>
-                      ) : (
-                        emergencyLightFloorOptions.map((opt) => (
-                          <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                        ))
-                      )}
-                      <SelectItem value={CUSTOM_EL_FLOORS}>7+ floors (Custom Quote)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {showCustomEmergencyLightsFloorsInput && (
-                    <div className="mt-4 space-y-2">
-                      <Label htmlFor="customEmergencyLightsFloors">Enter number of floors</Label>
-                      <Input
-                        id="customEmergencyLightsFloors"
-                        type="text"
-                        placeholder="e.g. 10, 12, 15"
-                        value={formData.customEmergencyLightsFloors}
-                        onChange={(e) => updateFormData("customEmergencyLightsFloors", e.target.value)}
-                        className="w-full"
-                      />
-                      <p className="text-sm text-gray-500">Enter the number of floors for 7+ (Custom Quote)</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Step 3: Type of emergency lighting (optional – Emergency Lighting) */}
-            {currentStep === 3 && isEmergencyLightingService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 3 (OPTIONAL BUT USEFUL): What type of emergency lighting is it?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="emergencyLightingType">Select type</Label>
-                  <Select
-                    value={formData.emergencyLightingType}
-                    onValueChange={(value) => updateFormData("emergencyLightingType", value)}
-                  >
-                    <SelectTrigger id="emergencyLightingType" className="w-full" disabled={loadingEmergencyLightOptions}>
-                      <SelectValue
-                        placeholder={loadingEmergencyLightOptions ? "Loading..." : "Choose (optional)"}
-                        label={selectValueLabel(
-                          formData.emergencyLightingType,
-                          loadingEmergencyLightOptions
-                            ? undefined
-                            : formData.emergencyLightingType === "__skip__"
-                              ? "Skip (optional)"
-                              : emergencyLightTypeOptions.find((o) => String(o.id) === formData.emergencyLightingType)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__skip__">Skip (optional)</SelectItem>
-                      {emergencyLightTypeOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-sm text-gray-500">Central battery systems take longer. Self-contained → +£0, Central battery → +£100.</p>
-                </div>
-              </div>
-            )}
-
-            {/* Step 4: Test frequency (optional – Emergency Lighting) */}
-            {currentStep === 4 && isEmergencyLightingService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 4 (OPTIONAL): Is this a monthly, 6-monthly, or annual test?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="emergencyLightingTestFrequency">Select test frequency</Label>
-                  <Select
-                    value={formData.emergencyLightingTestFrequency}
-                    onValueChange={(value) => updateFormData("emergencyLightingTestFrequency", value)}
-                  >
-                    <SelectTrigger id="emergencyLightingTestFrequency" className="w-full" disabled={loadingEmergencyLightOptions}>
-                      <SelectValue
-                        placeholder={loadingEmergencyLightOptions ? "Loading..." : "Choose (optional)"}
-                        label={selectValueLabel(
-                          formData.emergencyLightingTestFrequency,
-                          loadingEmergencyLightOptions
-                            ? undefined
-                            : formData.emergencyLightingTestFrequency === "__skip__"
-                              ? "Skip (optional)"
-                              : emergencyLightTestOptions.find((o) => String(o.id) === formData.emergencyLightingTestFrequency)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__skip__">Skip (optional)</SelectItem>
-                      {emergencyLightTestOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-sm text-gray-500">Annual (3-hour) tests take much longer. Monthly → +£0, 6-monthly → +£40, Annual → +£120.</p>
-                </div>
-              </div>
-            )}
-
-            {/* Step 1: Fire extinguishers (Fire Extinguisher) */}
-            {currentStep === 1 && isFireExtinguisherService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 1: How many fire extinguishers?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="extinguisherCount">Select number of extinguishers</Label>
-                  <Select
-                    value={formData.extinguisherCount}
-                    onValueChange={(value) => updateFormData("extinguisherCount", value)}
-                  >
-                    <SelectTrigger id="extinguisherCount" className="w-full" disabled={loadingExtinguisherOptions}>
-                      <SelectValue
-                        placeholder={loadingExtinguisherOptions ? "Loading..." : "Choose number of extinguishers"}
-                        label={selectValueLabel(
-                          formData.extinguisherCount,
-                          loadingExtinguisherOptions
-                            ? undefined
-                            : formData.extinguisherCount === CUSTOM_EXT_COUNT
-                              ? "More than 40 (Custom Quote)"
-                              : extinguisherCountOptions.find((o) => String(o.id) === formData.extinguisherCount)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {extinguisherCountOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      ))}
-                      <SelectItem value={CUSTOM_EXT_COUNT}>More than 40 (Custom Quote)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {showCustomExtinguisherInput && (
-                    <div className="mt-4 space-y-2">
-                      <Label htmlFor="customExtinguisherCount">Enter number of fire extinguishers</Label>
-                      <Input
-                        id="customExtinguisherCount"
+                        id="customFireAlarmDetectors"
                         type="text"
                         inputMode="numeric"
-                        placeholder="e.g. 50, 60, 80"
-                        value={formData.customExtinguisherCount}
-                        onChange={(e) => updateFormData("customExtinguisherCount", e.target.value)}
-                        className="w-full"
+                        placeholder="e.g. 20, 30, 50"
+                        value={formData.customFireAlarmDetectors}
+                        onChange={(e) => updateFormData("customFireAlarmDetectors", e.target.value)}
                       />
-                      <p className="text-sm text-gray-500">Enter the approximate number of fire extinguishers</p>
                     </div>
                   )}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Step 2: Fire Extinguisher floors */}
-            {currentStep === 2 && isFireExtinguisherService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <Layers className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 2: How many floors does the building have?</h2>
-                </div>
+              {isFireAlarmService && currentStep === 2 && (
                 <div className="space-y-2">
-                  <Label htmlFor="extinguisherFloors">Select number of floors</Label>
-                  <Select
-                    value={formData.extinguisherFloors}
-                    onValueChange={(value) => updateFormData("extinguisherFloors", value)}
-                  >
-                    <SelectTrigger id="extinguisherFloors" className="w-full" disabled={loadingExtinguisherOptions}>
-                      <SelectValue
-                        placeholder={loadingExtinguisherOptions ? "Loading..." : "Choose number of floors"}
-                        label={selectValueLabel(
-                          formData.extinguisherFloors,
-                          loadingExtinguisherOptions
-                            ? undefined
-                            : formData.extinguisherFloors === CUSTOM_EXT_FLOORS
-                              ? "7+ floors (Custom Quote)"
-                              : extinguisherFloorOptions.find((o) => String(o.id) === formData.extinguisherFloors)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {extinguisherFloorOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      ))}
-                      <SelectItem value={CUSTOM_EXT_FLOORS}>7+ floors (Custom Quote)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {showCustomExtinguisherFloorsInput && (
+                  <Label>Select number of call points</Label>
+                  <OptionCardSelect
+                    value={formData.fireAlarmCallPoints}
+                    onValueChange={(value) => handleOptionSelect("fireAlarmCallPoints", value)}
+                    loading={loadingFireAlarmOptions}
+                    options={[
+                      ...fireAlarmCallPointsOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                      { value: CUSTOM_FA_CALL_POINTS, label: QUESTIONNAIRE_OTHERS_LABEL },
+                    ]}
+                  />
+                  {showCustomFireAlarmCallPointsInput && (
                     <div className="mt-4 space-y-2">
-                      <Label htmlFor="customExtinguisherFloors">Enter number of floors</Label>
+                      <Label htmlFor="customFireAlarmCallPoints">{QUESTIONNAIRE_OTHERS_LABEL}</Label>
                       <Input
-                        id="customExtinguisherFloors"
+                        id="customFireAlarmCallPoints"
                         type="text"
                         inputMode="numeric"
-                        placeholder="e.g. 8, 10, 12"
-                        value={formData.customExtinguisherFloors}
-                        onChange={(e) => updateFormData("customExtinguisherFloors", e.target.value)}
-                        className="w-full"
+                        placeholder="e.g. 12, 15, 20"
+                        value={formData.customFireAlarmCallPoints}
+                        onChange={(e) => updateFormData("customFireAlarmCallPoints", e.target.value)}
                       />
-                      <p className="text-sm text-gray-500">Enter the approximate number of floors (include all levels, basements, and ground floor)</p>
                     </div>
                   )}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Step 3: Extinguisher type (optional) */}
-            {currentStep === 3 && isFireExtinguisherService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 3 (OPTIONAL): What type of extinguisher?</h2>
-                </div>
+              {isFireAlarmService && currentStep === 3 && (
                 <div className="space-y-2">
-                  <Label htmlFor="extinguisherTypeId">Select type</Label>
-                  <Select
-                    value={formData.extinguisherTypeId}
-                    onValueChange={(value) => updateFormData("extinguisherTypeId", value)}
-                  >
-                    <SelectTrigger id="extinguisherTypeId" className="w-full" disabled={loadingExtinguisherOptions}>
-                      <SelectValue
-                        placeholder={loadingExtinguisherOptions ? "Loading..." : "Choose (optional)"}
-                        label={selectValueLabel(
-                          formData.extinguisherTypeId,
-                          formData.extinguisherTypeId === "__skip__"
-                            ? "Skip / Not sure"
-                            : extinguisherTypeOptions.find((o) => String(o.id) === formData.extinguisherTypeId)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__skip__">Skip / Not sure</SelectItem>
-                      {extinguisherTypeOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-
-            {/* Step 4: Fire Extinguisher last serviced (optional) */}
-            {currentStep === 4 && isFireExtinguisherService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 4 (OPTIONAL): When were they last serviced?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="extinguisherLastServiced">Select when last serviced</Label>
-                  <Select
-                    value={formData.extinguisherLastServiced}
-                    onValueChange={(value) => updateFormData("extinguisherLastServiced", value)}
-                  >
-                    <SelectTrigger id="extinguisherLastServiced" className="w-full" disabled={loadingExtinguisherOptions}>
-                      <SelectValue
-                        placeholder={loadingExtinguisherOptions ? "Loading..." : "Choose (optional)"}
-                        label={selectValueLabel(
-                          formData.extinguisherLastServiced,
-                          formData.extinguisherLastServiced === "__skip__"
-                            ? "Skip (optional)"
-                            : extinguisherLastServiceOptions.find((o) => String(o.id) === formData.extinguisherLastServiced)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__skip__">Skip (optional)</SelectItem>
-                      {extinguisherLastServiceOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-sm text-gray-500">Old or missed services take longer.</p>
-                </div>
-              </div>
-            )}
-
-            {/* Step 1: Smoke/heat detectors (Fire Alarm) */}
-            {currentStep === 1 && isFireAlarmService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 1: How many smoke/heat detectors?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="detectorCount">Select number of detectors</Label>
-                  <Select
-                    value={formData.detectorCount}
-                    onValueChange={(value) => updateFormData("detectorCount", value)}
-                  >
-                    <SelectTrigger id="detectorCount" className="w-full" disabled={loadingFireAlarmOptions}>
-                      <SelectValue
-                        placeholder={loadingFireAlarmOptions ? "Loading..." : "Choose number of detectors"}
-                        label={selectValueLabel(
-                          formData.detectorCount,
-                          loadingFireAlarmOptions
-                            ? undefined
-                            : formData.detectorCount === CUSTOM_FA_DETECTORS
-                              ? "More than 100 (Custom Quote)"
-                              : fireAlarmDetectorsOptions.find((o) => String(o.id) === formData.detectorCount)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {fireAlarmDetectorsOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      ))}
-                      <SelectItem value={CUSTOM_FA_DETECTORS}>More than 100 (Custom Quote)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {showCustomDetectorInput && (
-                    <div className="mt-4 space-y-2">
-                      <Label htmlFor="customDetectorCount">Enter number of detectors</Label>
-                      <Input
-                        id="customDetectorCount"
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="e.g. 150, 200, 250"
-                        value={formData.customDetectorCount}
-                        onChange={(e) => updateFormData("customDetectorCount", e.target.value)}
-                        className="w-full"
-                      />
-                      <p className="text-sm text-gray-500">Enter the approximate number of smoke/heat detectors</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Step 2: Manual call points (Fire Alarm) */}
-            {currentStep === 2 && isFireAlarmService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 2: How many manual call points?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="manualCallPoints">Select number of call points</Label>
-                  <Select
-                    value={formData.manualCallPoints}
-                    onValueChange={(value) => updateFormData("manualCallPoints", value)}
-                  >
-                    <SelectTrigger id="manualCallPoints" className="w-full" disabled={loadingFireAlarmOptions}>
-                      <SelectValue
-                        placeholder={loadingFireAlarmOptions ? "Loading..." : "Choose number of call points"}
-                        label={selectValueLabel(
-                          formData.manualCallPoints,
-                          loadingFireAlarmOptions
-                            ? undefined
-                            : formData.manualCallPoints === CUSTOM_FA_CALL_POINTS
-                              ? "More than 20 (Custom Quote)"
-                              : fireAlarmCallPointsOptions.find((o) => String(o.id) === formData.manualCallPoints)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {fireAlarmCallPointsOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      ))}
-                      <SelectItem value={CUSTOM_FA_CALL_POINTS}>More than 20 (Custom Quote)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {showCustomManualCallPointsInput && (
-                    <div className="mt-4 space-y-2">
-                      <Label htmlFor="customManualCallPoints">Enter number of manual call points</Label>
-                      <Input
-                        id="customManualCallPoints"
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="e.g. 25, 30, 40"
-                        value={formData.customManualCallPoints}
-                        onChange={(e) => updateFormData("customManualCallPoints", e.target.value)}
-                        className="w-full"
-                      />
-                      <p className="text-sm text-gray-500">Enter the approximate number of manual call points</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Step 3: Number of Floors (generic flow only), Step 3 for Fire Risk Assessment */}
-            {((currentStep === 3 && !isFireAlarmService && !isFireExtinguisherService && !isEmergencyLightingService && !isFireSafetyConsultationService && !isFireMarshalTrainingService && !isFireRiskAssessmentService) || (currentStep === 3 && isFireRiskAssessmentService)) && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <Layers className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">How many floors does the building have?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="numberOfFloors">Select approximate number</Label>
-                  {loadingFloorPricing ? (
-                    <div className="w-full p-3 border rounded-md bg-gray-50 text-gray-500 text-center">
-                      Loading options...
-                    </div>
-                  ) : (
-                    <Select
-                      value={formData.numberOfFloors}
-                      onValueChange={(value) => updateFormData("numberOfFloors", value)}
-                    >
-                      <SelectTrigger id="numberOfFloors" className="w-full">
-                        <SelectValue
-                          placeholder="Choose number of floors"
-                          label={numberOfFloorsSelectLabel}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {floorOptions.length === 0 ? (
-                          <SelectItem value="no-data">No options available</SelectItem>
-                        ) : null}
-                        {floorOptions.map((option) => (
-                          <SelectItem key={option.floor} value={option.floor}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value={CUSTOM_FLOORS_OPTION_VALUE}>
-                          More
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
-                  {showCustomFloorsInput && (
-                    <div className="mt-4 space-y-2">
-                      <Label htmlFor="customFloorsCount">Enter number of floors</Label>
-                      <Input
-                        id="customFloorsCount"
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="e.g. 10, 12, 15"
-                        value={formData.customFloorsCount}
-                        onChange={(e) => updateFormData("customFloorsCount", e.target.value)}
-                        className="w-full"
-                      />
-                      <p className="text-sm text-gray-500">Enter the approximate number of floors (optional)</p>
-                    </div>
-                  )}
-                  <p className="text-sm text-gray-500">Include all levels, basements, and ground floor</p>
-                </div>
-              </div>
-            )}
-
-            {/* Step 4: Preferred turnaround / duration (generic + FRA only) */}
-            {currentStep === 4 && (isFireRiskAssessmentService || (!isFireAlarmService && !isFireExtinguisherService && !isEmergencyLightingService && !isFireSafetyConsultationService && !isFireMarshalTrainingService)) && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <Clock className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">When do you need it?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="durationId">Select preferred turnaround</Label>
-                  {loadingFraDurations ? (
-                    <div className="w-full p-3 border rounded-md bg-gray-50 text-gray-500 text-center">
-                      Loading options...
-                    </div>
-                  ) : (
-                    <Select
-                      value={formData.durationId}
-                      onValueChange={(value) => updateFormData("durationId", value)}
-                    >
-                      <SelectTrigger id="durationId" className="w-full">
-                        <SelectValue
-                          placeholder="Choose turnaround time"
-                          label={durationSelectLabel}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {fraDurations.length === 0 ? (
-                          <SelectItem value="no-data">No options available</SelectItem>
-                        ) : (
-                          fraDurations.map((opt) => (
-                            <SelectItem key={opt.id} value={String(opt.id)}>
-                              {opt.duration}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  <p className="text-sm text-gray-500">e.g. Same / next day, 1–2 days, 3–6 days, 7+ days</p>
-                </div>
-              </div>
-            )}
-
-            {/* Step 3: Fire Alarm floors (Fire Alarm) */}
-            {currentStep === 3 && isFireAlarmService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <Layers className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 3: How many floors does the building have?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="fireAlarmFloors">Select number of floors</Label>
-                  <Select
+                  <Label>Select number of floors</Label>
+                  <OptionCardSelect
                     value={formData.fireAlarmFloors}
-                    onValueChange={(value) => updateFormData("fireAlarmFloors", value)}
-                  >
-                    <SelectTrigger id="fireAlarmFloors" className="w-full" disabled={loadingFireAlarmOptions}>
-                      <SelectValue
-                        placeholder={loadingFireAlarmOptions ? "Loading..." : "Choose number of floors"}
-                        label={selectValueLabel(
-                          formData.fireAlarmFloors,
-                          loadingFireAlarmOptions
-                            ? undefined
-                            : formData.fireAlarmFloors === CUSTOM_FA_FLOORS
-                              ? "7+ floors (Custom Quote)"
-                              : fireAlarmFloorsOptions.find((o) => String(o.id) === formData.fireAlarmFloors)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {fireAlarmFloorsOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      ))}
-                      <SelectItem value={CUSTOM_FA_FLOORS}>7+ floors (Custom Quote)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    onValueChange={(value) => handleOptionSelect("fireAlarmFloors", value)}
+                    loading={loadingFireAlarmOptions}
+                    options={[
+                      ...fireAlarmFloorsOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                      { value: CUSTOM_FA_FLOORS, label: QUESTIONNAIRE_OTHERS_LABEL },
+                    ]}
+                  />
                   {showCustomFireAlarmFloorsInput && (
                     <div className="mt-4 space-y-2">
-                      <Label htmlFor="customFireAlarmFloors">Enter number of floors</Label>
+                      <Label htmlFor="customFireAlarmFloors">{QUESTIONNAIRE_OTHERS_LABEL}</Label>
                       <Input
                         id="customFireAlarmFloors"
                         type="text"
@@ -2183,222 +1221,466 @@ export function SmartQuestionnaire({ service, serviceId, serviceName, onComplete
                         onChange={(e) => updateFormData("customFireAlarmFloors", e.target.value)}
                         className="w-full"
                       />
-                      <p className="text-sm text-gray-500">Enter the approximate number of floors (include all levels, basements, and ground floor)</p>
+                      <p className="text-sm text-gray-500">
+                        Enter the approximate number of floors (include all levels, basements, and ground floor)
+                      </p>
                     </div>
                   )}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Step 4: Fire alarm panels (Fire Alarm) */}
-            {currentStep === 4 && isFireAlarmService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
+              {currentStep === 4 && isFireAlarmService && (
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label>Select number of panels</Label>
+                    <OptionCardSelect
+                      value={formData.fireAlarmPanels}
+                      onValueChange={(value) => handleOptionSelect("fireAlarmPanels", value)}
+                      loading={loadingFireAlarmOptions}
+                      options={[
+                        ...fireAlarmPanelsOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                        { value: CUSTOM_FA_PANELS, label: QUESTIONNAIRE_OTHERS_LABEL },
+                      ]}
+                    />
+                    {showCustomFireAlarmPanelsInput && (
+                      <div className="mt-4 space-y-2">
+                        <Label htmlFor="customFireAlarmPanels">{QUESTIONNAIRE_OTHERS_LABEL}</Label>
+                        <Input
+                          id="customFireAlarmPanels"
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="e.g. 4, 5, 6"
+                          value={formData.customFireAlarmPanels}
+                          onChange={(e) => updateFormData("customFireAlarmPanels", e.target.value)}
+                          className="w-full"
+                        />
+                        <p className="text-sm text-gray-500">Enter the approximate number of fire alarm panels</p>
+                      </div>
+                    )}
                   </div>
-                  <h2 className="text-[#0A1A2F]">Question 4: How many fire alarm panels?</h2>
                 </div>
+              )}
+
+              {currentStep === 5 && isFireAlarmService && (
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label>Select type</Label>
+                    <OptionCardSelect
+                      value={formData.alarmSystemType}
+                      onValueChange={(value) => handleOptionSelect("alarmSystemType", value)}
+                      loading={loadingFireAlarmOptions}
+                      options={fireAlarmSystemTypeOptions.map((opt) => ({ value: String(opt.id), label: opt.value }))}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {currentStep === 6 && isFireAlarmService && (
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label>Select when last serviced</Label>
+                    <OptionCardSelect
+                      value={formData.lastServiced}
+                      onValueChange={(value) => handleOptionSelect("lastServiced", value)}
+                      loading={loadingFireAlarmOptions}
+                      options={[
+                        { value: SKIP_VALUE, label: "Skip (optional)" },
+                        ...fireAlarmLastServiceOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                      ]}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {isFireExtinguisherService && currentStep === 1 && (
                 <div className="space-y-2">
-                  <Label htmlFor="fireAlarmPanels">Select number of panels</Label>
-                  <Select
-                    value={formData.fireAlarmPanels}
-                    onValueChange={(value) => updateFormData("fireAlarmPanels", value)}
-                  >
-                    <SelectTrigger id="fireAlarmPanels" className="w-full" disabled={loadingFireAlarmOptions}>
-                      <SelectValue
-                        placeholder={loadingFireAlarmOptions ? "Loading..." : "Choose number of panels"}
-                        label={selectValueLabel(
-                          formData.fireAlarmPanels,
-                          loadingFireAlarmOptions
-                            ? undefined
-                            : formData.fireAlarmPanels === CUSTOM_FA_PANELS
-                              ? "3+ panels (Custom Quote)"
-                              : fireAlarmPanelsOptions.find((o) => String(o.id) === formData.fireAlarmPanels)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {fireAlarmPanelsOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      ))}
-                      <SelectItem value={CUSTOM_FA_PANELS}>3+ panels (Custom Quote)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {showCustomFireAlarmPanelsInput && (
+                  <Label>Select number of extinguishers</Label>
+                  <OptionCardSelect
+                    value={formData.extinguisherCount}
+                    onValueChange={(value) => handleOptionSelect("extinguisherCount", value)}
+                    loading={loadingExtinguisherOptions}
+                    options={[
+                      ...extinguisherCountOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                      { value: CUSTOM_EXTINGUISHERS, label: QUESTIONNAIRE_OTHERS_LABEL },
+                    ]}
+                  />
+                  {showCustomExtinguisherCountInput && (
                     <div className="mt-4 space-y-2">
-                      <Label htmlFor="customFireAlarmPanels">Enter number of fire alarm panels</Label>
+                      <Label htmlFor="customExtinguisherCount">{QUESTIONNAIRE_OTHERS_LABEL}</Label>
                       <Input
-                        id="customFireAlarmPanels"
+                        id="customExtinguisherCount"
                         type="text"
                         inputMode="numeric"
-                        placeholder="e.g. 4, 5, 6"
-                        value={formData.customFireAlarmPanels}
-                        onChange={(e) => updateFormData("customFireAlarmPanels", e.target.value)}
-                        className="w-full"
+                        value={formData.customExtinguisherCount}
+                        onChange={(e) => updateFormData("customExtinguisherCount", e.target.value)}
                       />
-                      <p className="text-sm text-gray-500">Enter the approximate number of fire alarm panels</p>
                     </div>
                   )}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Step 5: Alarm system type (Fire Alarm) */}
-            {currentStep === 5 && isFireAlarmService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 5: What type of alarm system is it?</h2>
-                </div>
+              {isFireExtinguisherService && currentStep === 2 && (
                 <div className="space-y-2">
-                  <Label htmlFor="alarmSystemType">Select type</Label>
-                  <Select
-                    value={formData.alarmSystemType}
-                    onValueChange={(value) => updateFormData("alarmSystemType", value)}
-                  >
-                    <SelectTrigger id="alarmSystemType" className="w-full" disabled={loadingFireAlarmOptions}>
-                      <SelectValue
-                        placeholder={loadingFireAlarmOptions ? "Loading..." : "Choose alarm system type"}
-                        label={selectValueLabel(
-                          formData.alarmSystemType,
-                          fireAlarmSystemTypeOptions.find((o) => String(o.id) === formData.alarmSystemType)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {fireAlarmSystemTypeOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-
-            {/* Step 6: Last serviced (optional – Fire Alarm) */}
-            {currentStep === 6 && isFireAlarmService && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <HelpCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Question 6 (OPTIONAL BUT RECOMMENDED): When was it last serviced?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="lastServiced">Select when last serviced</Label>
-                  <Select
-                    value={formData.lastServiced}
-                    onValueChange={(value) => updateFormData("lastServiced", value)}
-                  >
-                    <SelectTrigger id="lastServiced" className="w-full" disabled={loadingFireAlarmOptions}>
-                      <SelectValue
-                        placeholder={loadingFireAlarmOptions ? "Loading..." : "Choose (optional)"}
-                        label={selectValueLabel(
-                          formData.lastServiced,
-                          formData.lastServiced === "__skip__"
-                            ? "Skip (optional)"
-                            : fireAlarmLastServiceOptions.find((o) => String(o.id) === formData.lastServiced)?.value
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__skip__">Skip (optional)</SelectItem>
-                      {fireAlarmLastServiceOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>{opt.value}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-
-            {/* Step 7: Assessment Date (Fire Alarm), Step 5 (Fire Extinguisher / Emergency Lighting / Fire Marshal), Step 5 (Fire Risk Assessment / generic with duration), Step 3 (Consultation) */}
-            {currentStep === (isFireAlarmService ? 7 : isFireExtinguisherService || isEmergencyLightingService || isFireMarshalTrainingService ? 5 : isFireRiskAssessmentService ? 5 : isFireSafetyConsultationService ? 3 : 5) && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <Calendar className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">When do you need the assessment?</h2>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="assessmentDate">Select preferred date</Label>
-                  <Input
-                    id="assessmentDate"
-                    type="date"
-                    value={formData.assessmentDate}
-                    onChange={(e) => updateFormData("assessmentDate", e.target.value)}
-                    className="text-lg"
-                    min={new Date().toISOString().split('T')[0]}
+                  <Label>Select number of floors</Label>
+                  <OptionCardSelect
+                    value={formData.extinguisherFloors}
+                    onValueChange={(value) => handleOptionSelect("extinguisherFloors", value)}
+                    loading={loadingExtinguisherOptions}
+                    options={extinguisherFloorOptions.map((opt) => ({ value: String(opt.id), label: opt.value }))}
                   />
-                  <p className="text-sm text-gray-500">We'll show you available professionals for this date</p>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Step 8: Access Notes (Fire Alarm), Step 6 (Fire Extinguisher / Emergency Lighting / Fire Marshal), Step 6 (Fire Risk Assessment / generic), Step 4 (Consultation) */}
-            {currentStep === (isFireAlarmService ? 8 : isFireExtinguisherService || isEmergencyLightingService || isFireMarshalTrainingService ? 6 : isFireRiskAssessmentService ? 6 : isFireSafetyConsultationService ? 4 : 6) && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <FileText className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-[#0A1A2F]">Any access notes or special requirements?</h2>
-                </div>
+              {isFireExtinguisherService && currentStep === 3 && (
                 <div className="space-y-2">
-                  <Label htmlFor="accessNotes">Optional notes for the assessor</Label>
-                  <Textarea
-                    id="accessNotes"
-                    placeholder="e.g., Gate code required, parking available, building under construction..."
-                    value={formData.accessNotes}
-                    onChange={(e) => updateFormData("accessNotes", e.target.value)}
-                    className="min-h-[150px] text-base"
+                  <Label>Select extinguisher type</Label>
+                  <OptionCardSelect
+                    value={formData.extinguisherTypeId}
+                    onValueChange={(value) => handleOptionSelect("extinguisherTypeId", value)}
+                    loading={loadingExtinguisherOptions}
+                    options={[
+                      { value: SKIP_VALUE, label: "Skip (optional)" },
+                      ...extinguisherTypeOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                    ]}
                   />
-                  <p className="text-sm text-gray-500">This helps the professional prepare for the visit (optional)</p>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
 
-          {/* Navigation: Back always; custom-quote text steps use Next; final step uses View Results. */}
-          <div className="flex justify-end gap-4">
-            <Button
-              onClick={handleBack}
-              variant="outline"
-              className="px-8 py-6 text-lg"
-            >
-              <ChevronLeft className="w-5 h-5 mr-2" />
-              Back
-            </Button>
-            {currentStepUsesCustomTextInput() && currentStep < totalSteps && (
-              <Button
-                onClick={handleNext}
-                disabled={!isStepValid()}
-                className="bg-red-600 hover:bg-red-700 px-8 py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next
-                <ChevronRight className="w-5 h-5 ml-2" />
-              </Button>
-            )}
-            {currentStep === totalSteps && (
-              <Button
-                onClick={handleNext}
-                disabled={!isStepValid()}
-                className="bg-red-600 hover:bg-red-700 px-8 py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isCustomQuoteFlow ? <>Continue</> : <>View Results</>}
-              </Button>
-            )}
-          </div>
+              {isFireExtinguisherService && currentStep === 4 && (
+                <div className="space-y-2">
+                  <Label>Select when last serviced</Label>
+                  <OptionCardSelect
+                    value={formData.extinguisherLastServiced}
+                    onValueChange={(value) => handleOptionSelect("extinguisherLastServiced", value)}
+                    loading={loadingExtinguisherOptions}
+                    options={[
+                      { value: SKIP_VALUE, label: "Skip (optional)" },
+                      ...extinguisherLastServiceOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                    ]}
+                  />
+                </div>
+              )}
 
-          {bottomContent && (
-            <div className="mt-8">
-              {bottomContent}
+              {isEmergencyLightingService && currentStep === 1 && (
+                <div className="space-y-2">
+                  <Label>Select number of emergency lights</Label>
+                  <OptionCardSelect
+                    value={formData.emergencyLightsCount}
+                    onValueChange={(value) => handleOptionSelect("emergencyLightsCount", value)}
+                    loading={loadingEmergencyOptions}
+                    options={[
+                      ...emergencyLightOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                      { value: CUSTOM_EMERGENCY_LIGHTS, label: QUESTIONNAIRE_OTHERS_LABEL },
+                    ]}
+                  />
+                  {showCustomEmergencyLightsInput && (
+                    <div className="mt-4 space-y-2">
+                      <Label htmlFor="customEmergencyLightsCount">{QUESTIONNAIRE_OTHERS_LABEL}</Label>
+                      <Input
+                        id="customEmergencyLightsCount"
+                        type="text"
+                        inputMode="numeric"
+                        value={formData.customEmergencyLightsCount}
+                        onChange={(e) => updateFormData("customEmergencyLightsCount", e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {isEmergencyLightingService && currentStep === 2 && (
+                <div className="space-y-2">
+                  <Label>Select number of floors</Label>
+                  <OptionCardSelect
+                    value={formData.emergencyFloors}
+                    onValueChange={(value) => handleOptionSelect("emergencyFloors", value)}
+                    loading={loadingEmergencyOptions}
+                    options={emergencyFloorOptions.map((opt) => ({ value: String(opt.id), label: opt.value }))}
+                  />
+                </div>
+              )}
+
+              {isEmergencyLightingService && currentStep === 3 && (
+                <div className="space-y-2">
+                  <Label>Select lighting type</Label>
+                  <OptionCardSelect
+                    value={formData.emergencyLightType}
+                    onValueChange={(value) => handleOptionSelect("emergencyLightType", value)}
+                    loading={loadingEmergencyOptions}
+                    options={[
+                      { value: SKIP_VALUE, label: "Skip (optional)" },
+                      ...emergencyLightTypeOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                    ]}
+                  />
+                </div>
+              )}
+
+              {isEmergencyLightingService && currentStep === 4 && (
+                <div className="space-y-2">
+                  <Label>Select test frequency</Label>
+                  <OptionCardSelect
+                    value={formData.emergencyLightTest}
+                    onValueChange={(value) => handleOptionSelect("emergencyLightTest", value)}
+                    loading={loadingEmergencyOptions}
+                    options={[
+                      { value: SKIP_VALUE, label: "Skip (optional)" },
+                      ...emergencyLightTestOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                    ]}
+                  />
+                </div>
+              )}
+
+              {isFireMarshalTrainingService && currentStep === 1 && (
+                <div className="space-y-2">
+                  <Label>How many people need training?</Label>
+                  <OptionCardSelect
+                    value={formData.trainingPeopleCount}
+                    onValueChange={(value) => handleOptionSelect("trainingPeopleCount", value)}
+                    loading={loadingMarshalOptions}
+                    options={[
+                      ...marshalPeopleOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                      { value: CUSTOM_TRAINING_PEOPLE, label: QUESTIONNAIRE_OTHERS_LABEL },
+                    ]}
+                  />
+                  {showCustomTrainingPeopleInput && (
+                    <div className="mt-4 space-y-2">
+                      <Label htmlFor="customTrainingPeopleCount">{QUESTIONNAIRE_OTHERS_LABEL}</Label>
+                      <Input
+                        id="customTrainingPeopleCount"
+                        type="text"
+                        inputMode="numeric"
+                        value={formData.customTrainingPeopleCount}
+                        onChange={(e) => updateFormData("customTrainingPeopleCount", e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {isFireMarshalTrainingService && currentStep === 2 && (
+                <div className="space-y-2">
+                  <Label>Where will training take place?</Label>
+                  <OptionCardSelect
+                    value={formData.trainingLocation}
+                    onValueChange={(value) => handleOptionSelect("trainingLocation", value)}
+                    loading={loadingMarshalOptions}
+                    options={marshalPlaceOptions.map((opt) => ({ value: String(opt.id), label: opt.value }))}
+                  />
+                </div>
+              )}
+
+              {isFireMarshalTrainingService && currentStep === 3 && (
+                <div className="space-y-2">
+                  <Label>What type of building is it?</Label>
+                  <OptionCardSelect
+                    value={formData.buildingType}
+                    onValueChange={(value) => handleOptionSelect("buildingType", value)}
+                    loading={loadingMarshalOptions}
+                    options={marshalBuildingOptions.map((opt) => ({ value: String(opt.id), label: opt.value }))}
+                  />
+                </div>
+              )}
+
+              {isFireMarshalTrainingService && currentStep === 4 && (
+                <div className="space-y-2">
+                  <Label>Has staff had fire training before?</Label>
+                  <OptionCardSelect
+                    value={formData.staffTrainingBefore}
+                    onValueChange={(value) => handleOptionSelect("staffTrainingBefore", value)}
+                    loading={loadingMarshalOptions}
+                    options={[
+                      { value: SKIP_VALUE, label: "Skip (optional)" },
+                      ...marshalExperienceOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                    ]}
+                  />
+                </div>
+              )}
+
+              {isFireSafetyConsultationService && currentStep === 1 && (
+                <div className="space-y-2">
+                  <Label>How would you like the consultation?</Label>
+                  <OptionCardSelect
+                    value={formData.consultationType}
+                    onValueChange={(value) => handleOptionSelect("consultationType", value)}
+                    loading={loadingConsultationOptions}
+                    options={consultationModeOptions.map((opt) => ({ value: String(opt.id), label: opt.value }))}
+                  />
+                </div>
+              )}
+
+              {isFireSafetyConsultationService && currentStep === 2 && (
+                <div className="space-y-2">
+                  <Label>How many hours do you need?</Label>
+                  <OptionCardSelect
+                    value={formData.consultationHours}
+                    onValueChange={(value) => handleOptionSelect("consultationHours", value)}
+                    loading={loadingConsultationOptions}
+                    options={consultationHourOptions.map((opt) => ({ value: String(opt.id), label: opt.value }))}
+                  />
+                </div>
+              )}
+
+              {(isFireRiskAssessmentService ||
+                (!isFireAlarmService &&
+                  !isFireExtinguisherService &&
+                  !isEmergencyLightingService &&
+                  !isFireMarshalTrainingService &&
+                  !isFireSafetyConsultationService)) && (
+                <>
+                  {currentStep === 1 && (
+                    <div className="space-y-2">
+                      <Label>What type of property is it?</Label>
+                      <OptionCardSelect
+                        value={formData.propertyType}
+                        onValueChange={(value) => handleOptionSelect("propertyType", value)}
+                        loading={loadingFraOptions}
+                        columns="grid-cols-2 md:grid-cols-3 lg:grid-cols-3"
+                        options={propertyTypes.map((opt) => ({
+                          value: String(opt.id),
+                          label: isOtherPropertyTypeName(opt.property_type_name)
+                            ? QUESTIONNAIRE_OTHERS_LABEL
+                            : opt.property_type_name,
+                          helper: isOtherPropertyTypeName(opt.property_type_name)
+                            ? undefined
+                            : opt.property_type_description,
+                        }))}
+                      />
+                      {showCustomPropertyTypeInput && (
+                        <div className="mt-4 space-y-2">
+                          <Label htmlFor="customPropertyType">{QUESTIONNAIRE_OTHERS_LABEL}</Label>
+                          <Input
+                            id="customPropertyType"
+                            type="text"
+                            placeholder="e.g. Mixed-use, Place of worship, Storage unit"
+                            value={formData.customPropertyType}
+                            onChange={(e) => updateFormData("customPropertyType", e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {currentStep === 2 && (
+                    <div className="space-y-2">
+                      <Label>How many people use the building?</Label>
+                      <OptionCardSelect
+                        value={formData.approximatePeople}
+                        onValueChange={(value) => handleOptionSelect("approximatePeople", value)}
+                        loading={loadingFraOptions}
+                        options={sortedApproximatePeopleOptions.map((opt) => ({
+                          value: String(opt.id),
+                          label: formatPeopleOptionLabel(opt.number_of_people),
+                        }))}
+                      />
+                      {showCustomPeopleInput && (
+                        <div className="mt-4 space-y-2">
+                          <Label htmlFor="customApproximatePeople">{QUESTIONNAIRE_OTHERS_LABEL}</Label>
+                          <Input
+                            id="customApproximatePeople"
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="e.g. 120, 250, 500"
+                            value={formData.customApproximatePeople}
+                            onChange={(e) => updateFormData("customApproximatePeople", e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {currentStep === 3 && (
+                    <div className="space-y-2">
+                      <Label>How many floors does the building have?</Label>
+                      <OptionCardSelect
+                        value={formData.numberOfFloors}
+                        onValueChange={(value) => handleOptionSelect("numberOfFloors", value)}
+                        loading={loadingFraOptions}
+                        options={[
+                          ...floorOptions.map((opt) => ({
+                            value: String(opt.id ?? opt.floor),
+                            label: isFloorCustomQuoteOption(opt)
+                              ? QUESTIONNAIRE_OTHERS_LABEL
+                              : (opt.label ?? opt.floor),
+                          })),
+                          ...(hasApiCustomFloorOption
+                            ? []
+                            : [{ value: CUSTOM_FLOORS, label: QUESTIONNAIRE_OTHERS_LABEL }]),
+                        ]}
+                      />
+                      {showCustomFloorsInput && (
+                        <div className="mt-4 space-y-2">
+                          <Label htmlFor="customFloors">{QUESTIONNAIRE_OTHERS_LABEL}</Label>
+                          <Input
+                            id="customFloors"
+                            type="text"
+                            inputMode="numeric"
+                            value={formData.customFloors}
+                            onChange={(e) => updateFormData("customFloors", e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {currentStep === 4 && (
+                    <div className="space-y-2">
+                      <Label>When do you need it?</Label>
+                      <OptionCardSelect
+                        value={formData.duration}
+                        onValueChange={(value) => handleOptionSelect("duration", value)}
+                        loading={loadingFraOptions}
+                        options={durationOptions.map((opt) => ({
+                          value: String(opt.id),
+                          label: opt.duration,
+                        }))}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+
+              {currentStep === assessmentStep && (
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="assessmentDate">Select preferred date</Label>
+                    <Input
+                      id="assessmentDate"
+                      type="date"
+                      value={formData.assessmentDate}
+                      onChange={(e) => handleAssessmentDateChange(e.target.value)}
+                      className="text-lg"
+                      min={new Date().toISOString().split("T")[0]}
+                    />
+                    <p className="text-sm text-gray-500">
+                      We&apos;ll show you available professionals for this date
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {currentStep === accessNotesStep && (
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="accessNotes">Optional notes for the assessor</Label>
+                    <Textarea
+                      id="accessNotes"
+                      placeholder="e.g., Gate code required, parking available, building under construction..."
+                      value={formData.accessNotes}
+                      onChange={(e) => updateFormData("accessNotes", e.target.value)}
+                      className="min-h-[150px] text-base"
+                    />
+                    <p className="text-sm text-gray-500">
+                      This helps the professional prepare for the visit (optional)
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </QuestionnaireStepShell>
+
+          <div className="mt-6 flex justify-start">
+            <Button type="button" variant="ghost" onClick={onBack} className="gap-2 text-gray-600">
+              <ChevronLeft className="h-4 w-4" />
+              Back to services
+            </Button>
+          </div>
         </div>
       </main>
     </div>

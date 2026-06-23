@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { BookingFlow } from "../BookingFlow";
 import { createBookingSelectedSession } from "../../lib/createBookingSelectedSession";
+import { fetchBookingPricing, type BookingPricing } from "../../lib/fetchBookingPricing";
 
 const BOOKING_PROFESSIONAL_KEY = 'fireguide_booking_professional';
 const BOOKING_PROFESSIONAL_ID_KEY = 'fireguide_booking_professional_id';
@@ -40,6 +41,37 @@ export default function BookingPage() {
   const questionnaireData = getQuestionnaireData(contextQuestionnaireData);
   const [recoveredSessionId, setRecoveredSessionId] = useState<number | undefined>();
   const sessionRecoveryAttempted = useRef(false);
+
+  const locationState = location.state as {
+    bookingPricing?: BookingPricing;
+    bookingPricingError?: string;
+    serviceId?: number;
+    sessionId?: number;
+  } | null;
+
+  const storedPricing = (() => {
+    try {
+      const stored = sessionStorage.getItem(BOOKING_PRICING_KEY);
+      return stored ? (JSON.parse(stored) as BookingPricing) : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const storedPricingError = (() => {
+    try {
+      return sessionStorage.getItem(BOOKING_PRICING_ERROR_KEY) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+
+  const [bookingPricing, setBookingPricing] = useState<BookingPricing | undefined>(
+    locationState?.bookingPricing ?? storedPricing
+  );
+  const [bookingPricingError, setBookingPricingError] = useState<string | undefined>(
+    locationState?.bookingPricingError ?? storedPricingError
+  );
+  const [isPricingLoading, setIsPricingLoading] = useState(false);
 
   // Restore professional, service, and session data from sessionStorage or location state on mount/reload
   useEffect(() => {
@@ -106,27 +138,6 @@ export default function BookingPage() {
         }
       })();
 
-  const locationState = location.state as {
-    bookingPricing?: { servicePrice: number; platformFee: number; total: number; platformFeePercent?: string };
-    bookingPricingError?: string;
-    serviceId?: number;
-    sessionId?: number;
-  } | null;
-  const initialPricing = locationState?.bookingPricing ?? (() => {
-    try {
-      const stored = sessionStorage.getItem(BOOKING_PRICING_KEY);
-      return stored ? JSON.parse(stored) : undefined;
-    } catch {
-      return undefined;
-    }
-  })();
-  const initialPricingError = locationState?.bookingPricingError ?? (() => {
-    try {
-      return sessionStorage.getItem(BOOKING_PRICING_ERROR_KEY) ?? undefined;
-    } catch {
-      return undefined;
-    }
-  })();
   const resolvedServiceId = locationState?.serviceId ?? (() => {
     try {
       const bookingStored = sessionStorage.getItem(BOOKING_SERVICE_ID_KEY);
@@ -196,6 +207,61 @@ export default function BookingPage() {
     resolvedProfessional,
   ]);
 
+  // Always fetch pricing from add-to-cart API on the booking page (all services).
+  useEffect(() => {
+    const isCustomQuote = Boolean(questionnaireData?.isCustomQuote);
+    if (isCustomQuote) return;
+
+    const profId =
+      resolvedProfessional?.id ??
+      resolvedProfessional?.professional_id ??
+      resolvedProfessionalId;
+    const sessId = resolvedSessionId;
+    const svcId = resolvedServiceId;
+
+    if (profId == null || sessId == null || svcId == null) return;
+    if (Number.isNaN(Number(profId)) || Number.isNaN(Number(sessId))) return;
+
+    let cancelled = false;
+    setIsPricingLoading(true);
+
+    void (async () => {
+      const result = await fetchBookingPricing({
+        professionalId: Number(profId),
+        sessionId: Number(sessId),
+        serviceId: svcId,
+        questionnaireData: questionnaireData as Record<string, unknown> | null,
+      });
+      if (cancelled) return;
+
+      if (result.pricing) {
+        setBookingPricing(result.pricing);
+        setBookingPricingError(undefined);
+        try {
+          sessionStorage.setItem(BOOKING_PRICING_KEY, JSON.stringify(result.pricing));
+          sessionStorage.removeItem(BOOKING_PRICING_ERROR_KEY);
+        } catch (_) {}
+      } else if (result.error) {
+        setBookingPricingError(result.error);
+        try {
+          sessionStorage.setItem(BOOKING_PRICING_ERROR_KEY, result.error);
+        } catch (_) {}
+      }
+
+      setIsPricingLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    resolvedSessionId,
+    resolvedProfessionalId,
+    resolvedServiceId,
+    questionnaireData,
+    resolvedProfessional,
+  ]);
+
   return (
     <BookingFlow
       onConfirm={(data) => {
@@ -209,8 +275,9 @@ export default function BookingPage() {
       serviceId={resolvedServiceId}
       sessionId={resolvedSessionId}
       bookingProfessional={resolvedProfessional}
-      initialPricing={initialPricing}
-      initialPricingError={initialPricingError}
+      initialPricing={bookingPricing}
+      initialPricingError={bookingPricingError}
+      isPricingLoading={isPricingLoading}
       questionnaireData={questionnaireData}
       isCustomQuote={questionnaireData?.isCustomQuote}
       customQuoteRequestData={questionnaireData?.request_data}

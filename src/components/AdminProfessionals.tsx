@@ -3437,6 +3437,7 @@ export function AdminProfessionals() {
                               )}
                             </>
                           ) : null}
+                          {/* Request Re-upload hidden per product request
                           {service.status === 'rejected' && (
                             <Button
                               size="sm"
@@ -3451,6 +3452,7 @@ export function AdminProfessionals() {
                               Request Re-upload
                             </Button>
                           )}
+                          */}
                           {/* Request Evidence Upload hidden per product request
                           {service.status === 'pending' && !service.evidenceFile && (
                             <Button ...>Request Evidence Upload</Button>

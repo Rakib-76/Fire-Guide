@@ -114,7 +114,7 @@ export function formatPeopleOptionLabel(text: string): string {
   const t = (text ?? "").replace(/\r\n/g, "").trim();
   const rangeMatch = t.match(/^(\d+)\s*[-–]\s*(\d+)\s*(people)?$/i);
   if (rangeMatch) return `${rangeMatch[1]}–${rangeMatch[2]} People`;
-  if (/100\+/i.test(t) && !/people/i.test(t)) return "100+ Custom quote";
+  if (/100\+/i.test(t) && !/people/i.test(t)) return "Others";
   if (/more than 500|500\+/i.test(t)) return "More than 500 people";
   return t || text;
 }
@@ -1950,6 +1950,7 @@ export const fetchFloorPricing = async (): Promise<FloorPricingItem[]> => {
           floor: floor || label,
           label: label || floor,
           price: item.price ?? null,
+          custom_quote: Boolean(item.custom_quote),
         } as FloorPricingItem;
       });
     }
@@ -2110,7 +2111,8 @@ export interface FilterProfessionalForAlarmRequest {
   floor_id: number;
   panel_id: number;
   system_type_id: number;
-  last_service_id: number;
+  /** Omitted when customer skips optional last-service step. */
+  last_service_id?: number;
   post_code: string;
   miles: number;
 }
@@ -2120,8 +2122,10 @@ export interface FilterProfessionalForExtinguisherRequest {
   service_id: number;
   extinguisher_id: number;
   floor_id: number;
-  type_id: number;
-  last_service_id: number;
+  /** Omitted when customer skips optional extinguisher type step. */
+  type_id?: number;
+  /** Omitted when customer skips optional last-service step. */
+  last_service_id?: number;
   post_code: string;
   miles: number;
 }
@@ -2131,8 +2135,8 @@ export interface FilterProfessionalForEmergencyLightRequest {
   service_id: number;
   light_id: number;
   floor_id: number;
-  light_type_id: number;
-  light_test_id: number;
+  light_type_id?: number | null;
+  light_test_id?: number | null;
   post_code: string;
   miles: number;
 }
@@ -2143,7 +2147,8 @@ export interface FilterProfessionalForMarshalRequest {
   people_id: number;
   place_id: number;
   building_type_id: number;
-  experience_id: number;
+  /** null when customer skips optional prior-training step. */
+  experience_id: number | null;
   post_code: string;
   miles: number;
 }
@@ -2342,7 +2347,8 @@ export interface FireAlarmSelectedServiceCreateRequest {
   floor_id: number;
   panel_id: number;
   system_type_id: number;
-  last_service_id: number;
+  /** Omitted when customer skipped optional last-service answer. */
+  last_service_id?: number;
   access_note: string;
   post_code: string;
   search_radius: string;
@@ -2406,8 +2412,9 @@ export interface FireExtinguisherSelectedServiceCreateRequest {
   service_id: number;
   extinguisher_id: number;
   floor_id: number;
-  type_id: number;
-  last_service_id: number;
+  /** Omitted when customer skipped optional type / last-service answers. */
+  type_id?: number;
+  last_service_id?: number;
   access_note: string;
   post_code: string;
   search_radius: string;
@@ -2472,8 +2479,10 @@ export interface EmergencyLightSelectedServiceCreateRequest {
   service_id: number;
   light_id: number;
   floor_id: number;
-  light_type_id: number;
-  light_test_id: number;
+  /** null when customer skips optional lighting type step. */
+  light_type_id: number | null;
+  /** null when customer skips optional test frequency step. */
+  light_test_id: number | null;
   access_note: string;
   post_code: string;
   search_radius: string;
@@ -2501,8 +2510,18 @@ export const createEmergencyLightSelectedService = async (
       service_id: Number(data.service_id),
       light_id: Number(data.light_id),
       floor_id: Number(data.floor_id),
-      light_type_id: Number(data.light_type_id),
-      light_test_id: Number(data.light_test_id),
+      light_type_id:
+        data.light_type_id == null
+          ? null
+          : Number(data.light_type_id) > 0
+            ? Number(data.light_type_id)
+            : null,
+      light_test_id:
+        data.light_test_id == null
+          ? null
+          : Number(data.light_test_id) > 0
+            ? Number(data.light_test_id)
+            : null,
       access_note: String(data.access_note ?? ''),
       post_code: String(data.post_code ?? ''),
       search_radius: String(data.search_radius ?? ''),
@@ -2552,7 +2571,8 @@ export interface FireMarshalSelectedServiceCreateRequest {
   people_id: number;
   place_id: number;
   building_type_id: number;
-  experience_id: number;
+  /** null when customer skips optional prior-training step. */
+  experience_id: number | null;
   access_note: string;
   post_code: string;
   search_radius: string;
@@ -2580,7 +2600,12 @@ export const createFireMarshalSelectedService = async (
       people_id: Number(data.people_id),
       place_id: Number(data.place_id),
       building_type_id: Number(data.building_type_id),
-      experience_id: Number(data.experience_id),
+      experience_id:
+        data.experience_id == null
+          ? null
+          : Number(data.experience_id) > 0
+            ? Number(data.experience_id)
+            : null,
       access_note: String(data.access_note ?? ''),
       post_code: String(data.post_code ?? ''),
       search_radius: String(data.search_radius ?? ''),

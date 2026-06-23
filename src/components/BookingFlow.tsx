@@ -29,6 +29,8 @@ interface BookingFlowProps {
   initialPricing?: { servicePrice: number; platformFee: number; total: number; platformFeePercent?: string };
   /** When price API fails on Book Now, pass message so summary can show it */
   initialPricingError?: string;
+  /** True while add-to-cart pricing is loading on the booking page */
+  isPricingLoading?: boolean;
   /** Questionnaire data with optional display labels (property_type_label, approximate_people_label, number_of_floors) for Service Details card */
   questionnaireData?: QuestionnaireDataForBooking | null;
   isCustomQuote?: boolean;
@@ -114,7 +116,7 @@ function getInitialService(
   });
 }
 
-export function BookingFlow({ onBack, onConfirm, professionalId, serviceId, sessionId, bookingProfessional, initialPricing, initialPricingError, questionnaireData, selectedService, isCustomQuote, customQuoteRequestData, serviceIdForQuote, serviceNameHint }: BookingFlowProps) {
+export function BookingFlow({ onBack, onConfirm, professionalId, serviceId, sessionId, bookingProfessional, initialPricing, initialPricingError, isPricingLoading, questionnaireData, selectedService, isCustomQuote, customQuoteRequestData, serviceIdForQuote, serviceNameHint }: BookingFlowProps) {
   const [currentStep, setCurrentStep] = useState<BookingStep>("appointment");
   
   // Default professional data (fallback)
@@ -206,6 +208,20 @@ export function BookingFlow({ onBack, onConfirm, professionalId, serviceId, sess
     });
   }, [questionnaireData, selectedService, serviceId, serviceNameHint, isCustomQuote, customQuoteRequestData]);
 
+  // Sync pricing when fetched from add-to-cart on the booking page
+  useEffect(() => {
+    if (initialPricing == null && initialPricingError == null) return;
+    setBookingData((prev) => ({
+      ...prev,
+      ...(initialPricing != null
+        ? { pricing: initialPricing, pricingErrorMessage: undefined }
+        : {}),
+      ...(initialPricing == null && initialPricingError
+        ? { pricingErrorMessage: initialPricingError }
+        : {}),
+    }));
+  }, [initialPricing, initialPricingError]);
+
   const handleAppointmentSelected = (date: string, time: string) => {
     setBookingData(prev => ({ ...prev, selectedDate: date, selectedTime: time }));
     setCurrentStep("details");
@@ -240,6 +256,7 @@ export function BookingFlow({ onBack, onConfirm, professionalId, serviceId, sess
             professionalId={bookingData.professionalId}
             pricing={bookingData.pricing}
             pricingErrorMessage={bookingData.pricingErrorMessage}
+            isPricingLoading={isPricingLoading}
             onContinue={handleAppointmentSelected}
             onBack={onBack}
           />
@@ -256,6 +273,7 @@ export function BookingFlow({ onBack, onConfirm, professionalId, serviceId, sess
             selectedTime={bookingData.selectedTime}
             pricing={bookingData.pricing}
             pricingErrorMessage={bookingData.pricingErrorMessage}
+            isPricingLoading={isPricingLoading}
             initialData={bookingData.customer}
             onContinue={handleCustomerDetailsSubmitted}
             onBack={handleBackFromDetails}

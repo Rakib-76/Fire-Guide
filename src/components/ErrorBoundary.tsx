@@ -28,7 +28,9 @@ export class ErrorBoundary extends Component<Props, State> {
       const looksLikeStaleChunk =
         msg.includes("Failed to fetch dynamically imported module") ||
         msg.includes("Importing a module script failed") ||
-        msg.includes("error loading dynamically imported module");
+        msg.includes("error loading dynamically imported module") ||
+        msg.includes("Unexpected token") ||
+        msg.includes("Invalid or unexpected token");
 
       const handleReload = () => {
         try {

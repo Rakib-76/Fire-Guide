@@ -6,7 +6,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { useApp } from "../contexts/AppContext";
-import { filterProfessionalForFra, filterProfessionalForAlarm, filterProfessionalForExtinguisher, filterProfessionalForEmergencyLight, filterProfessionalForMarshal, filterProfessionalForConsultation } from "../api/servicesService";
+import { filterProfessionalForFra, filterProfessionalForAlarm, filterProfessionalForExtinguisher, filterProfessionalForEmergencyLight, filterProfessionalForMarshal, filterProfessionalForConsultation, type FilterProfessionalForAlarmRequest, type FilterProfessionalForExtinguisherRequest } from "../api/servicesService";
 import { useNominatimGeocode } from "../hooks/useNominatimGeocode";
 import { PostcodePreviewMap, radiusValueToMeters } from "./PostcodePreviewMap";
 // selected_services/store is called only when "Book Now" is clicked on Compare Professionals page (with professional_id)
@@ -125,27 +125,34 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
     // Same payload as selected-service/create — sent only when Find Professional is clicked (not on Book).
     try {
       if (q.is_fire_alarm) {
-        const alarmPayload = {
+        const alarmPayload: FilterProfessionalForAlarmRequest = {
           service_id: serviceId,
           smoke_detector_id: q.fire_alarm_smoke_detector_id ?? 0,
           call_point_id: q.fire_alarm_call_point_id ?? 0,
           floor_id: q.fire_alarm_floor_id ?? 0,
           panel_id: q.fire_alarm_panel_id ?? 0,
           system_type_id: q.fire_alarm_system_type_id ?? 0,
-          last_service_id: q.fire_alarm_last_service_id ?? 0,
           ...filterLocationFields,
         };
+        const lastServiceId = q.fire_alarm_last_service_id;
+        if (lastServiceId != null && lastServiceId > 0) {
+          alarmPayload.last_service_id = lastServiceId;
+        }
         const res = await filterProfessionalForAlarm(alarmPayload);
         setFilteredProfessionalsFromFra(res.data ?? null);
       } else if (q.is_fire_extinguisher) {
-        const extinguisherPayload = {
+        const extinguisherPayload: FilterProfessionalForExtinguisherRequest = {
           service_id: serviceId,
           extinguisher_id: q.extinguisher_id ?? 0,
           floor_id: q.floor_id ?? 0,
-          type_id: q.type_id ?? 0,
-          last_service_id: q.last_service_id ?? 0,
           ...filterLocationFields,
         };
+        if (q.type_id != null && q.type_id > 0) {
+          extinguisherPayload.type_id = q.type_id;
+        }
+        if (q.last_service_id != null && q.last_service_id > 0) {
+          extinguisherPayload.last_service_id = q.last_service_id;
+        }
         const res = await filterProfessionalForExtinguisher(extinguisherPayload);
         setFilteredProfessionalsFromFra(res.data ?? null);
       } else if (
@@ -155,12 +162,17 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
         q.emergency_light_type_id != null ||
         q.emergency_light_test_id != null
       ) {
+        const resolveElOptionId = (raw: unknown): number | null => {
+          if (raw == null || raw === "") return null;
+          const n = Number(raw);
+          return Number.isFinite(n) && n > 0 ? n : null;
+        };
         const emergencyLightPayload = {
           service_id: serviceId,
           light_id: q.emergency_light_id ?? 1,
           floor_id: q.emergency_floor_id ?? 1,
-          light_type_id: q.emergency_light_type_id ?? 0,
-          light_test_id: q.emergency_light_test_id ?? 0,
+          light_type_id: resolveElOptionId(q.emergency_light_type_id),
+          light_test_id: resolveElOptionId(q.emergency_light_test_id),
           ...filterLocationFields,
         };
         const res = await filterProfessionalForEmergencyLight(emergencyLightPayload);
@@ -172,13 +184,18 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
         q.building_type_id != null ||
         q.experience_id != null
       ) {
-        const marshalReq = (questionnaireData as { request_data?: { people_id?: number; place_id?: number; building_type_id?: number; experience_id?: number } })?.request_data;
+        const marshalReq = (questionnaireData as { request_data?: { people_id?: number; place_id?: number; building_type_id?: number; experience_id?: number | null } })?.request_data;
+        const resolveMarshalExperienceId = (raw: unknown): number | null => {
+          if (raw == null || raw === "") return null;
+          const n = Number(raw);
+          return Number.isFinite(n) && n > 0 ? n : null;
+        };
         const marshalPayload = {
           service_id: serviceId,
           people_id: q.people_id ?? marshalReq?.people_id ?? 1,
           place_id: q.place_id ?? marshalReq?.place_id ?? 1,
           building_type_id: q.building_type_id ?? marshalReq?.building_type_id ?? 1,
-          experience_id: q.experience_id ?? marshalReq?.experience_id ?? 1,
+          experience_id: resolveMarshalExperienceId(q.experience_id ?? marshalReq?.experience_id),
           ...filterLocationFields,
         };
         const res = await filterProfessionalForMarshal(marshalPayload);
