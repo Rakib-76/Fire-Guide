@@ -1,122 +1,298 @@
-import { Check, X } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Fragment, type CSSProperties } from "react";
+import {
+  Clock,
+  Tag,
+  ShieldCheck,
+  ClipboardCheck,
+  Check,
+  X,
+  PoundSterling,
+  Users,
+  Calendar,
+  ShieldCheck as ShieldIcon,
+  Info,
+  Lock,
+} from "lucide-react";
+
+function TraditionalClipboardWatermark({
+  className,
+  style,
+}: {
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <svg
+      viewBox="0 0 80 96"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      style={style}
+      aria-hidden
+    >
+      <rect x="8" y="18" width="64" height="72" rx="8" stroke="currentColor" strokeWidth="3" />
+      <rect x="26" y="10" width="28" height="14" rx="4" stroke="currentColor" strokeWidth="3" />
+      <circle cx="40" cy="8" r="3" stroke="currentColor" strokeWidth="2.5" />
+      <path
+        d="M22 38L28 44M28 38L22 44"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+      <line x1="34" y1="41" x2="58" y2="41" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      <path
+        d="M22 54L28 60M28 54L22 60"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+      <line x1="34" y1="57" x2="58" y2="57" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      <path
+        d="M22 70L28 76M28 70L22 76"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+      <line x1="34" y1="73" x2="58" y2="73" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 export function WhyChooseFireGuide() {
-  const comparisons = [
+  const features = [
     {
-      feature: "Instant online booking",
-      fireGuide: true,
-      traditional: false
+      icon: Clock,
+      title: "Fast & Simple",
+      description: "Compare professionals, get prices and book in minutes.",
     },
     {
-      feature: "Compare multiple professionals",
-      fireGuide: true,
-      traditional: false
+      icon: Tag,
+      title: "Transparent Pricing",
+      description: "Upfront prices with no hidden fees. What you see is what you pay.",
     },
     {
-      feature: "Transparent upfront pricing",
-      fireGuide: true,
-      traditional: false
+      icon: ShieldCheck,
+      title: "Qualified Professionals",
+      description: "Experienced fire safety professionals who meet industry standards.",
     },
     {
-      feature: "Verified certification WITH professional with certification",
-      fireGuide: true,
-      traditional: "sometimes"
+      icon: ClipboardCheck,
+      title: "Stay Compliant",
+      description: "Receive reports, reminders and support to help you stay on top of your obligations.",
     },
-    {
-      feature: "Customer reviews & ratings",
-      fireGuide: true,
-      traditional: false
-    },
-    {
-      feature: "Secure online payments",
-      fireGuide: true,
-      traditional: false
-    },
+  ];
 
+  const fireGuidePoints = [
+    "Compare multiple professionals",
+    "Instant pricing & booking",
+    "Professionals show their qualifications",
+    "Manage everything in one place",
+    "Stay organised and compliant",
+  ];
+
+  const traditionalPoints = [
+    "Call around for quotes",
+    "No clear pricing",
+    "Hard to compare options",
+    "Manual paperwork & emails",
+    "Easy to miss deadlines",
+  ];
+
+  const certifications = [
+    { label: "BAFE", sublabel: "Registered", image: "/certifications/BAFE.png" },
+    { label: "NEBOSH", sublabel: "Certified", image: "/certifications/NEBOSH.png" },
+    { label: "FIA", sublabel: "Member", image: "/certifications/FIA.png" },
+    { label: "ISO", sublabel: "ISO-aligned Businesses", image: "/certifications/ISO.png" },
+  ];
+
+  const bottomFeatures = [
     {
-      feature: "Same-day availability",
-      fireGuide: true,
-      traditional: "sometimes"
+      icon: PoundSterling,
+      title: "Clear Prices",
+      description: "Know the cost before you book.",
     },
     {
-      feature: "Digital documentation",
-      fireGuide: true,
-      traditional: false
-    }
+      icon: Users,
+      title: "Compare Options",
+      description: "Access multiple professionals and choose with confidence.",
+    },
+    {
+      icon: Calendar,
+      title: "Book in Minutes",
+      description: "Simple online booking that fits your schedule.",
+    },
+    {
+      icon: ShieldIcon,
+      title: "Stay in Control",
+      description: "All your bookings, reports and reminders in one place.",
+    },
   ];
 
   return (
-    <section className="py-24 px-6 bg-gradient-to-br from-blue-50 to-white">
-      <div className="max-w-5xl mx-auto">
-        <div className="text-center mb-16">
-          <h2 className="text-[32px] md:text-[48px] font-bold leading-[125%] tracking-[-0.01em] mb-6">
-            Why Choose Fire Guide?
+    <section className="py-20 px-6 bg-gray-50">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="text-center mb-14 lg:mb-10 md:mb-8">
+          <div className="inline-flex items-center gap-2 text-red-600 font-bold text-sm tracking-wide mb-4">
+            <ShieldCheck className="w-4 h-4" />
+            WHY CHOOSE FIRE GUIDE?
+          </div>
+          <h2 className="text-[32px] md:text-[48px] font-bold leading-[120%] tracking-[-0.01em] mb-4 text-gray-900">
+            Smarter Fire Safety. <span className="text-red-600">Done Properly.</span>
           </h2>
-          <p className="text-[16px] md:text-[20px] leading-[150%] md:leading-[140%] text-gray-600 max-w-2xl mx-auto px-4">
-            See how we compare to traditional fire safety booking methods
+          <p className="text-[16px] md:text-[17px] leading-[150%] text-gray-500 max-w-2xl mx-auto">
+            Fire Guide makes fire safety simple, transparent and easy to manage 
+            <br/>— so you can stay compliant with confidence.
+          
           </p>
         </div>
 
-        <Card className="border-2 border-gray-200 shadow-2xl overflow-hidden">
-          <CardHeader className="bg-gradient-to-r from-red-600 to-red-700 text-white">
-            <div className="grid grid-cols-3 gap-4 items-center">
-              <div></div>
-              <div className="text-center">
-                <CardTitle className="text-2xl">Fire Guide</CardTitle>
-                <p className="text-sm opacity-90 mt-1">Modern & Easy</p>
-              </div>
-              <div className="text-center">
-                <CardTitle className="text-2xl">Traditional</CardTitle>
-                <p className="text-sm opacity-90 mt-1">Old Method</p>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {comparisons.map((item, index) => (
+        {/* Feature cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 md:gap-6 mb-10 lg:mb-6 md:mb-8 ">
+          {features.map((feature, index) => {
+            const Icon = feature.icon;
+            return (
               <div
                 key={index}
-                className={`grid grid-cols-3 gap-4 items-center py-4 px-6 ${
-                  index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-                } hover:bg-red-50 transition-colors`}
+                className="bg-white rounded-2xl border border-gray-100 shadow-lg p-6 text-center"
               >
-                <div className="font-medium text-gray-900">{item.feature}</div>
-                <div className="flex justify-center">
-                  {item.fireGuide === true ? (
-                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                      <Check className="w-5 h-5 text-green-600" />
-                    </div>
-                  ) : item.fireGuide === "sometimes" ? (
-                    <div className="text-sm text-yellow-600 font-medium">Sometimes</div>
-                  ) : (
-                    <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                      <X className="w-5 h-5 text-red-600" />
-                    </div>
-                  )}
+                <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+                  <Icon className="w-6 h-6 text-red-600" />
                 </div>
-                <div className="flex justify-center">
-                  {item.traditional === true ? (
-                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                      <Check className="w-5 h-5 text-green-600" />
-                    </div>
-                  ) : item.traditional === "sometimes" ? (
-                    <div className="text-sm text-yellow-600 font-medium">Sometimes</div>
-                  ) : (
-                    <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                      <X className="w-5 h-5 text-red-600" />
-                    </div>
-                  )}
-                </div>
+                <h3 className="font-bold text-lg text-gray-900 mb-2">{feature.title}</h3>
+                <div
+                  className="mx-auto mb-3 w-14 rounded-full bg-red-600"
+                  style={{ height: 3 }}
+                />
+                <p className="text-sm text-gray-500 font-medium leading-[150%]">{feature.description}</p>
               </div>
-            ))}
-          </CardContent>
-        </Card>
+            );
+          })}
+        </div>
 
-        <div className="mt-8 text-center">
-          <div className="inline-flex items-center gap-2 bg-green-100 text-green-800 px-6 py-3 rounded-full">
-            <Check className="w-5 h-5" />
-            <span className="font-semibold">Join 10,000+ satisfied customers who switched to Fire Guide</span>
+        {/* Comparison section */}
+        <div className="relative rounded-2xl overflow-hidden shadow-lg mb-10 ">
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            {/* Fire Guide side */}
+            <div className="relative bg-red-600 text-white p-8 md:pr-20">
+              <ShieldCheck
+                className="absolute right-4 md:right-10 top-1/2 -translate-y-1/2 w-40 h-40 md:w-48 md:h-48 text-white pointer-events-none z-[1]"
+                style={{ opacity: 0.12 }}
+                strokeWidth={1.25}
+                aria-hidden
+              />
+              <h3 className="relative z-10 text-xl font-bold mb-5 md:max-w-[62%]">With Fire Guide</h3>
+              <ul className="relative z-10 space-y-3 md:max-w-[62%]">
+                {fireGuidePoints.map((point, index) => (
+                  <li key={index} className="flex items-center gap-3">
+                    <span className="w-5 h-5 rounded-full bg-white flex items-center justify-center flex-shrink-0">
+                      <Check className="w-3.5 h-3.5 text-red-600" strokeWidth={3} />
+                    </span>
+                    <span className="text-sm">{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Traditional side */}
+            <div className="relative bg-white p-8 md:pr-20 min-h-[320px]">
+              <TraditionalClipboardWatermark
+                className="absolute right-4 md:right-10 top-1/2 -translate-y-1/2 w-40 h-40 md:w-48 md:h-48 text-gray-400 pointer-events-none z-[1]"
+                style={{ opacity: 0.12 }}
+              />
+              <h3 className="relative z-10 text-xl font-bold mb-5 text-gray-900 md:max-w-[62%]">
+                Traditional Way
+              </h3>
+              <ul className="relative z-10 space-y-3 md:max-w-[62%]">
+                {traditionalPoints.map((point, index) => (
+                  <li key={index} className="flex items-center gap-3">
+                    <span className="w-5 h-5 rounded-full bg-red-600 flex items-center justify-center flex-shrink-0">
+                      <X className="w-3.5 h-3.5 text-white" strokeWidth={3} />
+                    </span>
+                    <span className="text-sm text-gray-600">{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
+
+          {/* VS badge */}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-white shadow-lg flex items-center justify-center z-10 ">
+            <span className="font-bold text-gray-900 text-sm lg:text-xl md:text-lg">VS</span>
+          </div>
+        </div>
+
+        {/* Certifications row */}
+        <div className="mt-4 ml-7 flex flex-wrap gap-3 md:justify-start mb-4 text-sm text-gray-500">
+          <ShieldCheck className="w-6 h-6 text-red-500" />
+          <span>Professionals may hold recognised industry qualifications such as:</span>
+        </div>
+        <div className="mb-6 bg-white">
+          <div className="flex flex-col md:flex-row">
+            {certifications.map((cert, index) => (
+              <Fragment key={cert.label}>
+                {index > 0 && (
+                  <>
+                    <div className="h-px w-full bg-gray-300 md:hidden" aria-hidden="true" />
+                    <div
+                      className="hidden md:block shrink-0 bg-gray-300"
+                      style={{ width: 1, alignSelf: "stretch" }}
+                      aria-hidden="true"
+                    />
+                  </>
+                )}
+                <div className="flex flex-1 items-center gap-3 px-5 py-4">
+                  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-100">
+                    <img
+                      src={cert.image}
+                      alt={`${cert.label} logo`}
+                      className="h-10 w-10 object-contain"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">{cert.label}</p>
+                    <p className="text-xs text-gray-500">{cert.sublabel}</p>
+                  </div>
+                </div>
+              </Fragment>
+            ))}
+            <div className="h-px w-full bg-gray-300 md:hidden" aria-hidden="true" />
+            <div
+              className="hidden md:block shrink-0 bg-gray-300"
+              style={{ width: 1, alignSelf: "stretch" }}
+              aria-hidden="true"
+            />
+            <div className="flex flex-1 bg-slate-500 items-center gap-2 px-5 py-4 text-xs text-gray-400">
+              <Info className="h-4 w-4 flex-shrink-0" />
+              <span>Qualifications vary by professional and are shown on their profile.</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom dark feature bar */}
+        <div className="bg-gray-900 rounded-2xl p-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+            {bottomFeatures.map((feature, index) => {
+              const Icon = feature.icon;
+              return (
+                <div key={index} className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-600">
+                    <Icon className="h-6 w-6 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white mb-1">{feature.title}</h4>
+                    <p className="text-sm text-gray-400 leading-[150%]">{feature.description}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Footer note */}
+        <div className="flex items-center justify-center gap-2 text-xs text-gray-400 mt-8">
+          <Lock className="w-3.5 h-3.5" />
+          <span>We do not carry out services. We connect you with independent fire safety professionals.</span>
         </div>
       </div>
     </section>
