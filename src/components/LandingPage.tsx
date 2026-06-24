@@ -100,7 +100,7 @@ export function LandingPage({
         <ProfessionalCTA onJoinNow={onProfessionalLogin} />
       </Suspense>
       <Suspense fallback={null}>
-        <HowItWorks />
+        <HowItWorks onGetStarted={onGetStarted} />
       </Suspense>
       <Suspense fallback={null}>
         <CoreBenefits />
