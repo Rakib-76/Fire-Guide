@@ -140,6 +140,7 @@ export function LandingPage({
       </Suspense>
       <Suspense fallback={null}>
         <FAQ
+          onGetQuote={onGetStarted}
           onContactSupport={() => {
             if (onNavigateToContactPage) {
               onNavigateToContactPage();

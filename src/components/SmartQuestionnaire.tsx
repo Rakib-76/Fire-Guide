@@ -103,6 +103,7 @@ const CUSTOM_FA_PANELS = "__custom_fa_panels__";
 const CUSTOM_EXTINGUISHERS = "__custom_extinguishers__";
 const CUSTOM_EMERGENCY_LIGHTS = "__custom_emergency_lights__";
 const CUSTOM_FLOORS = "__custom_floors__";
+const CUSTOM_PROPERTY_TYPE = "__custom_property_type__";
 const CUSTOM_TRAINING_PEOPLE = "__custom_training_people__";
 
 function isPeopleCustomQuoteLabel(text: string): boolean {
@@ -124,6 +125,7 @@ const CUSTOM_QUOTE_OPTION_VALUES = new Set([
   CUSTOM_EXTINGUISHERS,
   CUSTOM_EMERGENCY_LIGHTS,
   CUSTOM_FLOORS,
+  CUSTOM_PROPERTY_TYPE,
   CUSTOM_TRAINING_PEOPLE,
 ]);
 
@@ -345,8 +347,15 @@ export function SmartQuestionnaire({
     [propertyTypes, formData.propertyType]
   );
 
-  const showCustomPropertyTypeInput = Boolean(
-    selectedPropertyType && isOtherPropertyTypeName(selectedPropertyType.property_type_name)
+  const showCustomPropertyTypeInput =
+    formData.propertyType === CUSTOM_PROPERTY_TYPE ||
+    Boolean(
+      selectedPropertyType && isOtherPropertyTypeName(selectedPropertyType.property_type_name)
+    );
+
+  const hasApiCustomPropertyTypeOption = useMemo(
+    () => propertyTypes.some((opt) => isOtherPropertyTypeName(opt.property_type_name)),
+    [propertyTypes]
   );
 
   const hasApiCustomFloorOption = useMemo(
@@ -1535,15 +1544,20 @@ export function SmartQuestionnaire({
                         onValueChange={(value) => handleOptionSelect("propertyType", value)}
                         loading={loadingFraOptions}
                         columns="grid-cols-2 md:grid-cols-3 lg:grid-cols-3"
-                        options={propertyTypes.map((opt) => ({
-                          value: String(opt.id),
-                          label: isOtherPropertyTypeName(opt.property_type_name)
-                            ? QUESTIONNAIRE_OTHERS_LABEL
-                            : opt.property_type_name,
-                          helper: isOtherPropertyTypeName(opt.property_type_name)
-                            ? undefined
-                            : opt.property_type_description,
-                        }))}
+                        options={[
+                          ...propertyTypes.map((opt) => ({
+                            value: String(opt.id),
+                            label: isOtherPropertyTypeName(opt.property_type_name)
+                              ? QUESTIONNAIRE_OTHERS_LABEL
+                              : opt.property_type_name,
+                            helper: isOtherPropertyTypeName(opt.property_type_name)
+                              ? undefined
+                              : opt.property_type_description,
+                          })),
+                          ...(hasApiCustomPropertyTypeOption
+                            ? []
+                            : [{ value: CUSTOM_PROPERTY_TYPE, label: QUESTIONNAIRE_OTHERS_LABEL }]),
+                        ]}
                       />
                       {showCustomPropertyTypeInput && (
                         <div className="mt-4 space-y-2">

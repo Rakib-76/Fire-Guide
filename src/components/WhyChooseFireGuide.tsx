@@ -1,4 +1,8 @@
 import { Fragment, type CSSProperties } from "react";
+import bafeLogo from "../assets/certifications/BAFE.png";
+import neboshLogo from "../assets/certifications/NEBOSH.png";
+import fiaLogo from "../assets/certifications/FIA.png";
+import isoLogo from "../assets/certifications/ISO.png";
 import {
   Clock,
   Tag,
@@ -99,10 +103,10 @@ export function WhyChooseFireGuide() {
   ];
 
   const certifications = [
-    { label: "BAFE", sublabel: "Registered", image: "/certifications/BAFE.png" },
-    { label: "NEBOSH", sublabel: "Certified", image: "/certifications/NEBOSH.png" },
-    { label: "FIA", sublabel: "Member", image: "/certifications/FIA.png" },
-    { label: "ISO", sublabel: "ISO-aligned Businesses", image: "/certifications/ISO.png" },
+    { label: "BAFE", sublabel: "Registered", image: bafeLogo },
+    { label: "NEBOSH", sublabel: "Certified", image: neboshLogo },
+    { label: "FIA", sublabel: "Member", image: fiaLogo },
+    { label: "ISO", sublabel: "ISO-aligned Businesses", image: isoLogo },
   ];
 
   const bottomFeatures = [

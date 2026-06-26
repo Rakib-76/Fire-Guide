@@ -1,111 +1,242 @@
+import { Fragment } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "./ui/button";
-import { Users, TrendingUp, Shield, Calendar, CreditCard, Star, ArrowRight, Zap } from "lucide-react";
-import { ImageWithFallback } from "./figma/ImageWithFallback";
-import teamImage from "figma:asset/08939bb03be0325201050404a721d42e221a3890.png";
-import professionalTeam from "figma:asset/f6909d09c2ecb5bb1fb962235437cb1413afb6bc.png";
-import verifiedTeam from "figma:asset/7e7dc8c5af40c3b71729d1882716219bc6009ebf.png";
+import {
+  ArrowRight,
+  Calendar,
+  Check,
+  Flame,
+  Headphones,
+  PoundSterling,
+  Shield,
+  Star,
+  TrendingUp,
+  UserCheck,
+  Users,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import professionalImage from "../assets/professional-cta.png";
+import { professionalBenefitsJoinTo } from "../lib/professionalBenefitsNavigation";
+import "./ProfessionalCTA.css";
 
 interface ProfessionalCTAProps {
-  onJoinNow: () => void;
+  onJoinNow?: () => void;
+}
+
+function LightIconCircle({ icon: Icon }: { icon: LucideIcon }) {
+  return (
+    <span className="procta-icon-light">
+      <Icon className="w-5 h-5 text-red-600" strokeWidth={2} />
+    </span>
+  );
+}
+
+function StatIconCircle({ icon: Icon }: { icon: LucideIcon }) {
+  return (
+    <span className="procta-icon-stat">
+      <Icon className="w-[18px] h-[18px] text-white" strokeWidth={2} />
+    </span>
+  );
+}
+
+function CtaFeatureIconCircle({ icon: Icon }: { icon: LucideIcon }) {
+  return (
+    <span className="procta-icon-light procta-feature-icon">
+      <Icon className="w-4 h-4 text-red-600" strokeWidth={2} />
+    </span>
+  );
 }
 
 export function ProfessionalCTA({ onJoinNow }: ProfessionalCTAProps) {
+  const navigate = useNavigate();
+
+  const handleJoinNow = () => {
+    if (onJoinNow) {
+      onJoinNow();
+      return;
+    }
+    navigate(professionalBenefitsJoinTo());
+  };
+
   const benefits = [
     {
       icon: Users,
-      title: "Access Thousands of Customers",
-      description: "Connect with customers actively searching for fire safety services"
+      title: "Get More Quality Jobs",
+      description: "Connect with local customers actively looking for fire safety services.",
     },
     {
       icon: Calendar,
-      title: "Flexible Scheduling",
-      description: "Control your availability and manage bookings on your terms"
+      title: "Control Your Schedule",
+      description: "Choose when and where you work. You're in control.",
     },
     {
-      icon: CreditCard,
-      title: "Secure & Fast Payments",
-      description: "Get paid quickly with simple and transparent commission charges"
+      icon: PoundSterling,
+      title: "Lower Costs, Higher Earnings",
+      description: "No subscription fees. Pay a low, transparent commission only when you get paid.",
     },
     {
       icon: Star,
-      title: "Customer-led ratings & feedback",
-      description: "Showcase verified reviews and grow your business"
-    }
+      title: "Build Trust & Get Reviews",
+      description: "Showcase your work, earn verified reviews and stand out from the competition.",
+    },
+    {
+      icon: TrendingUp,
+      title: "Grow Your Business",
+      description: "More visibility, more bookings, more growth. We help you scale your business.",
+    },
+  ];
+
+  const stats = [
+    { icon: Users, value: "10K+", label: "Active customers searching every month" },
+    { icon: Calendar, value: "500+", label: "Jobs posted weekly across the UK" },
+    { icon: PoundSterling, value: "No Setup Fees", label: "No monthly fees. Pay only when you earn" },
+    { icon: Star, value: "4.8/5", label: "Average pro rating by our customers" },
+    { icon: TrendingUp, value: "Fast Payments", label: "Get paid quickly and securely" },
+  ];
+
+  const ctaFeatures = [
+    { icon: Flame, title: "Free to Join", description: "No setup or monthly fees" },
+    { icon: UserCheck, title: "Verified Customers", description: "High-intent customers ready to book" },
+    { icon: Headphones, title: "Dedicated Support", description: "We're here to help you grow" },
+  ];
+
+  const trustItems = [
+    "Trusted by Professionals Across the UK",
+    "Transparent Commission",
+    "Secure Payments",
+    "We Grow When You Grow",
   ];
 
   return (
-    <section id="professionals" className="py-20 px-6 bg-gradient-to-br from-gray-50 to-white relative overflow-hidden">
-      {/* Background Decorative Elements */}
-      <div className="absolute top-0 right-0 w-96 h-96 bg-red-100 rounded-full blur-3xl opacity-20"></div>
-      <div className="absolute bottom-0 left-0 w-96 h-96 bg-blue-100 rounded-full blur-3xl opacity-20"></div>
-
-      <div className="max-w-7xl mx-auto relative z-10">
-        {/* Header */}
-        <div className="text-center mb-16">
-          <div className="inline-flex items-center gap-2 bg-red-600 text-white px-6 py-2 rounded-full mb-6">
-            <Shield className="w-5 h-5" />
-            <span className="font-medium text-[14px]">For Fire Safety Professionals</span>
-          </div>
-          <h2 className="mb-6 text-[28px] md:text-5xl font-bold leading-[120%] tracking-[-0.01em] pt-4 pb-3 px-4">
-            Grow Your Fire Safety Business
-          </h2>
-          <p className="text-base md:text-lg lg:text-xl max-w-3xl mx-auto leading-relaxed text-[#666]">
-            Join Fire Guide and connect with thousands of customers who need your expertise. No setup fees.
-          </p>
-        </div>
-
-        <div className="grid lg:grid-cols-2 gap-12 items-center mb-16">
-          {/* Left Column - Image */}
-          <div className="relative">
-            <div className="relative rounded-2xl overflow-hidden shadow-2xl h-[240px] md:h-[530px]">
-              <ImageWithFallback
-                src={verifiedTeam}
-                alt="Fire Safety Professional"
-                className="w-full h-full object-cover"
-                style={{
-                  objectPosition: 'center center'
-                }}
-              />
+    <section id="professionals" className="procta-section">
+      <div className="max-w-7xl mx-auto">
+        {/* TOP — 2 columns */}
+        <div className="procta-top">
+          <div className="procta-top-left">
+            <div className="inline-flex items-center gap-2 mb-5">
+              <Shield className="w-4 h-4 text-red-600" strokeWidth={2.25} />
+              <span className="procta-eyebrow">For Fire Safety Professionals</span>
             </div>
+
+            <h2 className="procta-heading">
+              <span className="text-gray-900">More Jobs. Less Hassle.</span>
+              <br />
+              <span className="text-red-600">Grow Your Fire Safety Business.</span>
+            </h2>
+
+            <p className="procta-intro">{`Join Fire Guide and get matched with high-intent customers in your area. No setup fees. No monthly fees. Just work that works for you.`}</p>
+
+            <ul className="procta-benefits">
+              {benefits.map((benefit) => (
+                <li key={benefit.title} className="procta-benefit-row">
+                  <LightIconCircle icon={benefit.icon} />
+                  <div>
+                    <h3 className="procta-benefit-title">{benefit.title}</h3>
+                    <p className="procta-benefit-desc">{benefit.description}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
 
-          {/* Right Column - Benefits */}
-          <div className="space-y-6">
-            {benefits.map((benefit, index) => (
-              <div
-                key={index}
-                className="bg-white rounded-xl p-6 shadow-md border border-gray-100 hover:shadow-xl hover:border-red-200 transition-all duration-300"
-              >
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <benefit.icon className="w-6 h-6 text-red-600" />
-                  </div>
-                  <div>
-                    <h3 className="mb-2">
-                      {benefit.title}
-                    </h3>
-                    <p className="text-gray-600">
-                      {benefit.description}
-                    </p>
+          <div className="procta-top-right">
+            <div className="procta-visual">
+              <div className="procta-visual-grid">
+                <div className="procta-photo-col">
+                  <div className="procta-photo-wrap">
+                    <img
+                      src={professionalImage}
+                      alt="Fire safety professional"
+                      className="procta-photo"
+                    />
                   </div>
                 </div>
+                <div className="procta-stats-card">
+                  <h3 className="procta-stats-title">
+                    Why Professionals Choose <span className="text-red-500">Fire Guide</span>
+                  </h3>
+                  <ul className="procta-stats-list">
+                    {stats.map((stat, index) => (
+                      <li
+                        key={stat.value}
+                        className={`procta-stat-row${index < stats.length - 1 ? " procta-stat-row--border" : ""}`}
+                      >
+                        <StatIconCircle icon={stat.icon} />
+                        <div>
+                          <p className="procta-stat-value">{stat.value}</p>
+                          <p className="procta-stat-label">{stat.label}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-            ))}
+            </div>
           </div>
         </div>
 
-        {/* CTA */}
-        <div className="text-center">
-          <Button
-            onClick={onJoinNow}
-            className="bg-red-600 hover:bg-red-700 text-lg group text-[16px] !px-[35px] !py-[25px] font-bold"
-          >
-            Join Fire Guide Today
-            <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-          </Button>
-          <p className="text-sm text-gray-500 mt-4">
-            Free to join
-          </p>
+        {/* BOTTOM — full-width CTA card (always visible) */}
+        <div className="procta-bottom-card">
+          <div className="procta-bottom-row">
+            <div className="procta-bottom-message">
+              <div className="flex items-start gap-3 mb-4">
+                <span className="procta-icon-light">
+                  <Shield className="w-5 h-5 text-red-600" strokeWidth={2} />
+                </span>
+                <div>
+                  <p className="procta-bottom-title">
+                    Join thousands of fire safety professionals already growing with Fire Guide.
+                  </p>
+                  <p className="procta-bottom-sub">It&apos;s free to join and always will be.</p>
+                </div>
+              </div>
+              <p className="procta-signature" style={{ fontSize: '14px', marginLeft: '45px' }}>Your expertise. More opportunities.</p>
+            </div>
+
+            <div className="procta-bottom-features">
+              {ctaFeatures.map((feature, index) => (
+                <Fragment key={feature.title}>
+                  {index > 0 && <div className="procta-vdivider" aria-hidden />}
+                  <div className="procta-feature-col">
+                    <div className="procta-feature-row">
+                      <CtaFeatureIconCircle icon={feature.icon} />
+                      <div className="procta-feature-text">
+                        <p className="procta-feature-title">{feature.title}</p>
+                        <p className="procta-feature-desc">{feature.description}</p>
+                      </div>
+                    </div>
+                  </div>
+                </Fragment>
+              ))}
+            </div>
+
+            <div className="procta-bottom-action">
+              <Button
+                type="button"
+                onClick={handleJoinNow}
+                className="bg-red-600 hover:bg-red-700 text-white text-[15px] font-bold px-8 py-[22px] rounded-xl group shadow-md whitespace-nowrap w-full sm:w-auto"
+              >
+                Join Fire Guide Today
+                <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+              </Button>
+              <p className="procta-bottom-hint">Get started in minutes</p>
+            </div>
+          </div>
+        </div>
+
+        {/* TRUST FOOTER */}
+        <div className="procta-trust">
+          {trustItems.map((item, index) => (
+            <Fragment key={item}>
+              {index > 0 && <div className="procta-trust-divider" aria-hidden />}
+              <div className="procta-trust-item">
+                <span className="procta-trust-check">
+                  <Check className="w-3 h-3 text-green-600" strokeWidth={3} />
+                </span>
+                <span className="procta-trust-text">{item}</span>
+              </div>
+            </Fragment>
+          ))}
         </div>
       </div>
     </section>
