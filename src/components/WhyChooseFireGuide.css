@@ -1,0 +1,231 @@
+/* ── With Fire Guide vs Traditional Way comparison ── */
+.wcfg-comparison {
+  position: relative;
+  --wcfg-red-width: 54;
+  --wcfg-clip-bottom: 78;
+}
+
+.wcfg-comparison-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 1.25rem;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(10, 17, 40, 0.1);
+}
+
+.wcfg-comparison-fireguide {
+  position: relative;
+  z-index: 2;
+  background: #e31b23;
+  color: #fff;
+  padding: 2.5rem 2rem;
+}
+
+.wcfg-comparison-traditional {
+  position: relative;
+  z-index: 1;
+  background: #f3f4f6;
+  padding: 2.5rem 2rem 2.5rem 2.75rem;
+}
+
+.wcfg-comparison-heading {
+  position: relative;
+  z-index: 10;
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0 0 1.375rem;
+}
+
+.wcfg-comparison-fireguide .wcfg-comparison-heading {
+  color: #fff;
+}
+
+.wcfg-comparison-traditional .wcfg-comparison-heading {
+  color: #0a1128;
+}
+
+.wcfg-comparison-list {
+  position: relative;
+  z-index: 10;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  max-width: 17.5rem;
+}
+
+.wcfg-comparison-list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+@media (min-width: 768px) {
+  .wcfg-comparison-list-item {
+    font-size: 1rem;
+  }
+}
+
+.wcfg-comparison-fireguide .wcfg-comparison-list-item {
+  color: #fff;
+}
+
+.wcfg-comparison-traditional .wcfg-comparison-list-item {
+  color: #0a1128;
+}
+
+.wcfg-comparison-check {
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 9999px;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.wcfg-comparison-check-icon {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  color: #e31b23;
+}
+
+.wcfg-comparison-x {
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 9999px;
+  border: 2px solid #e31b23;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.wcfg-comparison-x-icon {
+  width: 0.75rem;
+  height: 0.75rem;
+  color: #e31b23;
+}
+
+.wcfg-comparison-watermark {
+  position: absolute;
+  right: 1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 9.5rem;
+  height: 9.5rem;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.12;
+}
+
+@media (min-width: 768px) {
+  .wcfg-comparison-watermark {
+    right: 2rem;
+    width: 11.5rem;
+    height: 11.5rem;
+  }
+}
+
+.wcfg-comparison-watermark--shield {
+  color: #fff;
+  right: 2.75rem;
+}
+
+@media (min-width: 768px) {
+  .wcfg-comparison-watermark--shield {
+    right: 5.5rem;
+  }
+}
+
+.wcfg-comparison-watermark--clipboard {
+  color: #9ca3af;
+}
+
+.wcfg-comparison-vs {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 3.75rem;
+  height: 3.75rem;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(10, 17, 40, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.wcfg-comparison-vs-text {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0a1128;
+  line-height: 1;
+}
+
+@media (min-width: 768px) {
+  .wcfg-comparison-inner {
+    display: block;
+    min-height: 21rem;
+  }
+
+  .wcfg-comparison-traditional {
+    min-height: 21rem;
+    padding: 2.75rem 2.75rem 2.75rem calc(50% + 2.75rem);
+  }
+
+  .wcfg-comparison-fireguide {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: calc(var(--wcfg-red-width) * 1%);
+    padding: 2.75rem 3.5rem 2.75rem 2.75rem;
+    clip-path: polygon(
+      0 0,
+      100% 0,
+      calc(var(--wcfg-clip-bottom) * 1%) 100%,
+      0 100%
+    );
+  }
+
+  .wcfg-comparison-list {
+    max-width: 62%;
+  }
+
+  /* Midpoint of diagonal seam at vertical center */
+  .wcfg-comparison-vs {
+    left: calc(
+      (var(--wcfg-red-width) + var(--wcfg-red-width) * var(--wcfg-clip-bottom) / 100) *
+        1% / 2
+    );
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 4rem;
+    height: 4rem;
+  }
+
+  .wcfg-comparison-vs-text {
+    font-size: 1.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .wcfg-comparison {
+    --wcfg-red-width: 52;
+    --wcfg-clip-bottom: 80;
+  }
+
+  .wcfg-comparison-traditional {
+    padding-left: calc(48% + 3.25rem);
+  }
+}

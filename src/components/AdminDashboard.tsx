@@ -24,6 +24,7 @@ import {
   Wallet,
   Filter,
   Loader2,
+  Building2,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -61,6 +62,7 @@ import { AdminPayout } from "./AdminPayout";
 import { FRABasePriceContent } from "./FRABasePriceContent";
 import { AdminCustomQuoteContent } from "./AdminCustomQuoteContent";
 import { AdminNoticePeriod } from "./AdminNoticePeriod";
+import { AdminOrganization } from "./AdminOrganization";
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
 
 interface AdminDashboardProps {
@@ -112,13 +114,13 @@ function getBookingStatusBadgeClass(status: string): string {
   }
 }
 
-type AdminView = "dashboard" | "customers" | "professionals" | "bookings" | "payments" | "payout" | "reviews" | "services" | "fra-base-price" | "notice-period" | "custom-quote" | "notifications" | "settings";
+type AdminView = "dashboard" | "customers" | "professionals" | "organization" | "bookings" | "payments" | "payout" | "reviews" | "services" | "fra-base-price" | "notice-period" | "custom-quote" | "notifications" | "settings";
 
 export function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { view } = useParams<{ view?: string }>();
-  const validViews: AdminView[] = ["dashboard", "customers", "professionals", "bookings", "payments", "payout", "reviews", "services", "fra-base-price", "notice-period", "custom-quote", "notifications", "settings"];
+  const validViews: AdminView[] = ["dashboard", "customers", "professionals", "organization", "bookings", "payments", "payout", "reviews", "services", "fra-base-price", "notice-period", "custom-quote", "notifications", "settings"];
   
   // Determine current view from URL parameter or pathname, default to "dashboard"
   // Check if we're on the services/add or services/edit route
@@ -302,6 +304,7 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
     { id: "dashboard" as AdminView, label: "Dashboard", icon: LayoutDashboard },
     { id: "customers" as AdminView, label: "Customers", icon: Users },
     { id: "professionals" as AdminView, label: "Professionals", icon: Briefcase },
+    { id: "organization" as AdminView, label: "Organization", icon: Building2 },
     { id: "bookings" as AdminView, label: "Bookings", icon: Calendar },
     { id: "payments" as AdminView, label: "Payments", icon: CreditCard },
     { id: "payout" as AdminView, label: "Payout", icon: Wallet },
@@ -606,6 +609,8 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
         return <AdminCustomers />;
       case "professionals":
         return <AdminProfessionals />;
+      case "organization":
+        return <AdminOrganization />;
       case "bookings":
         return <AdminBookings />;
       case "payments":

@@ -12,27 +12,47 @@ const apiClient = axios.create({
 
 export interface CreateMembershipRequest {
   api_token: string;
-  organization_name: string;
+  option_id: number;
   membership_type?: string;
   reference_id?: string;
   member_since?: string;
   note?: string;
   evidence?: string;
-  logo?: string;
+}
+
+export interface MembershipOptionNested {
+  id?: number;
+  option?: string;
+  logo?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface ProfessionalMembershipApiItem {
   id: number;
-  organization_name: string;
+  professional_id?: number;
+  option_id?: number;
+  /** Legacy flat field — prefer `option.option` when present. */
+  organization_name?: string | null;
   membership_type?: string | null;
   reference_id?: string | null;
   member_since?: string | null;
   note?: string | null;
   evidence?: string | null;
+  /** Legacy flat logo — prefer `option.logo` when present. */
   logo?: string | null;
   status?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  option?: MembershipOptionNested | null;
+}
+
+export function getMembershipOptionName(item: ProfessionalMembershipApiItem): string {
+  return (item.option?.option ?? item.organization_name ?? "").trim();
+}
+
+export function getMembershipOptionLogoPath(item: ProfessionalMembershipApiItem): string {
+  return (item.option?.logo ?? item.logo ?? "").trim();
 }
 
 export interface CreateMembershipResponse {
@@ -369,7 +389,7 @@ export const createMembership = async (
   try {
     const requestBody: CreateMembershipRequest = {
       api_token: data.api_token,
-      organization_name: data.organization_name.trim(),
+      option_id: data.option_id,
     };
 
     const membershipType = data.membership_type?.trim();
@@ -377,14 +397,12 @@ export const createMembership = async (
     const memberSince = data.member_since?.trim();
     const note = data.note?.trim();
     const evidence = data.evidence?.trim();
-    const logo = data.logo?.trim();
 
     if (membershipType) requestBody.membership_type = membershipType;
     if (referenceId) requestBody.reference_id = referenceId;
     if (memberSince) requestBody.member_since = memberSince;
     if (note) requestBody.note = note;
     if (evidence) requestBody.evidence = evidence;
-    if (logo) requestBody.logo = logo;
 
     const response = await apiClient.post<CreateMembershipResponse>(
       "/membership/create",
@@ -404,6 +422,206 @@ export const createMembership = async (
         err.response?.data?.error ||
         err.message ||
         "Failed to create membership.",
+      error: err.response?.data?.error || err.message,
+    };
+  }
+};
+
+export interface CreateMembershipOptionRequest {
+  option: string;
+  logo: string;
+}
+
+export interface MembershipOptionItem {
+  id?: number;
+  option_id?: number;
+  option?: string;
+  logo?: string;
+  created_at?: string;
+}
+
+export interface CreateMembershipOptionResponse {
+  status?: boolean | string;
+  success?: boolean;
+  message?: string;
+  error?: string;
+  data?: MembershipOptionItem;
+}
+
+/** POST /create/membership/option — body: { option, logo (base64 data URL) } */
+export const createMembershipOption = async (
+  data: CreateMembershipOptionRequest
+): Promise<CreateMembershipOptionResponse> => {
+  try {
+    const response = await apiClient.post<CreateMembershipOptionResponse>(
+      "/create/membership/option",
+      {
+        option: data.option.trim(),
+        logo: data.logo.trim(),
+      }
+    );
+    return response.data;
+  } catch (error: unknown) {
+    const err = error as {
+      response?: { data?: { message?: string; error?: string } };
+      message?: string;
+    };
+    return {
+      status: false,
+      success: false,
+      message:
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        "Failed to create organization option.",
+      error: err.response?.data?.error || err.message,
+    };
+  }
+};
+
+export interface GetAllMembershipOptionsRequest {
+  api_token: string;
+}
+
+export interface GetAllMembershipOptionsResponse {
+  status?: boolean | string;
+  success?: boolean;
+  message?: string;
+  error?: string;
+  total?: number;
+  data?:
+    | MembershipOptionItem[]
+    | {
+        options?: MembershipOptionItem[];
+        membership_options?: MembershipOptionItem[];
+      };
+}
+
+export function parseMembershipOptionsData(
+  data: GetAllMembershipOptionsResponse["data"]
+): MembershipOptionItem[] {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  return data.options ?? data.membership_options ?? [];
+}
+
+/** POST /get-all/membership/option — body: { api_token } */
+export const getAllMembershipOptions = async (
+  apiToken: string
+): Promise<GetAllMembershipOptionsResponse> => {
+  try {
+    const response = await apiClient.post<GetAllMembershipOptionsResponse>(
+      "/get-all/membership/option",
+      { api_token: apiToken }
+    );
+    return response.data;
+  } catch (error: unknown) {
+    const err = error as {
+      response?: { data?: { message?: string; error?: string } };
+      message?: string;
+    };
+    return {
+      status: false,
+      success: false,
+      message:
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        "Failed to load organization options.",
+      error: err.response?.data?.error || err.message,
+    };
+  }
+};
+
+export interface GetSingleMembershipOptionResponse {
+  status?: boolean | string;
+  success?: boolean;
+  message?: string;
+  error?: string;
+  data?: MembershipOptionItem;
+}
+
+/** POST /get-single/membership/option — body: { api_token, option_id } */
+export const getSingleMembershipOption = async (
+  apiToken: string,
+  optionId: number
+): Promise<GetSingleMembershipOptionResponse> => {
+  try {
+    const response = await apiClient.post<GetSingleMembershipOptionResponse>(
+      "/get-single/membership/option",
+      {
+        api_token: apiToken,
+        option_id: optionId,
+      }
+    );
+    return response.data;
+  } catch (error: unknown) {
+    const err = error as {
+      response?: { data?: { message?: string; error?: string } };
+      message?: string;
+    };
+    return {
+      status: false,
+      success: false,
+      message:
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        "Failed to load organization details.",
+      error: err.response?.data?.error || err.message,
+    };
+  }
+};
+
+export function resolveMembershipOptionLogoUrl(
+  logo: string | null | undefined,
+  apiToken?: string | null
+): string {
+  const value = logo?.trim() ?? "";
+  if (!value) return "";
+  if (value.startsWith("data:") || /^https?:\/\//i.test(value)) return value;
+  return getMembershipMediaUrl(value, { apiToken }) || value;
+}
+
+export interface DeleteMembershipOptionRequest {
+  api_token: string;
+  option_id: number;
+}
+
+export interface DeleteMembershipOptionResponse {
+  status?: boolean | string;
+  success?: boolean;
+  message?: string;
+  error?: string;
+}
+
+/** POST /delete/membership/option — body: { api_token, option_id } */
+export const deleteMembershipOption = async (
+  apiToken: string,
+  optionId: number
+): Promise<DeleteMembershipOptionResponse> => {
+  try {
+    const response = await apiClient.post<DeleteMembershipOptionResponse>(
+      "/delete/membership/option",
+      {
+        api_token: apiToken,
+        option_id: optionId,
+      }
+    );
+    return response.data;
+  } catch (error: unknown) {
+    const err = error as {
+      response?: { data?: { message?: string; error?: string } };
+      message?: string;
+    };
+    return {
+      status: false,
+      success: false,
+      message:
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        "Failed to delete organization option.",
       error: err.response?.data?.error || err.message,
     };
   }

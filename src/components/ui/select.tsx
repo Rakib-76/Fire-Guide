@@ -16,15 +16,30 @@ const SelectContext = React.createContext<SelectContextValue | undefined>(undefi
 interface SelectProps {
   value?: string;
   onValueChange?: (value: string) => void;
+  onOpenChange?: (open: boolean) => void;
   defaultValue?: string;
   children: React.ReactNode;
 }
 
-const Select = ({ value: controlledValue, onValueChange, defaultValue, children }: SelectProps) => {
+const Select = ({
+  value: controlledValue,
+  onValueChange,
+  onOpenChange,
+  defaultValue,
+  children,
+}: SelectProps) => {
   const [internalValue, setInternalValue] = React.useState(defaultValue || "");
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpenState] = React.useState(false);
   const triggerRef = React.useRef<HTMLDivElement>(null);
   const value = controlledValue !== undefined ? controlledValue : internalValue;
+
+  const setOpen = React.useCallback(
+    (next: boolean) => {
+      setOpenState(next);
+      onOpenChange?.(next);
+    },
+    [onOpenChange]
+  );
 
   const handleValueChange = (newValue: string) => {
     if (controlledValue === undefined) {

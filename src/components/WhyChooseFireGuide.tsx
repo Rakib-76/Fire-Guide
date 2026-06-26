@@ -17,6 +17,7 @@ import {
   Info,
   Lock,
 } from "lucide-react";
+import "./WhyChooseFireGuide.css";
 
 function TraditionalClipboardWatermark({
   className,
@@ -175,54 +176,48 @@ export function WhyChooseFireGuide() {
         </div>
 
         {/* Comparison section */}
-        <div className="relative rounded-2xl overflow-hidden shadow-lg mb-10 ">
-          <div className="grid grid-cols-1 md:grid-cols-2">
-            {/* Fire Guide side */}
-            <div className="relative bg-red-600 text-white p-8 md:pr-20">
+        <div className="wcfg-comparison mb-10">
+          <div className="wcfg-comparison-inner">
+            <div className="wcfg-comparison-fireguide">
               <ShieldCheck
-                className="absolute right-4 md:right-10 top-1/2 -translate-y-1/2 w-40 h-40 md:w-48 md:h-48 text-white pointer-events-none z-[1]"
-                style={{ opacity: 0.12 }}
+                className="wcfg-comparison-watermark wcfg-comparison-watermark--shield"
                 strokeWidth={1.25}
                 aria-hidden
               />
-              <h3 className="relative z-10 text-xl font-bold mb-5 md:max-w-[62%]">With Fire Guide</h3>
-              <ul className="relative z-10 space-y-3 md:max-w-[62%]">
-                {fireGuidePoints.map((point, index) => (
-                  <li key={index} className="flex items-center gap-3">
-                    <span className="w-5 h-5 rounded-full bg-white flex items-center justify-center flex-shrink-0">
-                      <Check className="w-3.5 h-3.5 text-red-600" strokeWidth={3} />
+              <h3 className="wcfg-comparison-heading">With Fire Guide</h3>
+              <ul className="wcfg-comparison-list">
+                {fireGuidePoints.map((point) => (
+                  <li key={point} className="wcfg-comparison-list-item">
+                    <span className="wcfg-comparison-check" aria-hidden>
+                      <Check className="wcfg-comparison-check-icon" strokeWidth={3} />
                     </span>
-                    <span className="text-sm">{point}</span>
+                    <span>{point}</span>
                   </li>
                 ))}
               </ul>
             </div>
 
-            {/* Traditional side */}
-            <div className="relative bg-white p-8 md:pr-20 min-h-[320px]">
+            <div className="wcfg-comparison-traditional">
               <TraditionalClipboardWatermark
-                className="absolute right-4 md:right-10 top-1/2 -translate-y-1/2 w-40 h-40 md:w-48 md:h-48 text-gray-400 pointer-events-none z-[1]"
-                style={{ opacity: 0.12 }}
+                className="wcfg-comparison-watermark wcfg-comparison-watermark--clipboard"
+                aria-hidden
               />
-              <h3 className="relative z-10 text-xl font-bold mb-5 text-gray-900 md:max-w-[62%]">
-                Traditional Way
-              </h3>
-              <ul className="relative z-10 space-y-3 md:max-w-[62%]">
-                {traditionalPoints.map((point, index) => (
-                  <li key={index} className="flex items-center gap-3">
-                    <span className="w-5 h-5 rounded-full bg-red-600 flex items-center justify-center flex-shrink-0">
-                      <X className="w-3.5 h-3.5 text-white" strokeWidth={3} />
+              <h3 className="wcfg-comparison-heading">Traditional Way</h3>
+              <ul className="wcfg-comparison-list">
+                {traditionalPoints.map((point) => (
+                  <li key={point} className="wcfg-comparison-list-item">
+                    <span className="wcfg-comparison-x" aria-hidden>
+                      <X className="wcfg-comparison-x-icon" strokeWidth={3} />
                     </span>
-                    <span className="text-sm text-gray-600">{point}</span>
+                    <span>{point}</span>
                   </li>
                 ))}
               </ul>
             </div>
           </div>
 
-          {/* VS badge */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-white shadow-lg flex items-center justify-center z-10 ">
-            <span className="font-bold text-gray-900 text-sm lg:text-xl md:text-lg">VS</span>
+          <div className="wcfg-comparison-vs" aria-hidden>
+            <span className="wcfg-comparison-vs-text">VS</span>
           </div>
         </div>
 

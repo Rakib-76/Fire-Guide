@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Building2,
   Plus,
@@ -46,6 +46,12 @@ import {
   createMembership,
   deleteMembership,
   getAllMemberships,
+  getAllMembershipOptions,
+  getSingleMembershipOption,
+  getMembershipOptionLogoPath,
+  getMembershipOptionName,
+  parseMembershipOptionsData,
+  resolveMembershipOptionLogoUrl,
   encodeImageFileAsBase64DataUrl,
   buildMembershipEvidenceViewUrls,
   buildMembershipLogoViewUrls,
@@ -94,6 +100,7 @@ export type ProfessionalMembershipSectionProps = {
 
 const EMPTY_MEMBERSHIP_FORM = {
   organizationName: "",
+  selectedOptionId: "",
   membershipType: "",
   membershipId: "",
   memberSince: "",
@@ -103,32 +110,25 @@ const EMPTY_MEMBERSHIP_FORM = {
   documentUploadedAt: "",
   logoFileName: "",
   logoDataUrl: "",
+  optionLogoRaw: "",
 };
 
-const PROFESSIONAL_BODY_OPTIONS = [
-  "IFSM",
-  "IFE",
-  "FIA",
-  "BAFE",
-  "FPA",
-  "UK-FA",
-  "ASFP",
-  "IIRSM",
-  "IOSH",
-  "CABE",
-  "RICS",
-  "CIOB",
-  "NFRAR",
-  "FRACS",
-  "CFPA Europe",
-  "Institution of Occupational Safety and Health",
-  "International Institute of Risk and Safety Management",
-  "Association for Specialist Fire Protection",
-  "Fire Protection Association",
-  "Institution of Fire Engineers",
-  "Institute of Fire Safety Managers",
-  "Fire Industry Association",
-];
+type OrganizationOption = {
+  id: number;
+  name: string;
+};
+
+function isSuccessfulMembershipOptionResponse(response: {
+  status?: boolean | string;
+  success?: boolean;
+  message?: string;
+  error?: string;
+}): boolean {
+  if (response.success === true) return true;
+  if (response.status === true || response.status === "success") return true;
+  if (response.message && !response.error) return true;
+  return false;
+}
 
 function normalizeMembershipStatus(status: string | null | undefined): string {
   const value = String(status ?? "").trim().toLowerCase();
@@ -313,13 +313,14 @@ function mapApiMembershipToEntry(
   preview?: { documentDataUrl?: string; logoDataUrl?: string }
 ): ProfessionalMembershipEntry {
   const evidencePath = item.evidence?.trim() || undefined;
-  const logoPath = item.logo?.trim() || undefined;
+  const logoPath = getMembershipOptionLogoPath(item) || undefined;
+  const organizationName = getMembershipOptionName(item);
   const documentPreview = preview?.documentDataUrl?.trim();
   const logoPreview = preview?.logoDataUrl?.trim();
 
   return resolveMembershipEntryMedia({
     id: String(item.id),
-    organizationName: (item.organization_name ?? "").trim(),
+    organizationName,
     membershipType: (item.membership_type ?? "").trim(),
     membershipId: (item.reference_id ?? "").trim(),
     memberSince: (item.member_since ?? "").trim(),
@@ -327,16 +328,16 @@ function mapApiMembershipToEntry(
     status: (item.status ?? "").trim() || "pending",
     evidencePath,
     logoPath,
+    documentUploadedAt: item.created_at ?? item.updated_at ?? undefined,
     ...(evidencePath || documentPreview
       ? {
         documentFileName: "Membership certificate",
         documentDataUrl: documentPreview?.startsWith("data:") ? documentPreview : undefined,
-        documentUploadedAt: item.created_at ?? new Date().toISOString(),
       }
       : {}),
     ...(logoPath || logoPreview
       ? {
-        logoFileName: "Organization logo",
+        logoFileName: organizationName ? `${organizationName} logo` : "Organization logo",
         logoDataUrl: logoPreview?.startsWith("data:") ? logoPreview : undefined,
       }
       : {}),
@@ -369,8 +370,131 @@ export function ProfessionalMembershipSection({
     urls: string[];
   } | null>(null);
   const [membershipEvidencePreviewIndex, setMembershipEvidencePreviewIndex] = useState(0);
+  const [organizationOptions, setOrganizationOptions] = useState<OrganizationOption[]>([]);
+  const [isLoadingOrganizationOptions, setIsLoadingOrganizationOptions] = useState(false);
+  const [isLoadingOrganizationLogo, setIsLoadingOrganizationLogo] = useState(false);
 
   const membershipAssetInputRef = useRef<HTMLInputElement>(null);
+  const organizationOptionsRequestRef = useRef(0);
+  const organizationLogoRequestRef = useRef(0);
+
+  const loadOrganizationOptions = useCallback(async () => {
+    const apiToken = getApiToken();
+    if (!apiToken) {
+      toast.error("Please log in to load organizations.");
+      setOrganizationOptions([]);
+      return;
+    }
+
+    const requestId = ++organizationOptionsRequestRef.current;
+    setIsLoadingOrganizationOptions(true);
+    try {
+      const response = await getAllMembershipOptions(apiToken);
+      if (requestId !== organizationOptionsRequestRef.current) return;
+
+      const rows = parseMembershipOptionsData(response.data);
+      const options = rows
+        .map((item) => {
+          const id = item.option_id ?? item.id;
+          const name = item.option?.trim();
+          if (id == null || !name) return null;
+          return { id, name };
+        })
+        .filter((item): item is OrganizationOption => item != null)
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+
+      setOrganizationOptions(options);
+
+      if (options.length === 0 && !isSuccessfulMembershipOptionResponse(response)) {
+        toast.error(response.message || response.error || "Failed to load organizations.");
+      }
+    } catch (error: unknown) {
+      if (requestId !== organizationOptionsRequestRef.current) return;
+      setOrganizationOptions([]);
+      const message =
+        error && typeof error === "object" && "message" in error
+          ? String((error as { message?: string }).message)
+          : "Failed to load organizations.";
+      toast.error(message);
+    } finally {
+      if (requestId === organizationOptionsRequestRef.current) {
+        setIsLoadingOrganizationOptions(false);
+      }
+    }
+  }, []);
+
+  const loadOrganizationLogo = useCallback(async (optionId: number, optionName: string) => {
+    const apiToken = getApiToken();
+    if (!apiToken) {
+      toast.error("Please log in to load organization logo.");
+      return;
+    }
+
+    const requestId = ++organizationLogoRequestRef.current;
+    setIsLoadingOrganizationLogo(true);
+    setMembershipForm((prev) => ({
+      ...prev,
+      selectedOptionId: String(optionId),
+      organizationName: optionName,
+      logoDataUrl: "",
+      logoFileName: "",
+      optionLogoRaw: "",
+    }));
+
+    try {
+      const response = await getSingleMembershipOption(apiToken, optionId);
+      if (requestId !== organizationLogoRequestRef.current) return;
+
+      if (!isSuccessfulMembershipOptionResponse(response)) {
+        toast.error(
+          response.message || response.error || "Failed to load organization logo."
+        );
+        return;
+      }
+
+      const rawLogo = response.data?.logo?.trim() ?? "";
+      if (!rawLogo) {
+        return;
+      }
+
+      const logoDataUrl = rawLogo.startsWith("data:")
+        ? rawLogo
+        : resolveMembershipOptionLogoUrl(rawLogo, apiToken) || rawLogo;
+
+      setMembershipForm((prev) => ({
+        ...prev,
+        selectedOptionId: String(optionId),
+        organizationName: optionName,
+        logoDataUrl,
+        logoFileName: `${optionName} logo`,
+        optionLogoRaw: rawLogo,
+      }));
+    } catch (error: unknown) {
+      if (requestId !== organizationLogoRequestRef.current) return;
+      const message =
+        error && typeof error === "object" && "message" in error
+          ? String((error as { message?: string }).message)
+          : "Failed to load organization logo.";
+      toast.error(message);
+    } finally {
+      if (requestId === organizationLogoRequestRef.current) {
+        setIsLoadingOrganizationLogo(false);
+      }
+    }
+  }, []);
+
+  const handleOrganizationSelect = (optionId: number) => {
+    if (!Number.isFinite(optionId)) return;
+    const option = organizationOptions.find((item) => item.id === optionId);
+    if (!option) return;
+    void loadOrganizationLogo(option.id, option.name);
+  };
+
+  const handleOrganizationSelectOpenChange = (open: boolean) => {
+    if (open) {
+      void loadOrganizationOptions();
+    }
+  };
 
   const membershipFormOpen = isFormControlled ? addFormOpen : internalFormOpen;
 
@@ -418,8 +542,14 @@ export function ProfessionalMembershipSection({
 
   const handleAddMembership = async () => {
     const organizationName = membershipForm.organizationName.trim();
-    if (!organizationName) {
+    if (!organizationName || !membershipForm.selectedOptionId) {
       toast.error("Please select the professional body / organization.");
+      return;
+    }
+
+    const optionId = Number(membershipForm.selectedOptionId);
+    if (!Number.isFinite(optionId) || optionId <= 0) {
+      toast.error("Invalid organization selection. Please choose again.");
       return;
     }
 
@@ -438,13 +568,12 @@ export function ProfessionalMembershipSection({
     try {
       const response = await createMembership({
         api_token: apiToken,
-        organization_name: organizationName,
+        option_id: optionId,
         membership_type: membershipForm.membershipType.trim() || undefined,
         reference_id: membershipForm.membershipId.trim() || undefined,
         member_since: membershipForm.memberSince.trim() || undefined,
         note: membershipForm.notes.trim() || undefined,
         evidence: membershipForm.documentDataUrl.trim() || undefined,
-        logo: membershipForm.logoDataUrl.trim() || undefined,
       });
 
       const ok =
@@ -524,6 +653,7 @@ export function ProfessionalMembershipSection({
       ...prev,
       logoFileName: file.name,
       logoDataUrl: dataUrl,
+      optionLogoRaw: "",
     }));
   };
 
@@ -1103,20 +1233,33 @@ export function ProfessionalMembershipSection({
                 <div className="space-y-2">
                   <Label htmlFor="membership-organization">Professional Body / Organization*</Label>
                   <Select
-                    value={membershipForm.organizationName || undefined}
-                    onValueChange={(value) =>
-                      setMembershipForm((prev) => ({ ...prev, organizationName: value }))
-                    }
+                    value={membershipForm.selectedOptionId || undefined}
+                    onOpenChange={handleOrganizationSelectOpenChange}
+                    onValueChange={(value) => handleOrganizationSelect(Number(value))}
                   >
                     <SelectTrigger id="membership-organization">
-                      <SelectValue placeholder="Select professional body / organization" />
+                      <SelectValue
+                        label={membershipForm.organizationName}
+                        placeholder="Select professional body / organization"
+                      />
                     </SelectTrigger>
                     <SelectContent>
-                      {PROFESSIONAL_BODY_OPTIONS.map((name) => (
-                        <SelectItem key={name} value={name}>
-                          {name}
-                        </SelectItem>
-                      ))}
+                      {isLoadingOrganizationOptions ? (
+                        <div className="flex items-center gap-2 px-2 py-2 text-sm text-gray-500">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Loading organizations...
+                        </div>
+                      ) : organizationOptions.length === 0 ? (
+                        <div className="px-2 py-2 text-sm text-gray-500">
+                          No organizations available
+                        </div>
+                      ) : (
+                        organizationOptions.map((option) => (
+                          <SelectItem key={option.id} value={String(option.id)}>
+                            {option.name}
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1212,10 +1355,12 @@ export function ProfessionalMembershipSection({
                   <button
                     type="button"
                     onClick={() => handleMembershipAssetClick({ kind: "logo", forForm: true })}
-                    disabled={uploadingMembershipAsset === "form-logo"}
-                    className="flex w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center transition-colors hover:border-red-300 hover:bg-red-50/40"
+                    disabled={
+                      uploadingMembershipAsset === "form-logo" || isLoadingOrganizationLogo
+                    }
+                    className="flex w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center transition-colors hover:border-red-300 hover:bg-red-50/40 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {uploadingMembershipAsset === "form-logo" ? (
+                    {uploadingMembershipAsset === "form-logo" || isLoadingOrganizationLogo ? (
                       <Loader2 className="mb-2 h-6 w-6 animate-spin text-gray-500" />
                     ) : membershipForm.logoDataUrl ? (
                       <img
@@ -1227,7 +1372,11 @@ export function ProfessionalMembershipSection({
                       <ImageIcon className="mb-2 h-6 w-6 text-gray-400" />
                     )}
                     <p className="text-sm font-medium text-gray-700">
-                      {membershipForm.logoDataUrl ? "Logo uploaded" : "Click to upload logo"}
+                      {isLoadingOrganizationLogo
+                        ? "Loading organization logo..."
+                        : membershipForm.logoDataUrl
+                          ? "Logo uploaded"
+                          : "Click to upload logo"}
                     </p>
                     <p className="mt-1 text-xs text-gray-500">PNG, JPG, or SVG (Max 2MB)</p>
                   </button>

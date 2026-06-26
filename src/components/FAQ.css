@@ -499,7 +499,7 @@
 @media (min-width: 1024px) {
   .faq-support-card {
     flex: 0 0 32%;
-    max-width: 21.5rem;
+    max-width: 24rem;
     align-self: stretch;
     min-height: 100%;
   }
@@ -527,83 +527,90 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 2.25rem 1.75rem;
+  padding: 2.5rem 2rem;
   min-height: 100%;
+  gap: 0.25rem;
 }
 
 @media (min-width: 640px) {
   .faq-support-inner {
-    padding: 2.5rem 2rem;
+    padding: 2.75rem 2.25rem;
   }
 }
 
 @media (min-width: 1024px) {
   .faq-support-inner {
-    padding: 2.75rem 2rem;
+    padding: 3rem 2.25rem;
     justify-content: flex-start;
   }
 }
 
 .faq-support-icon-wrap {
-  width: 3.75rem;
-  height: 3.75rem;
+  width: 4.25rem;
+  height: 4.25rem;
   border-radius: 9999px;
   background: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 1.375rem;
+  margin-bottom: 1.5rem;
 }
 
 .faq-support-icon {
-  width: 1.625rem;
-  height: 1.625rem;
+  width: 1.875rem;
+  height: 1.875rem;
   color: #0a1128;
 }
 
 .faq-support-title {
-  font-size: 1.3125rem;
+  font-size: 1.4375rem;
   font-weight: 700;
   line-height: 1.35;
   color: #fff;
-  margin: 0 0 0.625rem;
+  margin: 0 0 0.75rem;
 }
 
 @media (min-width: 768px) {
   .faq-support-title {
-    font-size: 1.4375rem;
+    font-size: 1.5625rem;
   }
 }
 
 .faq-support-desc {
-  font-size: 0.875rem;
-  line-height: 1.55;
-  color: rgba(255, 255, 255, 0.72);
-  margin: 0 0 1.625rem;
-  max-width: 15.5rem;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.78);
+  margin: 0 0 1.875rem;
+  max-width: 17.5rem;
+}
+
+@media (min-width: 768px) {
+  .faq-support-desc {
+    font-size: 1rem;
+  }
 }
 
 .faq-support-features {
   list-style: none;
-  margin: 0 0 1.875rem;
+  margin: 0 0 2rem;
   padding: 0;
   width: 100%;
-  max-width: 14rem;
+  max-width: 16rem;
   display: flex;
   flex-direction: column;
-  gap: 0.8125rem;
+  gap: 1rem;
   text-align: left;
 }
 
 .faq-support-feature {
   display: flex;
   align-items: center;
-  gap: 0.6875rem;
+  gap: 0.8125rem;
 }
 
 .faq-support-check {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.375rem;
+  height: 1.375rem;
   border-radius: 9999px;
   background: #e31b23;
   display: inline-flex;
@@ -613,16 +620,22 @@
 }
 
 .faq-support-check-icon {
-  width: 0.75rem;
-  height: 0.75rem;
+  width: 0.8125rem;
+  height: 0.8125rem;
   color: #fff;
 }
 
 .faq-support-feature-text {
-  font-size: 0.875rem;
-  line-height: 1.4;
+  font-size: 0.9375rem;
+  line-height: 1.45;
   color: #fff;
   font-weight: 500;
+}
+
+@media (min-width: 768px) {
+  .faq-support-feature-text {
+    font-size: 1rem;
+  }
 }
 
 .faq-support-btn {
@@ -631,22 +644,22 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.5625rem;
   border: none;
   border-radius: 0.75rem;
   background: #e31b23;
   color: #fff;
-  font-size: 0.9375rem;
+  font-size: 1rem;
   font-weight: 700;
   line-height: 1;
-  padding: 1rem 1.25rem;
+  padding: 1.125rem 1.375rem;
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
 
 .faq-support-btn-icon {
-  width: 1.125rem;
-  height: 1.125rem;
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 .faq-support-btn:hover {
