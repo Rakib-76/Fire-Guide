@@ -1,0 +1,184 @@
+.trust-bar-section {
+  width: 100%;
+  background: #fff;
+  padding: 0 0 2rem;
+}
+
+@media (min-width: 768px) {
+  .trust-bar-section {
+    padding: 0 0 2.5rem;
+  }
+}
+
+.trust-bar-container {
+  width: 100%;
+  max-width: none;
+}
+
+.trust-bar {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  width: 100%;
+  padding: 1.25rem 1.125rem;
+  border: 1px solid #e8eaee;
+  border-left: none;
+  border-right: none;
+  border-radius: 0;
+  background: #f6f7f9;
+}
+
+@media (min-width: 640px) {
+  .trust-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem 1.5rem;
+    padding: 1.375rem 1.5rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .trust-bar {
+    padding: 1.375rem 2rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .trust-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 1.375rem 2.5rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .trust-bar {
+    padding: 1.375rem 3rem;
+  }
+}
+
+.trust-bar-item {
+  min-width: 0;
+}
+
+.trust-bar-item--reviews {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+@media (min-width: 640px) {
+  .trust-bar-item--reviews {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1024px) {
+  .trust-bar-item--reviews {
+    flex: 1 1 auto;
+    max-width: 15rem;
+  }
+}
+
+.trust-bar-item--feature {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.trust-bar-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.trust-bar-line {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #0a1128;
+}
+
+@media (min-width: 768px) {
+  .trust-bar-line {
+    font-size: 0.9375rem;
+  }
+}
+
+.trust-bar-rating {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.trust-bar-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  color: #facc15;
+}
+
+.trust-bar-star {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.trust-bar-rating-text {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #6b7280;
+}
+
+@media (min-width: 768px) {
+  .trust-bar-rating-text {
+    font-size: 0.8125rem;
+  }
+}
+
+.trust-bar-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 2.875rem;
+  height: 2.875rem;
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  color: #0a1128;
+}
+
+.trust-bar-icon-wrap--outlined {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-color: #0a1128;
+}
+
+.trust-bar-icon {
+  display: block;
+  flex-shrink: 0;
+}
+
+.trust-bar-icon--shield {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.trust-bar-icon--clock {
+  width: 1.625rem;
+  height: 1.625rem;
+}
+
+.trust-bar-icon--pound {
+  width: 1.1875rem;
+  height: 1.1875rem;
+}
+
+@media (min-width: 1024px) {
+  .trust-bar-item--feature {
+    flex: 0 1 auto;
+  }
+}

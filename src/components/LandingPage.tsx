@@ -4,6 +4,7 @@ import { Hero } from "./Hero";
 
 const HowItWorks = lazy(() => import("./HowItWorks").then(m => ({ default: m.HowItWorks })));
 const ServicesGrid = lazy(() => import("./ServicesGrid").then(m => ({ default: m.ServicesGrid })));
+const WhatWeDo = lazy(() => import("./WhatWeDo").then(m => ({ default: m.WhatWeDo })));
 const ProfessionalCTA = lazy(() => import("./ProfessionalCTA").then(m => ({ default: m.ProfessionalCTA })));
 const Footer = lazy(() => import("./Footer").then(m => ({ default: m.Footer })));
 const TrustIndicators = lazy(() => import("./TrustIndicators").then(m => ({ default: m.TrustIndicators })));
@@ -97,16 +98,28 @@ export function LandingPage({
         <TrustIndicators />
       </Suspense>
       <Suspense fallback={null}>
-        <ProfessionalCTA onJoinNow={onProfessionalLogin} />
+        <ServicesGrid onSelectService={onGetStarted} />
+      </Suspense>
+      <Suspense fallback={null}>
+        <WhatWeDo />
       </Suspense>
       <Suspense fallback={null}>
         <HowItWorks onGetStarted={onGetStarted} />
       </Suspense>
       <Suspense fallback={null}>
-        <CoreBenefits />
+        <WhyChooseFireGuide />
       </Suspense>
       <Suspense fallback={null}>
-        <ServicesGrid onSelectService={onGetStarted} />
+        <ProfessionalCTA onJoinNow={onProfessionalLogin} />
+      </Suspense>
+      <Suspense fallback={null}>
+        <PricingPreview
+          onGetQuote={onGetStarted}
+          onContactSales={onNavigateToContactPage}
+        />
+      </Suspense>
+      <Suspense fallback={null}>
+        <CoreBenefits />
       </Suspense>
       {/* <Suspense fallback={null}>
         <FeaturedProfessionals onViewProfile={onGetStarted} />
@@ -119,15 +132,6 @@ export function LandingPage({
       </Suspense>
       <Suspense fallback={null}>
         {/* <InteractiveCalculator onGetQuote={onGetStarted} /> */}
-      </Suspense>
-      <Suspense fallback={null}>
-        <PricingPreview
-          onGetQuote={onGetStarted}
-          onContactSales={onNavigateToContactPage}
-        />
-      </Suspense>
-      <Suspense fallback={null}>
-        <WhyChooseFireGuide />
       </Suspense>
       <Suspense fallback={null}>
         <CoverageMap onCheckAvailability={onGetStarted} />

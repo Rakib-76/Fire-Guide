@@ -1,0 +1,246 @@
+.what-we-do-section {
+  background: #fff;
+  padding: 1.5rem 1rem 3.5rem;
+}
+
+@media (min-width: 640px) {
+  .what-we-do-section {
+    padding: 2rem 1.25rem 4.5rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .what-we-do-section {
+    padding: 2rem 1.5rem 5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .what-we-do-section {
+    padding: 2rem 1.5rem 6rem;
+  }
+}
+
+.what-we-do-container {
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.what-we-do-layout {
+  display: grid;
+  gap: 1.75rem;
+  align-items: start;
+}
+
+@media (min-width: 768px) {
+  .what-we-do-layout {
+    gap: 2.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .what-we-do-layout {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    gap: 3.5rem;
+    align-items: center;
+  }
+}
+
+.what-we-do-eyebrow {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ef4444;
+}
+
+@media (min-width: 640px) {
+  .what-we-do-eyebrow {
+    margin-bottom: 1rem;
+    font-size: 0.8125rem;
+  }
+}
+
+.what-we-do-title {
+  margin: 0 0 1rem;
+  font-size: 1.625rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: #0a1128;
+}
+
+@media (min-width: 640px) {
+  .what-we-do-title {
+    margin-bottom: 1.125rem;
+    font-size: 1.875rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .what-we-do-title {
+    margin-bottom: 1.25rem;
+    font-size: 2rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .what-we-do-title {
+    font-size: 2.25rem;
+  }
+}
+
+.what-we-do-description {
+  margin: 0;
+  max-width: none;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: #6b7280;
+}
+
+@media (min-width: 640px) {
+  .what-we-do-description {
+    font-size: 1rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .what-we-do-description {
+    max-width: 26rem;
+  }
+}
+
+.what-we-do-card {
+  background: #f4f5f7;
+  border-radius: 0.875rem;
+  padding: 1.25rem 1.125rem;
+}
+
+@media (min-width: 640px) {
+  .what-we-do-card {
+    border-radius: 1rem;
+    padding: 1.5rem 1.375rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .what-we-do-card {
+    padding: 1.75rem 1.75rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .what-we-do-card {
+    padding: 2rem 2.25rem;
+  }
+}
+
+.what-we-do-card-title {
+  margin: 0 0 1.125rem;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #0a1128;
+}
+
+@media (min-width: 640px) {
+  .what-we-do-card-title {
+    margin-bottom: 1.25rem;
+    font-size: 1.125rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .what-we-do-card-title {
+    margin-bottom: 1.5rem;
+    font-size: 1.25rem;
+  }
+}
+
+.what-we-do-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.875rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+@media (min-width: 640px) {
+  .what-we-do-list {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 1.25rem;
+    row-gap: 1rem;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .what-we-do-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 768px) {
+  .what-we-do-list {
+    row-gap: 1.125rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .what-we-do-list {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 2rem;
+  }
+}
+
+.what-we-do-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: #4b5563;
+}
+
+@media (min-width: 640px) {
+  .what-we-do-list-item {
+    font-size: 0.875rem;
+  }
+}
+
+.what-we-do-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-top: 0.125rem;
+  border-radius: 9999px;
+  background: #ef4444;
+}
+
+@media (min-width: 640px) {
+  .what-we-do-check {
+    margin-top: 0.1875rem;
+  }
+}
+
+.what-we-do-check-icon {
+  width: 0.625rem;
+  height: 0.625rem;
+  color: #fff;
+}
+
+/* Tablet: side-by-side text + card */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .what-we-do-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    align-items: center;
+  }
+
+  .what-we-do-description {
+    max-width: 22rem;
+  }
+}

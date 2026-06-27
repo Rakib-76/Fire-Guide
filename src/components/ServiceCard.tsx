@@ -1,8 +1,8 @@
-import { LucideIcon } from "lucide-react";
+import { LucideIcon, ArrowRight, Edit, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { Edit, Trash2 } from "lucide-react";
+import "./ServiceCard.css";
 
 export interface Service {
   id: number;
@@ -19,11 +19,40 @@ export interface Service {
 
 interface ServiceCardProps {
   service: Service;
-  variant?: "default" | "admin" | "customer" | "professional";
+  variant?: "default" | "admin" | "customer" | "professional" | "landing";
   onEdit?: (id: number) => void;
   onDelete?: (id: number) => void;
   onClick?: () => void;
   showActions?: boolean;
+}
+
+const colorClasses = {
+  red: "bg-red-100 text-red-600 group-hover:bg-red-600 group-hover:text-white",
+  blue: "bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white",
+  orange: "bg-orange-100 text-orange-600 group-hover:bg-orange-600 group-hover:text-white",
+  green: "bg-green-100 text-green-600 group-hover:bg-green-600 group-hover:text-white",
+  purple: "bg-purple-100 text-purple-600 group-hover:bg-purple-600 group-hover:text-white",
+};
+
+const landingThemeClasses = {
+  red: "service-card-landing--red",
+  blue: "service-card-landing--blue",
+  green: "service-card-landing--green",
+  purple: "service-card-landing--purple",
+  orange: "service-card-landing--orange",
+} as const;
+
+function formatLandingPrice(basePrice: string): string {
+  return basePrice.replace(/\.00$/, "");
+}
+
+type ServiceColor = keyof typeof colorClasses;
+
+function getServiceColor(service: Service): ServiceColor {
+  if (service.color && service.color in colorClasses) {
+    return service.color as ServiceColor;
+  }
+  return "red";
 }
 
 export function ServiceCard({
@@ -34,16 +63,49 @@ export function ServiceCard({
   onClick,
   showActions = true
 }: ServiceCardProps) {
-  const colorClasses = {
-    red: "bg-red-100 text-red-600 group-hover:bg-red-600 group-hover:text-white",
-    blue: "bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white",
-    orange: "bg-orange-100 text-orange-600 group-hover:bg-orange-600 group-hover:text-white",
-    green: "bg-green-100 text-green-600 group-hover:bg-green-600 group-hover:text-white",
-    purple: "bg-purple-100 text-purple-600 group-hover:bg-purple-600 group-hover:text-white"
-  };
-
+  const serviceColor = getServiceColor(service);
   const isClickable = variant !== "admin" && onClick;
   const isAdmin = variant === "admin";
+  const isLanding = variant === "landing";
+
+  if (isLanding) {
+    const Icon = service.iconComponent;
+    const themeClass = landingThemeClasses[serviceColor];
+
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`service-card-landing ${themeClass} ${
+          service.active === false ? "service-card-landing--inactive" : ""
+        }`}
+      >
+        <div className="service-card-landing__top">
+          {Icon ? (
+            <div className="service-card-landing__icon-wrap">
+              <Icon className="service-card-landing__icon" strokeWidth={2} />
+            </div>
+          ) : service.icon ? (
+            <span className="text-xl leading-none">{service.icon}</span>
+          ) : null}
+          <h3 className="service-card-landing__title">{service.name}</h3>
+        </div>
+
+        <p className="service-card-landing__description">{service.description}</p>
+
+        <div className="service-card-landing__footer">
+          <p
+            className={`service-card-landing__price ${
+              service.active === false ? "service-card-landing__price--muted" : ""
+            }`}
+          >
+            From {formatLandingPrice(service.basePrice)}
+          </p>
+          <ArrowRight className="service-card-landing__arrow" strokeWidth={2.25} />
+        </div>
+      </button>
+    );
+  }
 
   return (
     <Card
@@ -65,9 +127,7 @@ export function ServiceCard({
             {service.iconComponent && (
               <div
                 className={`w-12 h-12 md:w-14 md:h-14 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${
-                  service.color && colorClasses[service.color as keyof typeof colorClasses]
-                    ? colorClasses[service.color as keyof typeof colorClasses]
-                    : "bg-red-100 text-red-600 group-hover:bg-red-600 group-hover:text-white"
+                  colorClasses[serviceColor]
                 }`}
               >
                 <service.iconComponent className="w-6 h-6 md:w-7 md:h-7" />
@@ -87,9 +147,7 @@ export function ServiceCard({
             {service.iconComponent && (
               <div
                 className={`w-14 h-14 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${
-                  service.color && colorClasses[service.color as keyof typeof colorClasses]
-                    ? colorClasses[service.color as keyof typeof colorClasses]
-                    : "bg-red-100 text-red-600 group-hover:bg-red-600 group-hover:text-white"
+                  colorClasses[serviceColor]
                 }`}
               >
                 <service.iconComponent className="w-7 h-7" />

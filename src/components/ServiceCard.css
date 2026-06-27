@@ -1,0 +1,220 @@
+/* ── Landing service card (matches reference mockup) ── */
+.service-card-landing {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 12.5rem;
+  padding: 1rem 0.875rem 0.875rem;
+  border: none;
+  border-radius: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+@media (min-width: 640px) {
+  .service-card-landing {
+    min-height: 13.25rem;
+    padding: 1.0625rem 1rem 1rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .service-card-landing {
+    min-height: 13.75rem;
+    padding: 1.125rem 1rem 1rem;
+  }
+}
+
+@media (hover: hover) {
+  .service-card-landing:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(10, 17, 40, 0.08);
+  }
+}
+
+.service-card-landing--inactive {
+  opacity: 0.72;
+}
+
+.service-card-landing__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin-bottom: 0.625rem;
+}
+
+@media (min-width: 640px) {
+  .service-card-landing__top {
+    margin-bottom: 0.75rem;
+  }
+}
+
+.service-card-landing__icon-wrap {
+  display: flex;
+  height: 2rem;
+  width: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.625rem;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(10, 17, 40, 0.06);
+}
+
+@media (min-width: 640px) {
+  .service-card-landing__icon-wrap {
+    height: 2.25rem;
+    width: 2.25rem;
+  }
+}
+
+.service-card-landing__icon {
+  height: 1rem;
+  width: 1rem;
+}
+
+@media (min-width: 640px) {
+  .service-card-landing__icon {
+    height: 1.125rem;
+    width: 1.125rem;
+  }
+}
+
+.service-card-landing__title {
+  margin: 0;
+  padding-top: 0.0625rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #0a1128;
+}
+
+@media (min-width: 640px) {
+  .service-card-landing__title {
+    padding-top: 0.125rem;
+    font-size: 0.9375rem;
+  }
+}
+
+.service-card-landing__description {
+  margin: 0 0 0.875rem;
+  flex: 1;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: #6b7280;
+}
+
+@media (min-width: 640px) {
+  .service-card-landing__description {
+    margin-bottom: 1rem;
+    font-size: 0.8125rem;
+  }
+}
+
+.service-card-landing__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: auto;
+}
+
+.service-card-landing__price {
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+@media (min-width: 640px) {
+  .service-card-landing__price {
+    font-size: 0.9375rem;
+  }
+}
+
+.service-card-landing__arrow {
+  height: 1.125rem;
+  width: 1.125rem;
+  flex-shrink: 0;
+  color: #6b7280;
+  transition: color 0.2s ease;
+}
+
+@media (hover: hover) {
+  .service-card-landing:hover .service-card-landing__arrow {
+    color: #374151;
+  }
+}
+
+/* Theme backgrounds — soft pastel fills, no borders */
+.service-card-landing--red {
+  background: #fef0f0;
+}
+
+.service-card-landing--red .service-card-landing__icon {
+  color: #ef4444;
+}
+
+.service-card-landing--red .service-card-landing__price {
+  color: #ef4444;
+}
+
+.service-card-landing--blue {
+  background: #eef5ff;
+}
+
+.service-card-landing--blue .service-card-landing__icon {
+  color: #3b82f6;
+}
+
+.service-card-landing--blue .service-card-landing__price {
+  color: #3b82f6;
+}
+
+.service-card-landing--green {
+  background: #f2faf5;
+}
+
+.service-card-landing--green .service-card-landing__icon {
+  color: #22c55e;
+}
+
+.service-card-landing--green .service-card-landing__price {
+  color: #22c55e;
+}
+
+.service-card-landing--purple {
+  background: #f7f3ff;
+}
+
+.service-card-landing--purple .service-card-landing__icon {
+  color: #8b5cf6;
+}
+
+.service-card-landing--purple .service-card-landing__price {
+  color: #8b5cf6;
+}
+
+.service-card-landing--orange {
+  background: #fff5ed;
+}
+
+.service-card-landing--orange .service-card-landing__icon {
+  color: #f97316;
+}
+
+.service-card-landing--orange .service-card-landing__price {
+  color: #f97316;
+}
+
+.service-card-landing--red .service-card-landing__price--muted,
+.service-card-landing--blue .service-card-landing__price--muted,
+.service-card-landing--green .service-card-landing__price--muted,
+.service-card-landing--purple .service-card-landing__price--muted,
+.service-card-landing--orange .service-card-landing__price--muted {
+  color: #9ca3af;
+}

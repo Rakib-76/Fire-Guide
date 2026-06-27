@@ -1,58 +1,78 @@
-import { Shield, Layers, Zap, BookOpen, CheckCircle } from "lucide-react";
+import { ShieldCheck, PoundSterling, Clock, Star } from "lucide-react";
+import "./TrustIndicators.css";
+
+const TRUST_ITEMS = [
+  {
+    id: "verified",
+    icon: ShieldCheck,
+    line1: "Verified",
+    line2: "Professionals",
+    iconClass: "trust-bar-icon--shield",
+  },
+  {
+    id: "pricing",
+    icon: PoundSterling,
+    line1: "Transparent",
+    line2: "Pricing",
+    outlined: true,
+    iconClass: "trust-bar-icon--pound",
+  },
+  {
+    id: "booking",
+    icon: Clock,
+    line1: "Fast & Easy",
+    line2: "Booking",
+    iconClass: "trust-bar-icon--clock",
+  },
+  {
+    id: "compliance",
+    icon: ShieldCheck,
+    line1: "Compliant with",
+    line2: "UK Regulations",
+    iconClass: "trust-bar-icon--shield",
+  },
+] as const;
 
 export function TrustIndicators() {
   return (
-    <div className="bg-[#0A1A2F] border-t border-gray-700">
-      <div className="max-w-7xl mx-auto px-6 lg:px-12 py-12">
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-
-          {/* Feature 1 */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center flex-shrink-0">
-                <Shield className="w-4 h-4 text-white" />
-              </div>
-              <h3 className="text-white text-xl">Trusted Industry Experts</h3>
+    <section className="trust-bar-section" aria-label="Why customers trust Fire Guide">
+      <div className="trust-bar-container">
+        <div className="trust-bar">
+          <div className="trust-bar-item trust-bar-item--reviews">
+            <div className="trust-bar-copy">
+              <p className="trust-bar-line">Trusted by 500+</p>
+              <p className="trust-bar-line">Businesses across the UK</p>
             </div>
-            <p className="text-white/70">Professionals reviewed for experience, qualifications and customer feedback</p>
+            <div className="trust-bar-rating">
+              <div className="trust-bar-stars" aria-label="4.9 out of 5 stars">
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <Star key={index} className="trust-bar-star" fill="currentColor" strokeWidth={0} />
+                ))}
+              </div>
+              <p className="trust-bar-rating-text">4.9/5 from 200+ reviews</p>
+            </div>
           </div>
 
-          {/* Feature 2 */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center flex-shrink-0">
-                <Layers className="w-4 h-4 text-white" />
+          {TRUST_ITEMS.map((item) => {
+            const Icon = item.icon;
+            return (
+              <div key={item.id} className="trust-bar-item trust-bar-item--feature">
+                <div
+                  className={`trust-bar-icon-wrap${
+                    item.outlined ? " trust-bar-icon-wrap--outlined" : ""
+                  }`}
+                >
+                  <Icon className={`trust-bar-icon ${item.iconClass}`} strokeWidth={2} aria-hidden />
+                </div>
+                <div className="trust-bar-copy">
+                  <p className="trust-bar-line">{item.line1}</p>
+                  <p className="trust-bar-line">{item.line2}</p>
+                </div>
               </div>
-              <h3 className="text-white text-xl">Comprehensive Services
-              </h3>
-            </div>
-            <p className="text-white/70">All your fire safety needs in one placele through one platform.</p>
-          </div>
-
-          {/* Feature 3 */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center flex-shrink-0">
-                <Zap className="w-4 h-4 text-white" />
-              </div>
-              <h3 className="text-white text-xl">Fast & Reliable</h3>
-            </div>
-            <p className="text-white/70">Quick response and efficient service</p>
-          </div>
-
-          {/* Feature 4 */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center flex-shrink-0">
-              <CheckCircle className="w-4 h-4 text-white" />
-              </div>
-              <h3 className="text-white text-xl">Regulation-Focused Services</h3>
-            </div>
-            <p className="text-white/70">Services aligned with current fire safety regulations and industry expectations</p>
-          </div>
-
+            );
+          })}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
