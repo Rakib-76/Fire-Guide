@@ -41,7 +41,7 @@ export function TrustIndicators() {
           <div className="trust-bar-item trust-bar-item--reviews">
             <div className="trust-bar-copy">
               <p className="trust-bar-line">Trusted by 500+</p>
-              <p className="trust-bar-line">Businesses across the UK</p>
+              <p className="trust-bar-line trust-bar-line--regular">Businesses across the UK</p>
             </div>
             <div className="trust-bar-rating">
               <div className="trust-bar-stars" aria-label="4.9 out of 5 stars">

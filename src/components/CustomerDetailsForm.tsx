@@ -100,6 +100,7 @@ export function CustomerDetailsForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCustomQuoteWaiting, setShowCustomQuoteWaiting] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(() => Boolean(getApiToken()));
+  const showPasswordFields = !isLoggedIn && needsPasswordForBooking;
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -138,10 +139,10 @@ export function CustomerDetailsForm({
     if (!formData.address.trim()) newErrors.address = "Address is required";
     if (!formData.city.trim()) newErrors.city = "City is required";
     if (!formData.postcode.trim()) newErrors.postcode = "Postcode is required";
-    if (needsPasswordForBooking && !password.trim()) newErrors.password = "Password is required";
-    if (needsPasswordForBooking && !confirmPassword.trim()) {
+    if (showPasswordFields && !password.trim()) newErrors.password = "Password is required";
+    if (showPasswordFields && !confirmPassword.trim()) {
       newErrors.confirmPassword = "Please confirm your password";
-    } else if (needsPasswordForBooking && password !== confirmPassword) {
+    } else if (showPasswordFields && password !== confirmPassword) {
       newErrors.confirmPassword = "Passwords do not match";
     }
 
@@ -501,15 +502,6 @@ export function CustomerDetailsForm({
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {isLoggedIn && needsPasswordForBooking ? (
-                      <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-                        You&apos;re signed in. Enter your password below to complete your booking.
-                      </p>
-                    ) : isLoggedIn && !needsPasswordForBooking ? (
-                      <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-                        You&apos;re signed in. Continue to payment when your details are correct.
-                      </p>
-                    ) : null}
                     {initialData.professionalBookingId ? (
                       <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
                         Your booking is saved. Click continue to return to payment.
@@ -595,7 +587,7 @@ export function CustomerDetailsForm({
                       <p className="text-xs text-gray-500">The professional may call to confirm details</p>
                     </div>
 
-                    {needsPasswordForBooking ? (
+                    {showPasswordFields ? (
                       <>
                         <div className="space-y-2">
                           <Label htmlFor="password">Password *</Label>
@@ -628,9 +620,7 @@ export function CustomerDetailsForm({
                             </p>
                           ) : (
                             <p className="text-xs text-gray-500">
-                              {isLoggedIn
-                                ? "Required by the booking system to complete your reservation"
-                                : "We'll create your account when you continue to payment"}
+                              We&apos;ll create your account when you continue to payment
                             </p>
                           )}
                         </div>

@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Menu, User, ChevronDown } from "lucide-react";
+import { Menu, User } from "lucide-react";
 import { Button } from "./ui/button";
 import { getSessionUserDisplay, isAuthenticated } from "../lib/auth";
 import { navigateToProfessionalHome } from "../lib/professionalDashboardNavigation";
+import { ServicesNavDropdown, ServicesNavMobileSection } from "./ServicesNavMenu";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 
 export interface UserInfo {
@@ -95,24 +96,13 @@ export function Header({
           <img src={logoImage} alt="Fire Guide" className="h-12" />
         </Link>
         
-        <nav className="hidden lg:block">
+        <nav className="hidden lg:block overflow-visible">
           <div className="flex items-center gap-8 text-lg">
           <button type="button" onClick={handleNavigateHome} className="relative py-2 hover:text-red-600 transition-colors group cursor-pointer">
             Home
             <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
           </button>
-          <button
-            onClick={onNavigateServices || onGetStarted}
-            className="relative inline-flex items-center gap-1 py-2 hover:text-red-600 transition-colors group cursor-pointer"
-          >
-            Services
-            <ChevronDown
-              className="h-4 w-4 shrink-0 opacity-80 transition-colors group-hover:text-red-600"
-              strokeWidth={2.25}
-              aria-hidden
-            />
-            <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
-          </button>
+          <ServicesNavDropdown />
           <button onClick={onProfessionalLogin} className="relative py-2 hover:text-red-600 transition-colors group cursor-pointer">
             For Professionals
             <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 transition-all duration-300 group-hover:w-full"></span>
@@ -172,15 +162,7 @@ export function Header({
             >
               Home
             </button>
-            <button 
-              onClick={onNavigateServices || onGetStarted} 
-              className="flex items-center justify-between py-3 px-4 rounded-lg hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer"
-            >
-              <span className="inline-flex items-center gap-1">
-                Services
-                <ChevronDown className="h-4 w-4 shrink-0 opacity-80" strokeWidth={2.25} aria-hidden />
-              </span>
-            </button>
+            <ServicesNavMobileSection onMenuClose={() => setMobileMenuOpen(false)} />
             <button 
               onClick={onProfessionalLogin} 
               className="text-left py-3 px-4 rounded-lg hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer"

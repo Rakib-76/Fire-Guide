@@ -93,6 +93,7 @@ type FormData = {
   staffTrainingBefore: string;
   consultationType: string;
   consultationHours: string;
+  customConsultationHours: string;
 };
 
 const SKIP_VALUE = "__skip__";
@@ -105,6 +106,7 @@ const CUSTOM_EMERGENCY_LIGHTS = "__custom_emergency_lights__";
 const CUSTOM_FLOORS = "__custom_floors__";
 const CUSTOM_PROPERTY_TYPE = "__custom_property_type__";
 const CUSTOM_TRAINING_PEOPLE = "__custom_training_people__";
+const CUSTOM_CONSULTATION_HOURS = "__custom_consultation_hours__";
 
 function isPeopleCustomQuoteLabel(text: string): boolean {
   const t = (text ?? "").trim().toLowerCase();
@@ -127,6 +129,7 @@ const CUSTOM_QUOTE_OPTION_VALUES = new Set([
   CUSTOM_FLOORS,
   CUSTOM_PROPERTY_TYPE,
   CUSTOM_TRAINING_PEOPLE,
+  CUSTOM_CONSULTATION_HOURS,
 ]);
 
 function isCustomQuoteOptionSelection(
@@ -189,6 +192,7 @@ const EMPTY_FORM: FormData = {
   staffTrainingBefore: "",
   consultationType: "",
   consultationHours: "",
+  customConsultationHours: "",
 };
 
 function resolveServiceName(serviceName?: string, service?: string): string {
@@ -320,6 +324,7 @@ export function SmartQuestionnaire({
       (opt) => isFloorCustomQuoteOption(opt) && String(opt.id ?? opt.floor) === formData.numberOfFloors
     );
   const showCustomTrainingPeopleInput = formData.trainingPeopleCount === CUSTOM_TRAINING_PEOPLE;
+  const showCustomConsultationHoursInput = formData.consultationHours === CUSTOM_CONSULTATION_HOURS;
 
   const sortedApproximatePeopleOptions = useMemo(
     () =>
@@ -548,6 +553,9 @@ export function SmartQuestionnaire({
     if (isFireMarshalTrainingService) {
       return formData.trainingPeopleCount === CUSTOM_TRAINING_PEOPLE;
     }
+    if (isFireSafetyConsultationService) {
+      return formData.consultationHours === CUSTOM_CONSULTATION_HOURS;
+    }
     if (isFireRiskAssessmentService) {
       return (
         formData.numberOfFloors === CUSTOM_FLOORS ||
@@ -558,7 +566,7 @@ export function SmartQuestionnaire({
       );
     }
     return false;
-  }, [formData, flags, floorOptions, isFireAlarmService, isFireExtinguisherService, isEmergencyLightingService, isFireMarshalTrainingService, isFireRiskAssessmentService, showCustomPeopleInput]);
+  }, [formData, flags, floorOptions, isFireAlarmService, isFireExtinguisherService, isEmergencyLightingService, isFireMarshalTrainingService, isFireSafetyConsultationService, isFireRiskAssessmentService, showCustomPeopleInput]);
 
   const isStepValid = useCallback((): boolean => {
     if (isFireAlarmService) {
@@ -660,7 +668,9 @@ export function SmartQuestionnaire({
         case 1:
           return Boolean(formData.consultationType);
         case 2:
-          return Boolean(formData.consultationHours);
+          return showCustomConsultationHoursInput
+            ? Boolean(formData.customConsultationHours.trim())
+            : Boolean(formData.consultationHours);
         case 3:
           return Boolean(formData.assessmentDate);
         case 4:
@@ -690,7 +700,7 @@ export function SmartQuestionnaire({
       default:
         return false;
     }
-  }, [currentStep, formData, flags, showCustomEmergencyLightsInput, showCustomExtinguisherCountInput, showCustomFireAlarmCallPointsInput, showCustomFireAlarmDetectorsInput, showCustomFireAlarmFloorsInput, showCustomFireAlarmPanelsInput, showCustomFloorsInput, showCustomPeopleInput, showCustomPropertyTypeInput, showCustomTrainingPeopleInput]);
+  }, [currentStep, formData, flags, showCustomConsultationHoursInput, showCustomEmergencyLightsInput, showCustomExtinguisherCountInput, showCustomFireAlarmCallPointsInput, showCustomFireAlarmDetectorsInput, showCustomFireAlarmFloorsInput, showCustomFireAlarmPanelsInput, showCustomFloorsInput, showCustomPeopleInput, showCustomPropertyTypeInput, showCustomTrainingPeopleInput]);
 
   const buildCustomQuoteRequestData = (): CustomQuoteRequestData => {
     const base: CustomQuoteRequestData = {
@@ -751,6 +761,16 @@ export function SmartQuestionnaire({
             : formData.trainingPeopleCount
         ),
         building_type: optionLabel(marshalBuildingOptions, formData.buildingType),
+      };
+    }
+
+    if (isFireSafetyConsultationService) {
+      return {
+        ...base,
+        consultation_mode: optionLabel(consultationModeOptions, formData.consultationType),
+        consultation_hours: showCustomConsultationHoursInput
+          ? `${formData.customConsultationHours.trim()} hours`
+          : optionLabel(consultationHourOptions, formData.consultationHours),
       };
     }
 
@@ -932,16 +952,23 @@ export function SmartQuestionnaire({
     }
 
     if (isFireSafetyConsultationService) {
+      const hoursLabel = showCustomConsultationHoursInput
+        ? `${formData.customConsultationHours.trim()} hours`
+        : optionLabel(consultationHourOptions, formData.consultationHours);
       return {
         mode_id: parseInt(String(formData.consultationType), 10) || 1,
-        hour_id: parseInt(String(formData.consultationHours), 10) || 1,
+        hour_id: showCustomConsultationHoursInput
+          ? 0
+          : parseInt(String(formData.consultationHours), 10) || 1,
         preferred_date,
         access_note,
         consultation_type: optionLabel(consultationModeOptions, formData.consultationType),
-        consultation_hours: optionLabel(consultationHourOptions, formData.consultationHours),
+        consultation_hours: hoursLabel,
         request_data: {
           mode_id: parseInt(String(formData.consultationType), 10) || 1,
-          hour_id: parseInt(String(formData.consultationHours), 10) || 1,
+          hour_id: showCustomConsultationHoursInput
+            ? 0
+            : parseInt(String(formData.consultationHours), 10) || 1,
         },
       };
     }
@@ -1014,6 +1041,9 @@ export function SmartQuestionnaire({
     if (isFireMarshalTrainingService) {
       return currentStep === 1 && showCustomTrainingPeopleInput;
     }
+    if (isFireSafetyConsultationService) {
+      return currentStep === 2 && showCustomConsultationHoursInput;
+    }
     if (isFireRiskAssessmentService || (!isFireAlarmService && !isFireExtinguisherService && !isEmergencyLightingService && !isFireMarshalTrainingService && !isFireSafetyConsultationService)) {
       if (currentStep === 1) return showCustomPropertyTypeInput;
       if (currentStep === 2) return showCustomPeopleInput;
@@ -1038,6 +1068,7 @@ export function SmartQuestionnaire({
     showCustomPeopleInput,
     showCustomPropertyTypeInput,
     showCustomTrainingPeopleInput,
+    showCustomConsultationHoursInput,
   ]);
 
   const showContinueButton =
@@ -1524,8 +1555,24 @@ export function SmartQuestionnaire({
                     value={formData.consultationHours}
                     onValueChange={(value) => handleOptionSelect("consultationHours", value)}
                     loading={loadingConsultationOptions}
-                    options={consultationHourOptions.map((opt) => ({ value: String(opt.id), label: opt.value }))}
+                    options={[
+                      ...consultationHourOptions.map((opt) => ({ value: String(opt.id), label: opt.value })),
+                      { value: CUSTOM_CONSULTATION_HOURS, label: QUESTIONNAIRE_OTHERS_LABEL },
+                    ]}
                   />
+                  {showCustomConsultationHoursInput && (
+                    <div className="mt-4 space-y-2">
+                      <Label htmlFor="customConsultationHours">{QUESTIONNAIRE_OTHERS_LABEL}</Label>
+                      <Input
+                        id="customConsultationHours"
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="e.g. 3, 6, 8"
+                        value={formData.customConsultationHours}
+                        onChange={(e) => updateFormData("customConsultationHours", e.target.value)}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
