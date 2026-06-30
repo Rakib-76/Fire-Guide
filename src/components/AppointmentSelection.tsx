@@ -17,16 +17,9 @@ import {
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 import { fetchProfessionalProfileAvailableDates, ProfessionalProfileAvailableDateItem } from "../api/availableDatesService";
 import { getNoticeBlockedBookingDates } from "../api/professionalsService";
-import { normalizeSlotForBookingComparison } from "../lib/bookingSlotNormalize";
+import { normalizeSlotForBookingComparison, deriveBookingSlotGridFromAvailability, resolveAvailableSlotsForDate } from "../lib/bookingSlotNormalize";
 import type { BookingData } from "./BookingFlow";
 import { BookingServiceDetailsLines } from "./BookingServiceDetailsLines";
-
-/** Parse API date string to YYYY-MM-DD. Handles "2026-03-28 00:00:00" and "2026-03-28T00:00:00.000000Z". */
-function parseDateOnly(dateStr: string): string {
-  if (!dateStr) return "";
-  const s = dateStr.replace(" ", "T").slice(0, 10);
-  return s;
-}
 
 interface AppointmentSelectionProps {
   service: BookingData["service"];
@@ -174,18 +167,16 @@ export function AppointmentSelection({
 
   const calendarDays = generateCalendarDays();
 
-  const timeSlots = [
-    "9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
-    "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM"
-  ];
+  const timeSlots = useMemo(
+    () => deriveBookingSlotGridFromAvailability(availableDatesData),
+    [availableDatesData]
+  );
 
-  // For the selected date, slots the API lists as bookable (source of truth).
-  const availableSlotsForSelectedDate = useMemo(() => {
-    if (!selectedDate) return new Set<string>();
-    const entry = availableDatesData.find((d) => parseDateOnly(d.date) === parseDateOnly(selectedDate));
-    if (!entry || !entry.slots || !Array.isArray(entry.slots)) return new Set<string>();
-    return new Set(entry.slots.map((s) => normalizeSlotForBookingComparison(s)));
-  }, [selectedDate, availableDatesData]);
+  // API date → only listed slots; dates outside API (e.g. next month) → full default grid.
+  const availableSlotsForSelectedDate = useMemo(
+    () => resolveAvailableSlotsForDate(selectedDate, availableDatesData, timeSlots),
+    [selectedDate, availableDatesData, timeSlots]
+  );
 
   const handleContinue = () => {
     if (selectedDate && selectedTime) {

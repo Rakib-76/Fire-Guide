@@ -5,12 +5,7 @@ import { Label } from "./ui/label";
 import { Calendar, ChevronLeft, ChevronRight, Clock, Loader2 } from "lucide-react";
 import { fetchProfessionalProfileAvailableDates, type ProfessionalProfileAvailableDateItem } from "../api/availableDatesService";
 import { getNoticeBlockedBookingDates } from "../api/professionalsService";
-import { normalizeSlotForBookingComparison } from "../lib/bookingSlotNormalize";
-
-function parseDateOnly(dateStr: string): string {
-  if (!dateStr) return "";
-  return dateStr.replace(" ", "T").slice(0, 10);
-}
+import { normalizeSlotForBookingComparison, deriveBookingSlotGridFromAvailability, resolveAvailableSlotsForDate } from "../lib/bookingSlotNormalize";
 
 type DayInfo = { date: string; day: number; isAvailable: boolean; isBlocked: boolean } | null;
 
@@ -129,17 +124,15 @@ export function RescheduleCalendarPicker({
   const calendarDays = generateCalendarDays();
   const monthName = currentMonth.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 
-  const timeSlots = [
-    "9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
-    "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM",
-  ];
+  const timeSlots = useMemo(
+    () => deriveBookingSlotGridFromAvailability(availableDatesData),
+    [availableDatesData]
+  );
 
-  const availableSlotsForSelectedDate = useMemo(() => {
-    if (!selectedDate) return new Set<string>();
-    const entry = availableDatesData.find((d) => parseDateOnly(d.date) === parseDateOnly(selectedDate));
-    if (!entry?.slots || !Array.isArray(entry.slots)) return new Set<string>();
-    return new Set(entry.slots.map((s) => normalizeSlotForBookingComparison(s)));
-  }, [selectedDate, availableDatesData]);
+  const availableSlotsForSelectedDate = useMemo(
+    () => resolveAvailableSlotsForDate(selectedDate, availableDatesData, timeSlots),
+    [selectedDate, availableDatesData, timeSlots]
+  );
 
   if (pid == null) {
     return (

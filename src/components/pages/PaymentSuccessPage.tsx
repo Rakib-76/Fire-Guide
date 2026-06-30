@@ -1,6 +1,16 @@
 import { useMemo, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { Check } from "lucide-react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import {
+  CheckCircle,
+  CreditCard,
+  Home,
+  LayoutDashboard,
+  Mail,
+  Receipt,
+} from "lucide-react";
+import { Button } from "../ui/button";
+import { Card, CardContent } from "../ui/card";
+import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 import {
   readPaymentReturnContext,
   clearPaymentReturnContext,
@@ -8,12 +18,9 @@ import {
 import { markCustomQuoteRequestPaidLocally } from "../../lib/customQuotePaymentLocal";
 import { markBookingPaidLocally } from "../../lib/bookingPaymentStatus";
 
-const GREEN = "#7ED321";
-const NAVY = "#004A73";
-
 function formatMoney(n: number): string {
   const v = Number.isFinite(n) ? n : 0;
-  return `£ ${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `£${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /** Lowercase keys → value (Stripe / gateways vary in casing). */
@@ -67,9 +74,8 @@ function transactionIdFromReturnUrl(search: string): string | null {
 function pickAmount(
   search: string,
   key: string,
-  fromCtx: number | undefined,
-  demo: number
-): number {
+  fromCtx: number | undefined
+): number | null {
   const lower = searchParamsLowercaseMap(search);
   const raw = lower.get(key.toLowerCase());
   if (raw !== undefined && raw !== "") {
@@ -77,7 +83,7 @@ function pickAmount(
     if (Number.isFinite(n)) return n;
   }
   if (typeof fromCtx === "number" && Number.isFinite(fromCtx)) return fromCtx;
-  return demo;
+  return null;
 }
 
 export default function PaymentSuccessPage() {
@@ -123,7 +129,7 @@ export default function PaymentSuccessPage() {
       ctx?.transactionId && String(ctx.transactionId).trim().length > 0
         ? String(ctx.transactionId).trim()
         : null;
-    return fromUrl || fromCtx || (ctx != null ? "Pending" : "12345");
+    return fromUrl || fromCtx;
   }, [search, ctx]);
 
   const lowerSearch = useMemo(() => searchParamsLowercaseMap(search), [search]);
@@ -132,97 +138,212 @@ export default function PaymentSuccessPage() {
   const fromParam =
     orderIdsParam?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
   const orderIds =
-    fromParam.length > 0
-      ? fromParam
-      : ctx?.orderIds?.length
-        ? ctx.orderIds
-        : ["IC-1234", "IC-5678"];
+    fromParam.length > 0 ? fromParam : ctx?.orderIds?.length ? ctx.orderIds : [];
 
-  const amountPaid = pickAmount(search, "amount_paid", ctx?.amountPaid, 3000);
-  const totalAmount = pickAmount(search, "total", ctx?.totalAmount, 5000);
-  const paidIncentives = pickAmount(search, "incentives", ctx?.paidIncentives, 1000);
-  const paidBalance = pickAmount(search, "balance", ctx?.paidBalance, 1000);
-  const paidOnline = pickAmount(search, "online", ctx?.paidOnline, 3000);
+  const amountPaid = pickAmount(search, "amount_paid", ctx?.amountPaid);
+  const totalAmount = pickAmount(search, "total", ctx?.totalAmount);
+  const paidIncentives = pickAmount(search, "incentives", ctx?.paidIncentives);
+  const paidBalance = pickAmount(search, "balance", ctx?.paidBalance);
+  const paidOnline = pickAmount(search, "online", ctx?.paidOnline);
 
-  const orderLine =
-    orderIds.length > 0
-      ? `Order ID : ${orderIds.join(", ")}`
-      : "Order ID : —";
-  const txLine = `Transaction ID : ${transactionId}`;
+  const hasBooking = ctx?.bookingId != null && ctx.bookingId > 0;
+  const hasQuote = ctx?.quoteRequestId != null && ctx.quoteRequestId > 0;
+  const showBreakdown =
+    paidIncentives != null ||
+    paidBalance != null ||
+    (paidOnline != null && amountPaid != null && paidOnline !== amountPaid);
 
   return (
-    <div className="min-h-screen flex flex-col items-center px-4 py-10 sm:py-14 bg-white mt-4">
-      <div className="w-full max-w-lg flex flex-col items-center text-center">
-        <div
-          className="w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-full flex items-center justify-center mb-5 sm:mb-6 shrink-0"
-          style={{ backgroundColor: GREEN }}
-          aria-hidden
-        >
-          <Check className="w-9 h-9 sm:w-10 sm:h-10 text-white stroke-[3]" strokeWidth={3} />
+    <div className="min-h-screen bg-gray-50">
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm text-[#0A1A2F] py-3 px-4 md:px-6">
+        <div className="max-w-7xl mx-auto flex items-center">
+          <Link
+            to="/"
+            className="flex items-center cursor-pointer hover:opacity-90 transition-opacity"
+            aria-label="Go to home"
+          >
+            <img src={logoImage} alt="Fire Guide" className="h-12 w-auto" />
+          </Link>
         </div>
+      </header>
 
-        <h1
-          className="text-2xl sm:text-3xl font-semibold tracking-tight mb-6 sm:mb-8"
-          style={{ color: GREEN }}
-        >
-          Payment Successful !
-        </h1>
-
-        <p className="text-gray-900 font-bold text-base sm:text-lg mb-2 px-1">
-          Thank you! Your payment of {formatMoney(amountPaid)} has been received.
-        </p>
-        <p className="text-gray-500 text-sm mb-8 sm:mb-10 leading-relaxed">
-          {orderLine} | {txLine}
-        </p>
-
-        <p className="text-gray-400 text-sm font-medium w-full max-w-md text-left mb-2">
-          Payment Details
-        </p>
-        <div className="w-full max-w-lg rounded-lg border border-gray-300 bg-white px-5 py-5 sm:px-6 sm:py-6 mb-8 sm:mb-10 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-4 text-sm text-left p-2">
-            <div className="space-y-4">
-              <div>
-                <span className="text-gray-600">Total Amount : </span>
-                <span className="text-gray-900 font-medium">{formatMoney(totalAmount)}</span>
-              </div>
-              <div>
-                <span className="text-gray-600">Paid via Incentives : </span>
-                <span className="text-gray-900 font-medium">{formatMoney(paidIncentives)}</span>
-              </div>
+      <main className="py-10 px-4 md:px-6 md:py-14">
+        <div className="max-w-2xl mx-auto">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
+              <CheckCircle className="w-12 h-12 text-green-600" strokeWidth={2} aria-hidden />
             </div>
-            <div className="space-y-4">
-              <div>
-                <span className="text-gray-600">Paid via Fire Guide Account Balance : </span>
-                <span className="text-gray-900 font-medium">{formatMoney(paidBalance)}</span>
+            <h1 className="text-2xl md:text-3xl font-semibold text-[#0A1A2F] mb-2">
+              Payment successful
+            </h1>
+            <p className="text-lg text-gray-600 max-w-md mx-auto">
+              {amountPaid != null ? (
+                <>
+                  Thank you! Your payment of{" "}
+                  <span className="font-semibold text-[#0A1A2F]">{formatMoney(amountPaid)}</span>{" "}
+                  has been received.
+                </>
+              ) : (
+                "Thank you! Your payment has been received and is being processed."
+              )}
+            </p>
+
+            {(orderIds.length > 0 || transactionId) && (
+              <div className="flex flex-wrap items-center justify-center gap-2 mt-5">
+                {orderIds.map((id) => (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 shadow-sm"
+                  >
+                    <Receipt className="w-3.5 h-3.5 text-gray-400" aria-hidden />
+                    <span className="text-gray-500">Order</span>
+                    <span className="font-semibold text-[#0A1A2F]">{id}</span>
+                  </span>
+                ))}
+                {transactionId && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 shadow-sm max-w-full">
+                    <CreditCard className="w-3.5 h-3.5 text-gray-400 shrink-0" aria-hidden />
+                    <span className="text-gray-500 shrink-0">Transaction</span>
+                    <span className="font-medium text-[#0A1A2F] truncate">{transactionId}</span>
+                  </span>
+                )}
               </div>
-              <div>
-                <span className="text-gray-600">Paid via Online Transaction : </span>
-                <span className="text-gray-900 font-medium">{formatMoney(paidOnline)}</span>
-              </div>
-            </div>
+            )}
           </div>
+
+          <Card className="mb-6 border-gray-200 shadow-sm">
+            <CardContent className="p-6">
+              <h2 className="text-xl text-[#0A1A2F] mb-4 flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-red-600" />
+                Payment summary
+              </h2>
+
+              <div className="space-y-3">
+                {totalAmount != null && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Total amount</span>
+                    <span className="font-medium text-gray-900">{formatMoney(totalAmount)}</span>
+                  </div>
+                )}
+
+                {showBreakdown && (
+                  <>
+                    {paidIncentives != null && paidIncentives > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Paid via incentives</span>
+                        <span className="font-medium text-gray-900">{formatMoney(paidIncentives)}</span>
+                      </div>
+                    )}
+                    {paidBalance != null && paidBalance > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Paid via account balance</span>
+                        <span className="font-medium text-gray-900">{formatMoney(paidBalance)}</span>
+                      </div>
+                    )}
+                    {paidOnline != null && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Paid online</span>
+                        <span className="font-medium text-gray-900">{formatMoney(paidOnline)}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {amountPaid != null && (
+                  <div className="flex justify-between pt-3 border-t border-gray-100">
+                    <span className="font-semibold text-gray-900">Amount paid</span>
+                    <span className="text-2xl font-semibold text-green-600">{formatMoney(amountPaid)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-green-600 shrink-0" aria-hidden />
+                <span className="text-sm text-green-900">Your payment was processed securely</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="mb-8 bg-gradient-to-br from-red-50/60 to-white border-red-100">
+            <CardContent className="p-6">
+              <h2 className="text-xl text-[#0A1A2F] mb-4">What happens next?</h2>
+              <div className="space-y-4">
+                <div className="flex gap-3">
+                  <div className="w-8 h-8 bg-red-600 text-white rounded-full flex items-center justify-center text-sm font-semibold shrink-0">
+                    1
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">Payment confirmation</p>
+                    <p className="text-sm text-gray-600">
+                      You&apos;ll receive a receipt by email once the payment is fully confirmed.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <div className="w-8 h-8 bg-red-600 text-white rounded-full flex items-center justify-center text-sm font-semibold shrink-0">
+                    2
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      {hasBooking ? "Booking updated" : hasQuote ? "Quote request updated" : "Account updated"}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {hasBooking
+                        ? "Your booking status will update shortly in My Bookings."
+                        : hasQuote
+                          ? "Your quote request will show as paid in your dashboard."
+                          : "Your payment will appear in your Fire Guide account shortly."}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <div className="w-8 h-8 bg-red-600 text-white rounded-full flex items-center justify-center text-sm font-semibold shrink-0">
+                    3
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">Need help?</p>
+                    <p className="text-sm text-gray-600 flex items-start gap-1.5">
+                      <Mail className="w-4 h-4 mt-0.5 shrink-0 text-gray-400" aria-hidden />
+                      <span>
+                        Contact us at{" "}
+                        <a
+                          href="mailto:support@fireguide.co.uk"
+                          className="text-red-600 hover:underline font-medium"
+                        >
+                          support@fireguide.co.uk
+                        </a>{" "}
+                        if you have any questions about this payment.
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button
+              variant="outline"
+              className="flex-1 py-6 border-gray-300"
+              onClick={() => navigate("/customer/dashboard")}
+            >
+              <LayoutDashboard className="w-5 h-5 mr-2" />
+              My dashboard
+            </Button>
+            <Button
+              onClick={() => navigate("/")}
+              className="flex-1 bg-red-600 hover:bg-red-700 py-6"
+            >
+              <Home className="w-5 h-5 mr-2" />
+              Back to home
+            </Button>
+          </div>
+
+          <p className="text-center text-xs text-gray-500 mt-6 leading-relaxed">
+            It may take a few moments for your payment to appear in your account.
+          </p>
         </div>
-
-        <p className="text-gray-600 text-sm mb-2 max-w-md">
-          Please wait for some time for the amount to show up in your Fire Guide account.
-        </p>
-        <p className="text-gray-400 text-xs mb-8 sm:mb-10 max-w-md leading-relaxed">
-          Please contact us at{" "}
-          <a href="mailto:support@fireguide.co.uk" className="text-gray-500 underline-offset-2 hover:underline">
-            support@fireguide.co.uk
-          </a>{" "}
-          for any query.
-        </p>
-
-        <button
-          type="button"
-          onClick={() => navigate("/")}
-          className="px-8 py-3 text-white cursor-pointer  text-sm font-semibold uppercase tracking-wide rounded-sm shadow-sm hover:opacity-95 transition-opacity"
-          style={{ backgroundColor: NAVY }}
-        >
-          Home
-        </button>
-      </div>
+      </main>
     </div>
   );
 }
