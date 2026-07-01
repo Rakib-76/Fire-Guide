@@ -219,13 +219,6 @@ export default function PaymentSuccessPage() {
               </h2>
 
               <div className="space-y-3">
-                {/* {totalAmount != null && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Total amount</span>
-                    <span className="font-medium text-gray-900">{formatMoney(totalAmount)}</span>
-                  </div>
-                )} */}
-
                 {showBreakdown && (
                   <>
                     {paidIncentives != null && paidIncentives > 0 && (
@@ -240,12 +233,6 @@ export default function PaymentSuccessPage() {
                         <span className="font-medium text-gray-900">{formatMoney(paidBalance)}</span>
                       </div>
                     )}
-                    {/* {paidOnline != null && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Paid online</span>
-                        <span className="font-medium text-gray-900">{formatMoney(paidOnline)}</span>
-                      </div>
-                    )} */}
                   </>
                 )}
 
@@ -341,3 +328,5 @@ export default function PaymentSuccessPage() {
     </div>
   );
 }
+
+
