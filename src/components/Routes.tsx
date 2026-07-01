@@ -9,6 +9,7 @@ import { Loader2 } from "lucide-react";
 // Lazy load all page components for code splitting
 const LandingPage = lazyWithRetry(() => import("./pages/LandingPage"));
 const ServiceSelectionPage = lazyWithRetry(() => import("./pages/ServiceSelectionPage"));
+const ServiceDetailRoutePage = lazyWithRetry(() => import("./pages/ServiceDetailRoutePage"));
 const QuestionnairePage = lazyWithRetry(() => import("./pages/QuestionnairePage"));
 const CustomQuoteDetailsPage = lazyWithRetry(() => import("./pages/CustomQuoteDetailsPage"));
 const LocationPage = lazyWithRetry(() => import("./pages/LocationPage"));
@@ -111,6 +112,7 @@ export default function Routes() {
       <Route path="/" element={<Suspense fallback={<PageLoader />}><LandingPage /></Suspense>} />
       <Route path="/about" element={<Suspense fallback={<PageLoader />}><AboutContactPage /></Suspense>} />
       <Route path="/services" element={<Suspense fallback={<PageLoader />}><ServiceSelectionPage /></Suspense>} />
+      <Route path="/services/:serviceSlug" element={<Suspense fallback={<PageLoader />}><ServiceDetailRoutePage /></Suspense>} />
       <Route path="/services/:serviceId/questionnaire" element={<Suspense fallback={<PageLoader />}><QuestionnairePage /></Suspense>} />
       <Route path="/services/:serviceId/custom-quote/details" element={<Suspense fallback={<PageLoader />}><CustomQuoteDetailsPage /></Suspense>} />
       <Route path="/services/:serviceId/location" element={<Suspense fallback={<PageLoader />}><LocationPage /></Suspense>} />

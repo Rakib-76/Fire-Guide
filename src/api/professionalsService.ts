@@ -274,16 +274,25 @@ export const fetchProfessionalProfileDetails = async (
  */
 export interface ProfessionalDetailsPageMembershipItem {
   id: number;
-  organization_name: string;
+  option_id?: number | null;
+  organization_name?: string | null;
   membership_type?: string | null;
   reference_id?: string | null;
   member_since?: string | null;
   note?: string | null;
+  /** Legacy flat logo — prefer `option.logo` when present. */
   logo?: string | null;
   evidence?: string | null;
   status?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  option?: {
+    id?: number;
+    option?: string;
+    logo?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+  } | null;
 }
 
 export interface ProfessionalDetailsPageGetAllData {

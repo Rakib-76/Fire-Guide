@@ -219,12 +219,12 @@ export default function PaymentSuccessPage() {
               </h2>
 
               <div className="space-y-3">
-                {totalAmount != null && (
+                {/* {totalAmount != null && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Total amount</span>
                     <span className="font-medium text-gray-900">{formatMoney(totalAmount)}</span>
                   </div>
-                )}
+                )} */}
 
                 {showBreakdown && (
                   <>
@@ -240,12 +240,12 @@ export default function PaymentSuccessPage() {
                         <span className="font-medium text-gray-900">{formatMoney(paidBalance)}</span>
                       </div>
                     )}
-                    {paidOnline != null && (
+                    {/* {paidOnline != null && (
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Paid online</span>
                         <span className="font-medium text-gray-900">{formatMoney(paidOnline)}</span>
                       </div>
-                    )}
+                    )} */}
                   </>
                 )}
 
@@ -271,12 +271,6 @@ export default function PaymentSuccessPage() {
                 <div className="flex gap-3">
                   <div className="w-8 h-8 bg-red-600 text-white rounded-full flex items-center justify-center text-sm font-semibold shrink-0">
                     1
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900">Payment confirmation</p>
-                    <p className="text-sm text-gray-600">
-                      You&apos;ll receive a receipt by email once the payment is fully confirmed.
-                    </p>
                   </div>
                 </div>
                 <div className="flex gap-3">
@@ -310,7 +304,7 @@ export default function PaymentSuccessPage() {
                           href="mailto:support@fireguide.co.uk"
                           className="text-red-600 hover:underline font-medium"
                         >
-                          support@fireguide.co.uk
+                          contact@fireguide.co.uk
                         </a>{" "}
                         if you have any questions about this payment.
                       </span>

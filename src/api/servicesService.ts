@@ -2179,8 +2179,14 @@ export interface FilterProfessionalExperienceItem {
 export interface FilterProfessionalMembershipItem {
   id: number;
   organization_name?: string | null;
+  /** Legacy flat logo — prefer `option.logo` when present. */
   logo?: string | null;
   status?: string | null;
+  option?: {
+    id?: number;
+    option?: string;
+    logo?: string | null;
+  } | null;
 }
 
 /** Single professional from POST /filter-professional/for-fra response */

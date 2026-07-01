@@ -31,8 +31,8 @@ import {
   type ProfessionalDetailsPageMembershipItem,
   type WorkingDayHourRecord,
 } from "../api/professionalsService";
-import { getMembershipMediaUrlCandidates } from "../api/membershipService";
-import { getApiToken } from "../lib/auth";
+import { getMembershipOptionLogoPath, getMembershipOptionName } from "../api/membershipService";
+import { MembershipLogoImage } from "./MembershipLogoImage";
 import {
   resolveProfessionalDisplayPhone,
   copyTextToClipboard,
@@ -51,54 +51,6 @@ interface ProfessionalProfileProps {
   backLabel?: string;
   /** When true, breadcrumb is Home → profile (no compare step) */
   fromFeatured?: boolean;
-}
-
-function MembershipLogoImage({
-  logoPath,
-  alt,
-  className,
-}: {
-  logoPath: string;
-  alt: string;
-  className?: string;
-}) {
-  const token = getApiToken() ?? "";
-  const urls = React.useMemo(
-    () => getMembershipMediaUrlCandidates(logoPath, { apiToken: token }),
-    [logoPath, token]
-  );
-  const [urlIndex, setUrlIndex] = React.useState(0);
-  const [loaded, setLoaded] = React.useState(false);
-  const [failed, setFailed] = React.useState(false);
-  const src = urls[urlIndex] ?? "";
-
-  React.useEffect(() => {
-    setUrlIndex(0);
-    setLoaded(false);
-    setFailed(false);
-  }, [logoPath, urls]);
-
-  if (!src || failed) return null;
-
-  return (
-    <img
-      src={src}
-      alt={alt}
-      title={alt}
-      className={`${className ?? ""}${loaded ? "" : " opacity-0"}`}
-      onLoad={() => setLoaded(true)}
-      onError={() => {
-        setUrlIndex((current) => {
-          if (current >= urls.length - 1) {
-            setFailed(true);
-            return current;
-          }
-          setLoaded(false);
-          return current + 1;
-        });
-      }}
-    />
-  );
 }
 
 function formatMembershipSince(value: string | null | undefined): string | null {
@@ -1157,17 +1109,20 @@ export function ProfessionalProfile({
                     <div className="space-y-3">
                       {displayMemberships.map((membership) => {
                         const memberSince = formatMembershipSince(membership.member_since);
+                        const organizationName = getMembershipOptionName(membership);
+                        const logoPath = getMembershipOptionLogoPath(membership);
                         return (
                           <div
                             key={membership.id}
                             className="flex items-start gap-3 rounded-lg border border-gray-200 p-4"
                           >
                             <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-white p-1">
-                              {membership.logo?.trim() ? (
+                              {logoPath ? (
                                 <MembershipLogoImage
-                                  logoPath={membership.logo.trim()}
-                                  alt={`${membership.organization_name} logo`}
+                                  logoPath={logoPath}
+                                  alt={`${organizationName || "Membership"} logo`}
                                   className="h-full w-full object-contain"
+                                  fallbackClassName="h-6 w-6 text-blue-600"
                                 />
                               ) : (
                                 <Award className="h-6 w-6 text-blue-600" />
@@ -1176,9 +1131,11 @@ export function ProfessionalProfile({
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-start justify-between gap-2">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                  <p className="font-medium text-gray-900 break-words">
-                                    {membership.organization_name}
-                                  </p>
+                                  {organizationName ? (
+                                    <p className="font-medium text-gray-900 break-words">
+                                      {organizationName}
+                                    </p>
+                                  ) : null}
                                   {membership.membership_type ? (
                                     <Badge
                                       variant="outline"

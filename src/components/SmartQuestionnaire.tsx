@@ -119,42 +119,6 @@ function isFloorCustomQuoteOption(opt: FloorPricingItem): boolean {
   return /custom\s*quote/.test(label) || /7\+|8\+|more than \d+/.test(label);
 }
 
-const CUSTOM_QUOTE_OPTION_VALUES = new Set([
-  CUSTOM_FA_DETECTORS,
-  CUSTOM_FA_CALL_POINTS,
-  CUSTOM_FA_FLOORS,
-  CUSTOM_FA_PANELS,
-  CUSTOM_EXTINGUISHERS,
-  CUSTOM_EMERGENCY_LIGHTS,
-  CUSTOM_FLOORS,
-  CUSTOM_PROPERTY_TYPE,
-  CUSTOM_TRAINING_PEOPLE,
-  CUSTOM_CONSULTATION_HOURS,
-]);
-
-function isCustomQuoteOptionSelection(
-  field: keyof FormData,
-  value: string,
-  propertyTypes: PropertyTypeResponse[],
-  approximatePeopleOptions: ApproximatePeopleResponse[],
-  floorOptions: FloorPricingItem[]
-): boolean {
-  if (CUSTOM_QUOTE_OPTION_VALUES.has(value)) return true;
-  if (field === "propertyType") {
-    const opt = propertyTypes.find((p) => String(p.id) === value);
-    if (opt && isOtherPropertyTypeName(opt.property_type_name)) return true;
-  }
-  if (field === "approximatePeople") {
-    const opt = approximatePeopleOptions.find((p) => String(p.id) === value);
-    if (opt && isPeopleCustomQuoteLabel(opt.number_of_people)) return true;
-  }
-  if (field === "numberOfFloors") {
-    const opt = floorOptions.find((f) => String(f.id ?? f.floor) === value);
-    if (opt && isFloorCustomQuoteOption(opt)) return true;
-  }
-  return false;
-}
-
 const EMPTY_FORM: FormData = {
   propertyType: "",
   customPropertyType: "",
@@ -1024,78 +988,18 @@ export function SmartQuestionnaire({
   const accessNotesStep =
     isFireAlarmService ? 8 : isFireExtinguisherService || isEmergencyLightingService || isFireMarshalTrainingService ? 6 : isFireRiskAssessmentService ? 6 : isFireSafetyConsultationService ? 4 : 6;
 
-  const showCustomInputOnCurrentStep = useMemo(() => {
-    if (isFireAlarmService) {
-      if (currentStep === 1) return showCustomFireAlarmDetectorsInput;
-      if (currentStep === 2) return showCustomFireAlarmCallPointsInput;
-      if (currentStep === 3) return showCustomFireAlarmFloorsInput;
-      if (currentStep === 4) return showCustomFireAlarmPanelsInput;
-      return false;
-    }
-    if (isFireExtinguisherService) {
-      return currentStep === 1 && showCustomExtinguisherCountInput;
-    }
-    if (isEmergencyLightingService) {
-      return currentStep === 1 && showCustomEmergencyLightsInput;
-    }
-    if (isFireMarshalTrainingService) {
-      return currentStep === 1 && showCustomTrainingPeopleInput;
-    }
-    if (isFireSafetyConsultationService) {
-      return currentStep === 2 && showCustomConsultationHoursInput;
-    }
-    if (isFireRiskAssessmentService || (!isFireAlarmService && !isFireExtinguisherService && !isEmergencyLightingService && !isFireMarshalTrainingService && !isFireSafetyConsultationService)) {
-      if (currentStep === 1) return showCustomPropertyTypeInput;
-      if (currentStep === 2) return showCustomPeopleInput;
-      if (currentStep === 3) return showCustomFloorsInput;
-    }
-    return false;
-  }, [
-    currentStep,
-    isFireAlarmService,
-    isFireExtinguisherService,
-    isEmergencyLightingService,
-    isFireMarshalTrainingService,
-    isFireRiskAssessmentService,
-    isFireSafetyConsultationService,
-    showCustomFireAlarmCallPointsInput,
-    showCustomFireAlarmDetectorsInput,
-    showCustomFireAlarmFloorsInput,
-    showCustomFireAlarmPanelsInput,
-    showCustomExtinguisherCountInput,
-    showCustomEmergencyLightsInput,
-    showCustomFloorsInput,
-    showCustomPeopleInput,
-    showCustomPropertyTypeInput,
-    showCustomTrainingPeopleInput,
-    showCustomConsultationHoursInput,
-  ]);
-
-  const showContinueButton =
-    showCustomInputOnCurrentStep || currentStep === totalSteps;
-
-  const advanceStep = useCallback(() => {
-    setCurrentStep((s) => (s < totalSteps ? s + 1 : s));
-  }, [totalSteps]);
-
   const handleOptionSelect = useCallback(
     (field: keyof FormData, value: string) => {
       updateFormData(field, value);
-      if (!isCustomQuoteOptionSelection(field, value, propertyTypes, approximatePeopleOptions, floorOptions)) {
-        window.setTimeout(() => advanceStep(), 0);
-      }
     },
-    [advanceStep, approximatePeopleOptions, floorOptions, propertyTypes, updateFormData]
+    [updateFormData]
   );
 
   const handleAssessmentDateChange = useCallback(
     (value: string) => {
       updateFormData("assessmentDate", value);
-      if (value.trim()) {
-        window.setTimeout(() => advanceStep(), 0);
-      }
     },
-    [advanceStep, updateFormData]
+    [updateFormData]
   );
 
   const handleContinue = () => {
@@ -1178,7 +1082,7 @@ export function SmartQuestionnaire({
             onContinue={handleContinue}
             continueDisabled={!isStepValid()}
             continueLabel={continueLabel}
-            showContinue={showContinueButton}
+            showContinue
           >
             <div className="space-y-6">
               {isFireAlarmService && currentStep === 1 && (

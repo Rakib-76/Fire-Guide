@@ -491,7 +491,7 @@ export function AboutContact({
                       </div>
                       <div>
                         <h4 className="text-[18px] mb-2">Email Us</h4>
-                        <p className="text-gray-600">support@fireguide.co.uk</p>
+                        <p className="text-gray-600">contact@fireguide.co.uk</p>
                         <p className="text-sm text-gray-500 mt-1">We reply within 24 hours</p>
                       </div>
                     </div>

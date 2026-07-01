@@ -629,30 +629,34 @@ export const CustomerPayments = React.memo(function CustomerPayments({ payments:
                 <Filter className="w-5 h-5 shrink-0" />
                 <span className="text-sm font-medium sm:hidden">Filters</span>
               </div>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-full sm:w-[180px]">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="paid">Paid</SelectItem>
-                  <SelectItem value="unpaid">Unpaid</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="w-full sm:w-[180px] shrink-0">
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-              <Select value={filterPeriod} onValueChange={setFilterPeriod}>
-                <SelectTrigger className="w-full sm:w-[180px]">
-                  <SelectValue placeholder="Filter by period" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Time</SelectItem>
-                  <SelectItem value="1">Last Month</SelectItem>
-                  <SelectItem value="3">Last 3 Months</SelectItem>
-                  <SelectItem value="6">Last 6 Months</SelectItem>
-                  <SelectItem value="12">Last Year</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="w-full sm:w-[180px] shrink-0">
+                <Select value={filterPeriod} onValueChange={setFilterPeriod}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Filter by period" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Time</SelectItem>
+                    <SelectItem value="1">Last Month</SelectItem>
+                    <SelectItem value="3">Last 3 Months</SelectItem>
+                    <SelectItem value="6">Last 6 Months</SelectItem>
+                    <SelectItem value="12">Last Year</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <Button

@@ -50,3 +50,15 @@ export function mapApiServiceToNavService(apiService: ServiceResponse, index = 0
 export function formatNavServicePrice(price: string): string {
   return price.replace(/\.00$/, "");
 }
+
+/** Stable theme colour per service name (matches landing / nav card palette). */
+export function getServiceColorForName(serviceName: string): NavServiceColor {
+  const n = serviceName.toLowerCase();
+  if (n.includes("consultation")) return "orange";
+  if (n.includes("marshal") || n.includes("warden")) return "orange";
+  if (n.includes("emergency lighting") || n.includes("lighting test")) return "purple";
+  if (n.includes("extinguisher")) return "green";
+  if (n.includes("alarm")) return "blue";
+  if (n.includes("risk assessment")) return "red";
+  return "red";
+}

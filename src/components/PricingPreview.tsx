@@ -283,9 +283,17 @@ function PricingCardSkeleton() {
   );
 }
 
-export function PricingPreview({ onGetQuote }: PricingPreviewProps) {
+export function PricingPreview({ onGetQuote, onContactSales }: PricingPreviewProps) {
   const [loading, setLoading] = useState(true);
   const [cards, setCards] = useState<PricingCard[]>(FALLBACK_CARDS);
+
+  const handleCustomQuote = () => {
+    if (onContactSales) {
+      onContactSales();
+      return;
+    }
+    onGetQuote();
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -374,14 +382,14 @@ export function PricingPreview({ onGetQuote }: PricingPreviewProps) {
                     </ul>
 
                     <Button
-                      onClick={onGetQuote}
+                      onClick={handleCustomQuote}
                       className={`h-11 w-full rounded-lg font-semibold text-[14px] ${
                         service.popular
                           ? "bg-red-600 text-white hover:bg-red-700"
                           : "bg-[#0A1A2F] text-white hover:bg-[#152238]"
                       }`}
                     >
-                      Get Instant Quote
+                      Get Custom Quote
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>
                   </div>

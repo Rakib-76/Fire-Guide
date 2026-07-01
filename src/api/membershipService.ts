@@ -28,6 +28,13 @@ export interface MembershipOptionNested {
   updated_at?: string | null;
 }
 
+/** Shared shape for membership rows that may nest option details. */
+export interface MembershipOptionDisplaySource {
+  organization_name?: string | null;
+  logo?: string | null;
+  option?: MembershipOptionNested | null;
+}
+
 export interface ProfessionalMembershipApiItem {
   id: number;
   professional_id?: number;
@@ -47,11 +54,11 @@ export interface ProfessionalMembershipApiItem {
   option?: MembershipOptionNested | null;
 }
 
-export function getMembershipOptionName(item: ProfessionalMembershipApiItem): string {
+export function getMembershipOptionName(item: MembershipOptionDisplaySource): string {
   return (item.option?.option ?? item.organization_name ?? "").trim();
 }
 
-export function getMembershipOptionLogoPath(item: ProfessionalMembershipApiItem): string {
+export function getMembershipOptionLogoPath(item: MembershipOptionDisplaySource): string {
   return (item.option?.logo ?? item.logo ?? "").trim();
 }
 

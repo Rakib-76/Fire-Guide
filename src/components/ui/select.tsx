@@ -8,7 +8,17 @@ interface SelectContextValue {
   onValueChange: (value: string) => void;
   open: boolean;
   setOpen: (open: boolean) => void;
-  triggerRef: React.RefObject<HTMLDivElement | null>;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+}
+
+function mergeRefs<T>(...refs: Array<React.Ref<T> | undefined>) {
+  return (node: T | null) => {
+    for (const ref of refs) {
+      if (!ref) continue;
+      if (typeof ref === "function") ref(node);
+      else (ref as React.MutableRefObject<T | null>).current = node;
+    }
+  };
 }
 
 const SelectContext = React.createContext<SelectContextValue | undefined>(undefined);
@@ -30,7 +40,7 @@ const Select = ({
 }: SelectProps) => {
   const [internalValue, setInternalValue] = React.useState(defaultValue || "");
   const [open, setOpenState] = React.useState(false);
-  const triggerRef = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
   const value = controlledValue !== undefined ? controlledValue : internalValue;
 
   const setOpen = React.useCallback(
@@ -51,7 +61,7 @@ const Select = ({
 
   return (
     <SelectContext.Provider value={{ value, onValueChange: handleValueChange, open, setOpen, triggerRef }}>
-      <div ref={triggerRef} className="relative w-full">
+      <div className="relative w-full">
         {children}
       </div>
     </SelectContext.Provider>
@@ -64,7 +74,7 @@ const SelectTrigger = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttrib
 
     return (
       <button
-        ref={ref}
+        ref={mergeRefs(ref, context?.triggerRef)}
         type="button"
         className={cn(
           "flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer",
@@ -162,13 +172,14 @@ const SelectContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
         <div
           ref={ref}
           className={cn(
-            "fixed z-50 rounded-md border border-gray-200 bg-white shadow-lg py-1",
+            "fixed z-50 min-w-[8rem] rounded-md border border-gray-200 bg-white py-1 shadow-lg",
             className
           )}
           style={{
             top: pos.top,
             left: pos.left,
-            width: pos.width,
+            minWidth: Math.max(pos.width, 128),
+            width: "max-content",
             maxHeight: "min(280px, 60vh)",
             overflowY: "auto",
             overflowX: "hidden",
@@ -198,7 +209,7 @@ const SelectItem = React.forwardRef<HTMLDivElement, SelectItemProps>(
       <div
         ref={ref}
         className={cn(
-          "relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 px-2 text-sm outline-none hover:bg-gray-100 focus:bg-gray-100",
+          "relative flex w-full cursor-pointer select-none items-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm outline-none hover:bg-gray-100 focus:bg-gray-100",
           isSelected && "bg-gray-100",
           className
         )}

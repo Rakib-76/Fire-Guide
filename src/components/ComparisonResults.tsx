@@ -14,8 +14,8 @@ import type {
   FilterProfessionalExperienceItem,
   FilterProfessionalMembershipItem,
 } from "../api/servicesService";
-import { getMembershipMediaUrlCandidates } from "../api/membershipService";
-import { getApiToken } from "../lib/auth";
+import { getMembershipOptionLogoPath, getMembershipOptionName } from "../api/membershipService";
+import { MembershipLogoImage } from "./MembershipLogoImage";
 import { toast } from "sonner";
 
 interface Professional {
@@ -50,54 +50,6 @@ interface ComparisonResultsProps {
   onBookNow: (professional: Professional) => void;
 }
 
-function MembershipLogoImage({
-  logoPath,
-  alt,
-  className,
-}: {
-  logoPath: string;
-  alt: string;
-  className?: string;
-}) {
-  const token = getApiToken() ?? "";
-  const urls = React.useMemo(
-    () => getMembershipMediaUrlCandidates(logoPath, { apiToken: token }),
-    [logoPath, token]
-  );
-  const [urlIndex, setUrlIndex] = React.useState(0);
-  const [loaded, setLoaded] = React.useState(false);
-  const [failed, setFailed] = React.useState(false);
-  const src = urls[urlIndex] ?? "";
-
-  React.useEffect(() => {
-    setUrlIndex(0);
-    setLoaded(false);
-    setFailed(false);
-  }, [logoPath, urls]);
-
-  if (!src || failed) return null;
-
-  return (
-    <img
-      src={src}
-      alt={alt}
-      title={alt}
-      className={`${className ?? ""}${loaded ? "" : " opacity-0"}`}
-      onLoad={() => setLoaded(true)}
-      onError={() => {
-        setUrlIndex((current) => {
-          if (current >= urls.length - 1) {
-            setFailed(true);
-            return current;
-          }
-          setLoaded(false);
-          return current + 1;
-        });
-      }}
-    />
-  );
-}
-
 function buildMembershipLogos(
   membership: FilterProfessionalMembershipItem[] | undefined
 ): { id: number; logoPath: string; organizationName?: string }[] {
@@ -105,13 +57,14 @@ function buildMembershipLogos(
   const seen = new Set<number>();
   const out: { id: number; logoPath: string; organizationName?: string }[] = [];
   for (const item of membership) {
-    const logoPath = item.logo?.trim();
+    const logoPath = getMembershipOptionLogoPath(item);
     if (!logoPath || seen.has(item.id)) continue;
+    const organizationName = getMembershipOptionName(item);
     seen.add(item.id);
     out.push({
       id: item.id,
       logoPath,
-      organizationName: item.organization_name?.trim() || undefined,
+      organizationName: organizationName || undefined,
     });
   }
   return out;
@@ -791,6 +744,7 @@ export function ComparisonResults({ onViewProfile, onBookNow }: ComparisonResult
                                         logoPath={membership.logoPath}
                                         alt={membership.organizationName || "Membership logo"}
                                         className="h-full w-full object-contain"
+                                        fallbackClassName="h-5 w-5 text-blue-600"
                                       />
                                     </div>
                                   ))}

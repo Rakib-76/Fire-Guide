@@ -2,7 +2,6 @@ import React, { startTransition, useCallback, useEffect, useRef, useState } from
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { fetchServices } from "../api/servicesService";
-import { useApp } from "../contexts/AppContext";
 import { getLucideIconForService } from "../lib/serviceIcons";
 import {
   formatNavServicePrice,
@@ -10,6 +9,7 @@ import {
   sortActiveServices,
   type NavService,
 } from "../lib/serviceNav";
+import { serviceNameToSlug } from "../lib/serviceSlugs";
 import "./ServicesNavMenu.css";
 
 interface ServicesNavMenuProps {
@@ -18,7 +18,6 @@ interface ServicesNavMenuProps {
 
 function useNavServices() {
   const navigate = useNavigate();
-  const { setSelectedService, setSelectedServiceId } = useApp();
   const [services, setServices] = useState<NavService[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -41,21 +40,17 @@ function useNavServices() {
     }
   }, [hasLoaded, isLoading]);
 
-  const selectService = useCallback(
+  const goToServicePage = useCallback(
     (service: NavService, onComplete?: () => void) => {
-      setSelectedService(String(service.id));
-      setSelectedServiceId(service.id);
       onComplete?.();
       startTransition(() => {
-        navigate(`/services/${service.id}/questionnaire`, {
-          state: { serviceName: service.name },
-        });
+        navigate(`/services/${serviceNameToSlug(service.name)}`);
       });
     },
-    [navigate, setSelectedService, setSelectedServiceId]
+    [navigate]
   );
 
-  return { services, isLoading, hasLoaded, loadServices, selectService };
+  return { services, isLoading, hasLoaded, loadServices, goToServicePage };
 }
 
 function ServiceNavItems({
@@ -160,7 +155,7 @@ function ServicesNavPanel({
 }
 
 export function ServicesNavDropdown() {
-  const { services, isLoading, loadServices, selectService } = useNavServices();
+  const { services, isLoading, loadServices, goToServicePage } = useNavServices();
   const [open, setOpen] = useState(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -221,7 +216,7 @@ export function ServicesNavDropdown() {
         open={open}
         services={services}
         isLoading={isLoading}
-        onSelect={selectService}
+        onSelect={goToServicePage}
         onClose={() => setOpen(false)}
         onPointerEnter={openMenu}
         onPointerLeave={scheduleClose}
@@ -231,7 +226,7 @@ export function ServicesNavDropdown() {
 }
 
 export function ServicesNavMobileSection({ onMenuClose }: ServicesNavMenuProps) {
-  const { services, isLoading, hasLoaded, loadServices, selectService } = useNavServices();
+  const { services, isLoading, hasLoaded, loadServices, goToServicePage } = useNavServices();
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -262,7 +257,7 @@ export function ServicesNavMobileSection({ onMenuClose }: ServicesNavMenuProps) 
           <ServiceNavItems
             services={services}
             isLoading={isLoading}
-            onSelect={(service) => selectService(service, onMenuClose)}
+            onSelect={(service) => goToServicePage(service, onMenuClose)}
           />
         </div>
       ) : null}
