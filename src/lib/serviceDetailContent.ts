@@ -2,6 +2,8 @@ export type ServiceDetailSection = {
   title: string;
   items: string[];
   note?: string;
+  /** Short teaser for overview card grid */
+  summary?: string;
 };
 
 export type ServiceDetailContent = {

@@ -1,21 +1,29 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
+  ArrowRight,
+  Award,
   BadgePoundSterling,
-  Calendar,
   Check,
-  Clock,
+  ChevronRight,
   ClipboardList,
+  Clock,
+  Calendar,
+  FileCheck,
   FileText,
+  Gift,
+  Handshake,
   Info,
   ListChecks,
   Loader2,
+  Lock,
+  MessagesSquare,
+  Plus,
   ShieldCheck,
+  Sparkles,
   Tag,
   Users,
-  Zap,
 } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
 import { Button } from "./ui/button";
 import { Header } from "./Header";
 import { Footer } from "./Footer";
@@ -26,26 +34,54 @@ import {
   type ServiceDetailContent,
   type ServiceDetailSection,
 } from "../lib/serviceDetailContent";
-import { getLucideIconForService } from "../lib/serviceIcons";
-import { getServiceColorForName, type NavServiceColor } from "../lib/serviceNav";
+import {
+  getHeroBullets,
+  getOverviewSummary,
+  getServiceDetailFaqs,
+  SERVICE_DETAIL_HOW_IT_WORKS,
+  SERVICE_DETAIL_TRUST_BADGES,
+  SERVICE_DETAIL_WHY_BOOK,
+} from "../lib/serviceDetailLayout";
+import type { NavServiceColor } from "../lib/serviceNav";
 import { serviceNameToSlug } from "../lib/serviceSlugs";
+import { getServiceDetailHeroBackdrop } from "../lib/serviceDetailHeroBackdrop";
 import { usePageMeta } from "../lib/usePageMeta";
 import "./ServiceDetailPage.css";
-const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 
 type SectionAccent = NavServiceColor;
 
 const SECTION_META: Record<
   string,
-  { icon: LucideIcon; accent: SectionAccent }
+  { icon: LucideIcon; accent: SectionAccent; anchorId: string }
 > = {
-  includes: { icon: ListChecks, accent: "blue" },
-  whoNeeds: { icon: Users, accent: "purple" },
-  pricing: { icon: BadgePoundSterling, accent: "red" },
-  duration: { icon: Clock, accent: "orange" },
-  customerReceives: { icon: FileText, accent: "green" },
-  beforeBooking: { icon: ClipboardList, accent: "blue" },
+  includes: { icon: ListChecks, accent: "blue", anchorId: "section-includes" },
+  whoNeeds: { icon: Users, accent: "green", anchorId: "section-who-needs" },
+  pricing: { icon: BadgePoundSterling, accent: "red", anchorId: "section-pricing" },
+  duration: { icon: Clock, accent: "orange", anchorId: "section-duration" },
+  customerReceives: { icon: Gift, accent: "green", anchorId: "section-customer-receives" },
+  beforeBooking: { icon: ClipboardList, accent: "blue", anchorId: "section-before-booking" },
 };
+
+const HOW_IT_WORKS_ICONS = [FileText, Calendar, ShieldCheck, FileCheck] as const;
+const WHY_BOOK_ICONS = [ShieldCheck, Tag, MessagesSquare, Handshake] as const;
+const TRUST_BADGE_ICONS = [Award, Sparkles, ShieldCheck, Lock] as const;
+
+const PROPERTY_TYPES = [
+  "Shop / retail",
+  "Office",
+  "Restaurant / café",
+  "Warehouse",
+  "HMO / residential",
+  "Other commercial",
+] as const;
+
+const FLOOR_OPTIONS = ["1", "2", "3", "4+"] as const;
+
+const SLEEPING_RISK_OPTIONS = ["No sleeping risk", "Some sleeping risk", "Sleeping accommodation"] as const;
+
+function scrollToSection(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 function DetailSectionTitle({
   icon: Icon,
@@ -69,33 +105,6 @@ function DetailSectionTitle({
   );
 }
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 28 },
-  visible: { opacity: 1, y: 0 },
-};
-
-const scaleIn = {
-  hidden: { opacity: 0, scale: 0.96 },
-  visible: { opacity: 1, scale: 1 },
-};
-
-const stagger = {
-  hidden: {},
-  visible: {
-    transition: { staggerChildren: 0.1, delayChildren: 0.05 },
-  },
-};
-
-function useMotionProps(reduceMotion: boolean | null) {
-  const off = reduceMotion === true;
-  return {
-    initial: off ? false : ("hidden" as const),
-    animate: off ? undefined : ("visible" as const),
-    transition: off ? { duration: 0 } : { duration: 0.55, ease: EASE_OUT },
-    viewport: { once: true, margin: "-60px 0px -40px 0px" as const },
-  };
-}
-
 interface ServiceDetailPageProps {
   slug: string;
   onNavigateHome: () => void;
@@ -116,64 +125,31 @@ function ServiceDetailCtaButtons({
   onInstantPrice,
   onBook,
   variant = "hero",
-  reduceMotion,
 }: {
   disabled?: boolean;
   onInstantPrice: () => void;
   onBook: () => void;
   variant?: "hero" | "footer";
-  reduceMotion: boolean | null;
 }) {
   const instantClass =
     variant === "hero"
       ? "service-detail-btn service-detail-btn--white"
-      : "service-detail-btn service-detail-btn--outline-red";
-
-  const containerProps =
-    variant === "hero"
-      ? {
-          initial: reduceMotion ? false : ("hidden" as const),
-          animate: reduceMotion ? undefined : ("visible" as const),
-        }
-      : {
-          initial: reduceMotion ? false : ("hidden" as const),
-          whileInView: reduceMotion ? undefined : ("visible" as const),
-          viewport: { once: true, margin: "-20px" as const },
-        };
+      : "service-detail-btn service-detail-btn--white";
 
   return (
-    <motion.div
-      className={variant === "hero" ? "service-detail-hero__actions" : "service-detail-cta__actions"}
-      variants={stagger}
-      {...containerProps}
-    >
-      <motion.button
-        type="button"
-        className={instantClass}
-        disabled={disabled}
-        onClick={onInstantPrice}
-        variants={fadeUp}
-        whileHover={disabled ? undefined : { scale: 1.03, y: -1 }}
-        whileTap={disabled ? undefined : { scale: 0.98 }}
-        transition={{ type: "spring", stiffness: 420, damping: 24 }}
-      >
-        <Zap className="service-detail-btn__icon" strokeWidth={2.25} aria-hidden />
+    <div className={variant === "hero" ? "service-detail-hero__actions" : "service-detail-cta-bar__actions"}>
+      <button type="button" className={instantClass} disabled={disabled} onClick={onInstantPrice}>
         Get Instant Price
-      </motion.button>
-      <motion.button
+      </button>
+      <button
         type="button"
         className="service-detail-btn service-detail-btn--primary"
         disabled={disabled}
         onClick={onBook}
-        variants={fadeUp}
-        whileHover={disabled ? undefined : { scale: 1.03, y: -1 }}
-        whileTap={disabled ? undefined : { scale: 0.98 }}
-        transition={{ type: "spring", stiffness: 420, damping: 24 }}
       >
-        <Calendar className="service-detail-btn__icon" strokeWidth={2.25} aria-hidden />
         Book Now
-      </motion.button>
-    </motion.div>
+      </button>
+    </div>
   );
 }
 
@@ -200,35 +176,53 @@ function DetailList({
   );
 }
 
+function OverviewCard({
+  icon: Icon,
+  accent,
+  title,
+  summary,
+  linkLabel,
+  onViewDetails,
+}: {
+  icon: LucideIcon;
+  accent: "blue" | "green" | "red" | "orange";
+  title: string;
+  summary: string;
+  linkLabel: string;
+  onViewDetails: () => void;
+}) {
+  return (
+    <article className="service-detail-overview-card">
+      <div className={`service-detail-overview-card__icon service-detail-overview-card__icon--${accent}`}>
+        <Icon strokeWidth={2.25} />
+      </div>
+      <h3 className="service-detail-overview-card__title">{title}</h3>
+      <p className="service-detail-overview-card__text">{summary}</p>
+      <button type="button" className="service-detail-overview-card__link" onClick={onViewDetails}>
+        {linkLabel}
+        <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+      </button>
+    </article>
+  );
+}
+
 function DetailSectionBlock({
   section,
   sectionKey,
-  index = 0,
-  reduceMotion,
   inGrid = false,
   splitList = false,
 }: {
   section: ServiceDetailSection;
   sectionKey: keyof typeof SECTION_META;
-  index?: number;
-  reduceMotion: boolean | null;
   inGrid?: boolean;
   splitList?: boolean;
 }) {
-  const off = reduceMotion === true;
   const meta = SECTION_META[sectionKey];
 
   return (
-    <motion.section
+    <section
+      id={meta.anchorId}
       className={`service-detail-section${inGrid ? " service-detail-section--in-grid" : ""}`}
-      initial={off ? false : { opacity: 0, y: 24 }}
-      whileInView={off ? undefined : { opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.12, margin: "0px 0px -40px 0px" }}
-      transition={{
-        duration: off ? 0 : 0.5,
-        ease: EASE_OUT,
-        delay: off ? 0 : index * 0.05,
-      }}
     >
       <DetailSectionTitle icon={meta.icon} title={section.title} accent={meta.accent} />
       <div className="service-detail-card">
@@ -240,41 +234,26 @@ function DetailSectionBlock({
           </p>
         ) : null}
       </div>
-    </motion.section>
+    </section>
   );
 }
 
 function DetailPricingBlock({
   pricing,
-  reduceMotion,
-  index = 0,
   inGrid = false,
 }: {
   pricing: ServiceDetailContent["pricing"];
-  reduceMotion: boolean | null;
-  index?: number;
   inGrid?: boolean;
 }) {
-  const off = reduceMotion === true;
+  const meta = SECTION_META.pricing;
 
   return (
-    <motion.section
+    <section
+      id={meta.anchorId}
       className={`service-detail-section${inGrid ? " service-detail-section--in-grid" : ""}`}
-      initial={off ? false : { opacity: 0, y: 24 }}
-      whileInView={off ? undefined : { opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.12, margin: "0px 0px -40px 0px" }}
-      transition={{
-        duration: off ? 0 : 0.5,
-        ease: EASE_OUT,
-        delay: off ? 0 : index * 0.05,
-      }}
     >
-      <DetailSectionTitle
-        icon={SECTION_META.pricing.icon}
-        title="Typical price / from-price"
-        accent={SECTION_META.pricing.accent}
-      />
-      <div className="service-detail-card service-detail-card--pricing">
+      <DetailSectionTitle icon={meta.icon} title="Typical price / from-price" accent={meta.accent} />
+      <div className="service-detail-card">
         <p className="service-detail-pricing__from">
           <Tag className="service-detail-pricing__from-icon" strokeWidth={2.25} aria-hidden />
           {pricing.fromPrice}
@@ -285,7 +264,162 @@ function DetailPricingBlock({
           </p>
         ))}
       </div>
-    </motion.section>
+    </section>
+  );
+}
+
+function PriceCalculator({
+  fromPrice,
+  disabled,
+  onSubmit,
+}: {
+  fromPrice: string;
+  disabled?: boolean;
+  onSubmit: () => void;
+}) {
+  const [postcode, setPostcode] = useState("");
+  const [propertyType, setPropertyType] = useState<string>(PROPERTY_TYPES[0]);
+  const [floors, setFloors] = useState<string>(FLOOR_OPTIONS[0]);
+  const [sleepingRisk, setSleepingRisk] = useState<string>(SLEEPING_RISK_OPTIONS[0]);
+
+  return (
+    <aside className="service-detail-calculator" aria-label="Instant price calculator">
+      <h2 className="service-detail-calculator__title">Get an instant price</h2>
+
+      <div className="service-detail-calculator__field">
+        <label className="service-detail-calculator__label" htmlFor="service-detail-postcode">
+          Postcode
+        </label>
+        <input
+          id="service-detail-postcode"
+          className="service-detail-calculator__input"
+          type="text"
+          placeholder="e.g. SW1A 1AA"
+          value={postcode}
+          onChange={(event) => setPostcode(event.target.value)}
+          autoComplete="postal-code"
+        />
+      </div>
+
+      <div className="service-detail-calculator__field">
+        <label className="service-detail-calculator__label" htmlFor="service-detail-property-type">
+          Property type
+        </label>
+        <select
+          id="service-detail-property-type"
+          className="service-detail-calculator__select"
+          value={propertyType}
+          onChange={(event) => setPropertyType(event.target.value)}
+        >
+          {PROPERTY_TYPES.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="service-detail-calculator__field">
+        <label className="service-detail-calculator__label" htmlFor="service-detail-floors">
+          Number of floors
+        </label>
+        <select
+          id="service-detail-floors"
+          className="service-detail-calculator__select"
+          value={floors}
+          onChange={(event) => setFloors(event.target.value)}
+        >
+          {FLOOR_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="service-detail-calculator__field">
+        <label className="service-detail-calculator__label" htmlFor="service-detail-sleeping">
+          Sleeping risk
+        </label>
+        <select
+          id="service-detail-sleeping"
+          className="service-detail-calculator__select"
+          value={sleepingRisk}
+          onChange={(event) => setSleepingRisk(event.target.value)}
+        >
+          {SLEEPING_RISK_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <p className="service-detail-calculator__price">
+        Estimated price
+        <strong>{fromPrice || "From £199 + VAT"}</strong>
+      </p>
+
+      <button
+        type="button"
+        className="service-detail-calculator__submit"
+        disabled={disabled}
+        onClick={onSubmit}
+      >
+        See Instant Price
+        <ArrowRight className="h-4 w-4" aria-hidden />
+      </button>
+
+      <p className="service-detail-calculator__secure">
+        <Lock className="service-detail-calculator__secure-icon" aria-hidden />
+        Your details are 100% secure
+      </p>
+    </aside>
+  );
+}
+
+function ServiceDetailFaq({
+  faqs,
+  onViewAll,
+}: {
+  faqs: { question: string; answer: string }[];
+  onViewAll: () => void;
+}) {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  return (
+    <section className="service-detail-block">
+      <div className="service-detail-faq-header">
+        <h2 className="service-detail-faq-header__title">Frequently asked questions</h2>
+        <button type="button" className="service-detail-faq-header__link" onClick={onViewAll}>
+          View all FAQs
+          <ArrowRight className="inline h-3.5 w-3.5 ml-0.5" aria-hidden />
+        </button>
+      </div>
+
+      <div className="service-detail-faq-list">
+        {faqs.map((faq, index) => {
+          const isOpen = openIndex === index;
+          return (
+            <article key={faq.question} className="service-detail-faq-item">
+              <button
+                type="button"
+                className="service-detail-faq-item__trigger"
+                aria-expanded={isOpen}
+                onClick={() => setOpenIndex(isOpen ? null : index)}
+              >
+                <span>{faq.question}</span>
+                <Plus
+                  className={`service-detail-faq-item__icon${isOpen ? " service-detail-faq-item__icon--open" : ""}`}
+                  aria-hidden
+                />
+              </button>
+              {isOpen ? <p className="service-detail-faq-item__answer">{faq.answer}</p> : null}
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -372,13 +506,12 @@ export function ServiceDetailPage({
     (apiService ? `From ${formatServiceFromPrice(apiService).replace(/\.00$/, "")}` : "");
 
   const buttonsDisabled = !apiService;
-  const reduceMotion = useReducedMotion();
-  const heroMotion = useMotionProps(reduceMotion);
-
-  const serviceName = apiService?.service_name ?? content?.h1 ?? "";
-  const serviceType = apiService?.type;
-  const ServiceIcon = getLucideIconForService(serviceName, serviceType);
-  const serviceColor = getServiceColorForName(serviceName);
+  const heroBullets = content ? getHeroBullets(content) : [];
+  const faqs = content ? getServiceDetailFaqs(content) : [];
+  const heroBackdrop = useMemo(
+    () => (content ? getServiceDetailHeroBackdrop(content.h1) : null),
+    [content]
+  );
 
   return (
     <div className="service-detail-page min-h-screen">
@@ -414,147 +547,255 @@ export function ServiceDetailPage({
         </div>
       ) : (
         <>
-          <motion.section
+          <section
             className="service-detail-hero"
-            initial={reduceMotion ? false : { opacity: 0 }}
-            animate={reduceMotion ? undefined : { opacity: 1 }}
-            transition={{ duration: 0.5, ease: EASE_OUT }}
+            style={
+              heroBackdrop
+                ? ({
+                    "--service-detail-hero-accent-glow": heroBackdrop.accentGlow,
+                  } as React.CSSProperties)
+                : undefined
+            }
           >
-            <motion.div
-              className="service-detail-hero__inner"
-              variants={stagger}
-              initial={heroMotion.initial}
-              animate={heroMotion.animate}
-            >
-              <motion.div
-                className={`service-detail-hero__icon service-detail-hero__icon--${serviceColor}`}
-                variants={scaleIn}
-                aria-hidden
-              >
-                <ServiceIcon strokeWidth={2} />
-              </motion.div>
-              <motion.h1 className="service-detail-hero__title" variants={fadeUp}>
-                {content.h1}
-              </motion.h1>
+            {heroBackdrop ? (
+              <div className="service-detail-hero__media" aria-hidden>
+                <img
+                  className="service-detail-hero__photo"
+                  src={heroBackdrop.photoSrc}
+                  alt=""
+                  loading="eager"
+                  decoding="async"
+                />
+                <img
+                  className="service-detail-hero__service-art"
+                  src={heroBackdrop.serviceImageSrc}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+            ) : null}
+            <div className="service-detail-hero__overlay" aria-hidden />
 
-              {content.heroParagraphs.map((paragraph) => (
-                <motion.p key={paragraph} className="service-detail-hero__text" variants={fadeUp}>
-                  {paragraph}
-                </motion.p>
-              ))}
+            <div className="service-detail-hero__container">
+              <div className="service-detail-hero__layout">
+                <div className="service-detail-hero__content">
+                  <h1 className="service-detail-hero__title">{content.h1}</h1>
 
-              {displayFromPrice ? (
-                <motion.p
-                  className="service-detail-hero__price"
-                  variants={scaleIn}
-                  whileHover={reduceMotion ? undefined : { scale: 1.04 }}
-                  transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                >
-                  {displayFromPrice}
-                </motion.p>
-              ) : null}
+                  <div className="service-detail-hero__intro-group">
+                    {content.heroParagraphs.map((paragraph) => (
+                      <p key={paragraph} className="service-detail-hero__intro">
+                        {paragraph}
+                      </p>
+                    ))}
+                  </div>
 
-              <ServiceDetailCtaButtons
-                disabled={buttonsDisabled}
-                onInstantPrice={handleInstantPrice}
-                onBook={handleBook}
-                variant="hero"
-                reduceMotion={reduceMotion}
-              />
-            </motion.div>
-          </motion.section>
+                  <ul className="service-detail-hero__bullets">
+                    {heroBullets.map((bullet) => (
+                      <li key={bullet} className="service-detail-hero__bullet">
+                        <span className="service-detail-hero__bullet-icon" aria-hidden>
+                          <Check className="h-3 w-3" strokeWidth={3} />
+                        </span>
+                        <span>{bullet}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <ServiceDetailCtaButtons
+                    disabled={buttonsDisabled}
+                    onInstantPrice={handleInstantPrice}
+                    onBook={handleBook}
+                    variant="hero"
+                  />
+
+                  <div className="service-detail-trust-bar">
+                    {SERVICE_DETAIL_TRUST_BADGES.map((badge, index) => {
+                      const TrustIcon = TRUST_BADGE_ICONS[index] ?? ShieldCheck;
+
+                      return (
+                        <div key={badge.line1} className="service-detail-trust-bar__item">
+                          <span className="service-detail-trust-bar__icon-wrap" aria-hidden>
+                            <TrustIcon className="service-detail-trust-bar__icon" strokeWidth={1.75} />
+                          </span>
+                          <span className="service-detail-trust-bar__label">
+                            <span>{badge.line1}</span>
+                            <span>{badge.line2}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <PriceCalculator
+                  fromPrice={displayFromPrice}
+                  disabled={buttonsDisabled}
+                  onSubmit={handleInstantPrice}
+                />
+              </div>
+            </div>
+          </section>
 
           <div className="service-detail-body">
+            <div className="service-detail-overview">
+              <OverviewCard
+                icon={ListChecks}
+                accent="blue"
+                title={content.includes.title}
+                summary={getOverviewSummary(content.includes, "includes", content)}
+                linkLabel="View details"
+                onViewDetails={() => scrollToSection(SECTION_META.includes.anchorId)}
+              />
+              <OverviewCard
+                icon={Users}
+                accent="green"
+                title={content.whoNeeds.title}
+                summary={getOverviewSummary(content.whoNeeds, "whoNeeds", content)}
+                linkLabel="View details"
+                onViewDetails={() => scrollToSection(SECTION_META.whoNeeds.anchorId)}
+              />
+              <OverviewCard
+                icon={BadgePoundSterling}
+                accent="red"
+                title="Typical price / from-price"
+                summary={getOverviewSummary(content.includes, "pricing", content)}
+                linkLabel="View pricing"
+                onViewDetails={() => scrollToSection(SECTION_META.pricing.anchorId)}
+              />
+              <OverviewCard
+                icon={Clock}
+                accent="orange"
+                title={content.duration.title}
+                summary={getOverviewSummary(content.duration, "duration", content)}
+                linkLabel="View details"
+                onViewDetails={() => scrollToSection(SECTION_META.duration.anchorId)}
+              />
+            </div>
+
             <div className="service-detail-grid">
               <DetailSectionBlock
                 section={content.includes}
                 sectionKey="includes"
-                index={0}
-                reduceMotion={reduceMotion}
                 inGrid
                 splitList
               />
               <DetailSectionBlock
                 section={content.whoNeeds}
                 sectionKey="whoNeeds"
-                index={1}
-                reduceMotion={reduceMotion}
                 inGrid
                 splitList
               />
             </div>
 
             <div className="service-detail-grid">
-              <DetailPricingBlock
-                pricing={content.pricing}
-                reduceMotion={reduceMotion}
-                index={2}
-                inGrid
-              />
-              <DetailSectionBlock
-                section={content.duration}
-                sectionKey="duration"
-                index={3}
-                reduceMotion={reduceMotion}
-                inGrid
-              />
+              <DetailPricingBlock pricing={content.pricing} inGrid />
+              <DetailSectionBlock section={content.duration} sectionKey="duration" inGrid />
             </div>
 
             <div className="service-detail-grid">
-              <DetailSectionBlock
-                section={content.customerReceives}
-                sectionKey="customerReceives"
-                index={4}
-                reduceMotion={reduceMotion}
-                inGrid
-                splitList
-              />
+              <section
+                id={SECTION_META.customerReceives.anchorId}
+                className="service-detail-section service-detail-section--in-grid"
+              >
+                <DetailSectionTitle
+                  icon={SECTION_META.customerReceives.icon}
+                  title={content.customerReceives.title}
+                  accent={SECTION_META.customerReceives.accent}
+                />
+                <div className="service-detail-card">
+                  <DetailList items={content.customerReceives.items} split />
+                  <button type="button" className="service-detail-sample-link" onClick={onNavigateContact}>
+                    See a sample report
+                    <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </div>
+              </section>
+
               <DetailSectionBlock
                 section={content.beforeBooking}
                 sectionKey="beforeBooking"
-                index={5}
-                reduceMotion={reduceMotion}
                 inGrid
                 splitList
               />
             </div>
 
-            <motion.section
-              className="service-detail-cta"
-              initial={reduceMotion ? false : { opacity: 0, y: 32 }}
-              whileInView={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-40px" }}
-              transition={{ duration: 0.6, ease: EASE_OUT }}
-            >
-              <div className="service-detail-cta__icon-wrap" aria-hidden>
-                <ShieldCheck className="service-detail-cta__icon" strokeWidth={2} />
+            <section className="service-detail-block service-detail-block--how">
+              <h2 className="service-detail-block__heading">How it works</h2>
+              <div className="service-detail-how">
+                <svg
+                  className="service-detail-how__connector"
+                  viewBox="0 0 1000 40"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    className="service-detail-how__connector-path"
+                    d="M0,22 H72 L72,6 H178 L178,22 H322 L322,6 H428 L428,22 H572 L572,6 H678 L678,22 H822 L822,6 H928 L928,22 H1000"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+
+                <div className="service-detail-how__steps">
+                  {SERVICE_DETAIL_HOW_IT_WORKS.map((step, index) => {
+                    const StepIcon = HOW_IT_WORKS_ICONS[index] ?? FileText;
+
+                    return (
+                      <article key={step.title} className="service-detail-how__step">
+                        <div className="service-detail-how__badge-wrap">
+                          <span className="service-detail-how__badge">{index + 1}</span>
+                        </div>
+
+                        <div className="service-detail-how__body">
+                          <div className="service-detail-how__icon-wrap" aria-hidden>
+                            <StepIcon className="service-detail-how__icon" strokeWidth={1.75} />
+                          </div>
+                          <h3 className="service-detail-how__title">{step.title}</h3>
+                          <p className="service-detail-how__text">{step.description}</p>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
               </div>
-              <motion.h2
-                className="service-detail-cta__title"
-                initial={reduceMotion ? false : { opacity: 0, y: 16 }}
-                whileInView={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.45, delay: 0.1 }}
-              >
-                {content.cta.title}
-              </motion.h2>
-              <motion.p
-                className="service-detail-cta__subtitle"
-                initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-                whileInView={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.45, delay: 0.18 }}
-              >
-                {content.cta.subtitle}
-              </motion.p>
+            </section>
+
+            <section className="service-detail-block service-detail-block--why">
+              <h2 className="service-detail-block__heading">Why book through Fire Guide?</h2>
+              <div className="service-detail-why">
+                {SERVICE_DETAIL_WHY_BOOK.map((item, index) => {
+                  const WhyIcon = WHY_BOOK_ICONS[index] ?? ShieldCheck;
+
+                  return (
+                    <article key={item.title} className="service-detail-why__item">
+                      <div className="service-detail-why__icon-wrap" aria-hidden>
+                        <WhyIcon className="service-detail-why__icon" strokeWidth={1.75} />
+                      </div>
+                      <div className="service-detail-why__copy">
+                        <h3 className="service-detail-why__title">{item.title}</h3>
+                        <p className="service-detail-why__text">{item.description}</p>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+
+            <ServiceDetailFaq faqs={faqs} onViewAll={onNavigateAbout} />
+
+            <section className="service-detail-cta-bar" aria-labelledby="service-detail-cta-heading">
+              <div className="service-detail-cta-bar__copy">
+                <h2 id="service-detail-cta-heading" className="service-detail-cta-bar__title">
+                  {content.cta.title}
+                </h2>
+                <p className="service-detail-cta-bar__subtitle">{content.cta.subtitle}</p>
+              </div>
               <ServiceDetailCtaButtons
                 disabled={buttonsDisabled}
                 onInstantPrice={handleInstantPrice}
                 onBook={handleBook}
                 variant="footer"
-                reduceMotion={reduceMotion}
               />
-            </motion.section>
+            </section>
           </div>
         </>
       )}
