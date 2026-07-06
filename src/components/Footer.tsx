@@ -57,11 +57,11 @@ export function Footer({ onAdminLogin }: FooterProps) {
             <div className="space-y-3 text-sm">
               <div className="flex items-center gap-2 text-gray-400">
                 <Mail className="w-4 h-4" />
-                <span>support@fireguide.co.uk</span>
+                <span>contact@fireguide.co.uk</span>
               </div>
               <div className="flex items-center gap-2 text-gray-400">
                 <Phone className="w-4 h-4" />
-                <span>0800 123 4567</span>
+                <span>0800 464 3473</span>
               </div>
               <div className="flex items-center gap-2 text-gray-400">
                 <MapPin className="w-4 h-4" />

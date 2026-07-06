@@ -2,9 +2,10 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "./ui/button";
 import type { UserInfo } from "./Header";
-import { CheckCircle, TrendingUp, Shield, CreditCard, Star, MapPin, ArrowRight, Menu, User } from "lucide-react";
+import { CheckCircle, TrendingUp, Shield, CreditCard, Star, MapPin, ArrowRight, Menu, Phone, User } from "lucide-react";
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
 import { PROFESSIONAL_BENEFITS_JOIN_ID } from "../lib/professionalBenefitsNavigation";
+import { SITE_PHONE_DISPLAY, SITE_PHONE_HREF } from "../lib/siteContact";
 
 interface ProfessionalBenefitsProps {
   onRegister: () => void;
@@ -121,6 +122,13 @@ export function ProfessionalBenefits({
 
             <div className="hidden lg:block">
               <div className="flex items-center gap-4">
+              <a
+                href={SITE_PHONE_HREF}
+                className="inline-flex items-center gap-2 text-lg text-white hover:text-red-400 transition-colors whitespace-nowrap"
+              >
+                <Phone className="w-5 h-5 shrink-0" aria-hidden />
+                {SITE_PHONE_DISPLAY}
+              </a>
               {currentUser ? (
                 <Button
                   variant="ghost"
@@ -193,7 +201,14 @@ export function ProfessionalBenefits({
                 >
                   Contact
                 </button>
-                <div className="pt-4 mt-2 border-t border-white/10">
+                <div className="pt-4 mt-2 border-t border-white/10 space-y-1">
+                  <a
+                    href={SITE_PHONE_HREF}
+                    className="flex items-center gap-2 py-3 px-4 text-lg text-white hover:text-red-400 hover:bg-white/10 rounded-lg transition-all"
+                  >
+                    <Phone className="w-5 h-5 shrink-0" aria-hidden />
+                    {SITE_PHONE_DISPLAY}
+                  </a>
                   {currentUser ? (
                     <Button
                       variant="ghost"

@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Menu, User } from "lucide-react";
+import { Menu, Phone, User } from "lucide-react";
 import { Button } from "./ui/button";
 import { getSessionUserDisplay, isAuthenticated } from "../lib/auth";
 import { navigateToProfessionalHome } from "../lib/professionalDashboardNavigation";
+import { SITE_PHONE_DISPLAY, SITE_PHONE_HREF } from "../lib/siteContact";
 import { ServicesNavDropdown, ServicesNavMobileSection } from "./ServicesNavMenu";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 
@@ -120,6 +121,13 @@ export function Header({
 
         <div className="hidden lg:block">
           <div className="flex items-center gap-4">
+          <a
+            href={SITE_PHONE_HREF}
+            className="inline-flex items-center gap-2 text-lg text-[#0A1A2F] hover:text-red-600 transition-colors whitespace-nowrap"
+          >
+            <Phone className="w-5 h-5 shrink-0" aria-hidden />
+            {SITE_PHONE_DISPLAY}
+          </a>
           {currentUser ? (
             <Button 
               variant="ghost" 
@@ -181,7 +189,14 @@ export function Header({
             >
               Contact
             </button>
-            <div className="pt-4 mt-2 border-t border-gray-200">
+            <div className="pt-4 mt-2 border-t border-gray-200 space-y-1">
+              <a
+                href={SITE_PHONE_HREF}
+                className="flex items-center gap-2 py-3 px-4 text-lg text-[#0A1A2F] hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+              >
+                <Phone className="w-5 h-5 shrink-0" aria-hidden />
+                {SITE_PHONE_DISPLAY}
+              </a>
               {currentUser ? (
                 <Button 
                   variant="ghost" 

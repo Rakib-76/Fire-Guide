@@ -5,9 +5,10 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { Flame, ArrowRight, User, Shield, Heart, Clock, Star, Menu, Eye, EyeOff } from "lucide-react";
+import { Flame, ArrowRight, User, Shield, Heart, Clock, Star, Menu, Phone, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png";
+import { SITE_PHONE_DISPLAY, SITE_PHONE_HREF } from "../lib/siteContact";
 import { registerUser, loginUser, sendOtp, verifyOtp, resetPassword } from "../api/authService";
 import { setAuthToken, setUserEmail, setUserInfo, setUserPhone, setUserRole, setProfessionalId } from "../lib/auth";
 import { getFacebookOAuthStartUrl, getGoogleOAuthStartUrl } from "../lib/socialAuthCallback";
@@ -416,6 +417,13 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
 
           <div className="hidden lg:block">
             <div className="flex items-center gap-4">
+            <a
+              href={SITE_PHONE_HREF}
+              className="inline-flex items-center gap-2 text-lg text-white hover:text-red-400 transition-colors whitespace-nowrap"
+            >
+              <Phone className="w-5 h-5 shrink-0" aria-hidden />
+              {SITE_PHONE_DISPLAY}
+            </a>
             <Button 
               variant="ghost" 
               onClick={onBack}
@@ -474,7 +482,14 @@ export function CustomerAuth({ onAuthSuccess, onBack }: CustomerAuthProps) {
               >
                 Contact
               </button>
-              <div className="pt-4 mt-2 border-t border-white/10">
+              <div className="pt-4 mt-2 border-t border-white/10 space-y-1">
+                <a
+                  href={SITE_PHONE_HREF}
+                  className="flex items-center gap-2 py-3 px-4 text-lg text-white hover:text-red-400 hover:bg-white/10 rounded-lg transition-all"
+                >
+                  <Phone className="w-5 h-5 shrink-0" aria-hidden />
+                  {SITE_PHONE_DISPLAY}
+                </a>
                 <Button 
                   variant="ghost" 
                   onClick={onBack}

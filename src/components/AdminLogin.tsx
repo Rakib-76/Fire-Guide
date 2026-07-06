@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { Mail, Lock, ArrowRight, Shield, Eye, EyeOff } from "lucide-react";
+import { Mail, Lock, ArrowRight, Shield, Phone, Eye, EyeOff } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -9,6 +9,7 @@ import logoImage from "figma:asset/629703c093c2f72bf409676369fecdf03c462cd2.png"
 import { loginUser } from "../api/authService";
 import { setAuthToken, setUserEmail, setUserInfo, setUserPhone, setUserRole } from "../lib/auth";
 import { toast } from "sonner";
+import { SITE_PHONE_DISPLAY, SITE_PHONE_HREF } from "../lib/siteContact";
 
 interface AdminLoginProps {
   onLoginSuccess: (name: string) => void;
@@ -117,6 +118,13 @@ export function AdminLogin({ onLoginSuccess, onBack }: AdminLoginProps) {
             </Link>
 
             <div className="hidden md:flex items-center gap-4">
+              <a
+                href={SITE_PHONE_HREF}
+                className="inline-flex items-center gap-2 text-lg text-white hover:text-red-400 transition-colors whitespace-nowrap"
+              >
+                <Phone className="w-5 h-5 shrink-0" aria-hidden />
+                {SITE_PHONE_DISPLAY}
+              </a>
               <button
                 onClick={onBack}
                 className="relative py-2 text-white hover:text-red-600 transition-colors group cursor-pointer"

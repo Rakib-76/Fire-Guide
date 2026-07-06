@@ -204,8 +204,8 @@ export const Hero = React.memo(function Hero({ onGetStarted }: HeroProps) {
     });
   };
 
-  const scrollToInstantPrice = () => {
-    document.getElementById("hero-instant-price")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const scrollToHowItWorks = () => {
+    document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   return (
@@ -249,6 +249,9 @@ export const Hero = React.memo(function Hero({ onGetStarted }: HeroProps) {
             <p className="hero__subtitle">
               Fire Guide helps you understand what fire safety service you need, compare local professionals, see clear prices and book securely online.
             </p>
+            <p className="hero__subtitle">
+              No ringing around. No confusing quotes. No guessing who to trust.
+            </p>
 
             <ul className="hero__trust-badges">
               {HERO_TRUST_BADGES.map(({ icon: Icon, label }) => (
@@ -262,14 +265,19 @@ export const Hero = React.memo(function Hero({ onGetStarted }: HeroProps) {
             </ul>
 
             <div className="hero__actions">
-              <button type="button" className="hero__btn-primary" onClick={scrollToInstantPrice}>
+              <button type="button" className="hero__btn-primary" onClick={onGetStarted}>
                 Get instant price
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </button>
-              <button type="button" className="hero__btn-secondary" onClick={onGetStarted}>
+              <button type="button" className="hero__btn-secondary" onClick={scrollToHowItWorks}>
                 How it works
               </button>
             </div>
+
+            <p className="hero__secure-note">
+              <Lock className="hero__secure-note-icon" aria-hidden />
+              No payment required to see your price.
+            </p>
           </div>
         </div>
 

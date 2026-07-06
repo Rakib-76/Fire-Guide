@@ -295,6 +295,24 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.875rem;
+  margin-bottom: 0.875rem;
+}
+
+.hero__secure-note {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: #6b7280;
+}
+
+.hero__secure-note-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  color: #9ca3af;
 }
 
 .hero__btn-primary,

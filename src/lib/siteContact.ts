@@ -1,0 +1,2 @@
+export const SITE_PHONE_DISPLAY = "0800 464 3473";
+export const SITE_PHONE_HREF = "tel:08004643473";

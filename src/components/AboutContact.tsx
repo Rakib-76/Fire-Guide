@@ -26,6 +26,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/
 import { Footer } from "./Footer";
 import { toast } from "sonner";
 import { sendContactUsMail } from "../api/contactUsService";
+import { SITE_PHONE_DISPLAY, SITE_PHONE_HREF } from "../lib/siteContact";
 import logoImage from "figma:asset/69744b74419586d01801e7417ef517136baf5cfb.png";
 
 interface AboutContactProps {
@@ -242,6 +243,13 @@ export function AboutContact({
 
           <div className="hidden lg:block">
             <div className="flex items-center gap-4">
+            <a
+              href={SITE_PHONE_HREF}
+              className="inline-flex items-center gap-2 text-lg text-[#0A1A2F] hover:text-red-600 transition-colors whitespace-nowrap"
+            >
+              <Phone className="w-5 h-5 shrink-0" aria-hidden />
+              {SITE_PHONE_DISPLAY}
+            </a>
             {currentUserName ? (
               <Button 
                 variant="ghost" 
@@ -328,7 +336,14 @@ export function AboutContact({
               >
                 Contact
               </button>
-              <div className="pt-4 mt-2 border-t border-gray-200">
+              <div className="pt-4 mt-2 border-t border-gray-200 space-y-1">
+                <a
+                  href={SITE_PHONE_HREF}
+                  className="flex items-center gap-2 py-3 px-4 text-lg text-[#0A1A2F] hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                >
+                  <Phone className="w-5 h-5 shrink-0" aria-hidden />
+                  {SITE_PHONE_DISPLAY}
+                </a>
                 {currentUserName ? (
                   <Button 
                     variant="ghost" 
@@ -506,44 +521,10 @@ export function AboutContact({
                       </div>
                       <div>
                         <h4 className="text-[18px] mb-2">Call Us</h4>
-                        <p className="text-gray-600">0800 123 4567</p>
+                        <a href={SITE_PHONE_HREF} className="text-gray-600 hover:text-red-600 transition-colors">
+                          {SITE_PHONE_DISPLAY}
+                        </a>
                         <p className="text-sm text-gray-500 mt-1">Mon-Fri, 9am-6pm GMT</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="p-6">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <MapPin className="w-6 h-6 text-red-600" />
-                      </div>
-                      <div>
-                        <h4 className="text-[18px] mb-2">Visit Us</h4>
-                        <p className="text-gray-600">
-                          123 Fire Safety House<br />
-                          London, EC1A 1BB<br />
-                          United Kingdom
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="p-6">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Clock className="w-6 h-6 text-red-600" />
-                      </div>
-                      <div>
-                        <h4 className="text-[18px] mb-2">Business Hours</h4>
-                        <p className="text-gray-600">
-                          Monday - Friday: 9:00 AM - 6:00 PM<br />
-                          Saturday: 10:00 AM - 4:00 PM<br />
-                          Sunday: Closed
-                        </p>
                       </div>
                     </div>
                   </CardContent>
