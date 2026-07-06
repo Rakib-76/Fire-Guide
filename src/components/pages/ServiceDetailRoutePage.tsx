@@ -5,11 +5,12 @@ import { professionalBenefitsJoinTo } from "../../lib/professionalBenefitsNaviga
 import { navigateToProfessionalHome } from "../../lib/professionalDashboardNavigation";
 import { isNumericServiceIdSegment } from "../../lib/serviceSlugs";
 import { ServiceDetailPage } from "../ServiceDetailPage";
+import type { ServiceDetailInstantPriceResult } from "../ServiceDetailInstantPriceForm";
 
 export default function ServiceDetailRoutePage() {
   const navigate = useNavigate();
   const { serviceSlug } = useParams<{ serviceSlug: string }>();
-  const { currentUser, logout, setSelectedService, setSelectedServiceId } = useApp();
+  const { currentUser, logout, setSelectedService, setSelectedServiceId, setQuestionnaireData, setLocationSearchData, setFilteredProfessionalsFromFra } = useApp();
 
   if (!serviceSlug) {
     return <Navigate to="/services" replace />;
@@ -31,6 +32,18 @@ export default function ServiceDetailRoutePage() {
     });
   };
 
+  const handleInstantPriceSubmit = (result: ServiceDetailInstantPriceResult) => {
+    const { questionnaireData, locationData, professionals } = result;
+    setSelectedService(String(locationData.service_id));
+    setSelectedServiceId(locationData.service_id);
+    setQuestionnaireData(questionnaireData);
+    setLocationSearchData(locationData);
+    setFilteredProfessionalsFromFra(professionals);
+    startTransition(() => {
+      navigate("/professionals/compare");
+    });
+  };
+
   return (
     <ServiceDetailPage
       slug={serviceSlug}
@@ -42,6 +55,7 @@ export default function ServiceDetailRoutePage() {
       onCustomerLogin={() => startTransition(() => navigate("/customer/auth"))}
       onBookService={goToQuestionnaire}
       onGetInstantPrice={goToQuestionnaire}
+      onInstantPriceSubmit={handleInstantPriceSubmit}
       currentUser={currentUser}
       onLogout={() => {
         logout();

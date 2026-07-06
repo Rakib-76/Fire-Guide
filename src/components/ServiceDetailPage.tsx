@@ -46,6 +46,10 @@ import type { NavServiceColor } from "../lib/serviceNav";
 import { serviceNameToSlug } from "../lib/serviceSlugs";
 import { getServiceDetailHeroBackdrop } from "../lib/serviceDetailHeroBackdrop";
 import { usePageMeta } from "../lib/usePageMeta";
+import {
+  ServiceDetailInstantPriceForm,
+  type ServiceDetailInstantPriceResult,
+} from "./ServiceDetailInstantPriceForm";
 import "./ServiceDetailPage.css";
 
 type SectionAccent = NavServiceColor;
@@ -65,19 +69,6 @@ const SECTION_META: Record<
 const HOW_IT_WORKS_ICONS = [FileText, Calendar, ShieldCheck, FileCheck] as const;
 const WHY_BOOK_ICONS = [ShieldCheck, Tag, MessagesSquare, Handshake] as const;
 const TRUST_BADGE_ICONS = [Award, Sparkles, ShieldCheck, Lock] as const;
-
-const PROPERTY_TYPES = [
-  "Shop / retail",
-  "Office",
-  "Restaurant / café",
-  "Warehouse",
-  "HMO / residential",
-  "Other commercial",
-] as const;
-
-const FLOOR_OPTIONS = ["1", "2", "3", "4+"] as const;
-
-const SLEEPING_RISK_OPTIONS = ["No sleeping risk", "Some sleeping risk", "Sleeping accommodation"] as const;
 
 function scrollToSection(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -115,6 +106,7 @@ interface ServiceDetailPageProps {
   onCustomerLogin?: () => void;
   onBookService: (serviceId: number, serviceName: string) => void;
   onGetInstantPrice: (serviceId: number, serviceName: string) => void;
+  onInstantPriceSubmit: (result: ServiceDetailInstantPriceResult) => void;
   currentUser?: { name: string; role: "customer" | "professional" | "admin" } | null;
   onLogout?: () => void;
   onNavigateToDashboard?: () => void;
@@ -268,116 +260,6 @@ function DetailPricingBlock({
   );
 }
 
-function PriceCalculator({
-  fromPrice,
-  disabled,
-  onSubmit,
-}: {
-  fromPrice: string;
-  disabled?: boolean;
-  onSubmit: () => void;
-}) {
-  const [postcode, setPostcode] = useState("");
-  const [propertyType, setPropertyType] = useState<string>(PROPERTY_TYPES[0]);
-  const [floors, setFloors] = useState<string>(FLOOR_OPTIONS[0]);
-  const [sleepingRisk, setSleepingRisk] = useState<string>(SLEEPING_RISK_OPTIONS[0]);
-
-  return (
-    <aside className="service-detail-calculator" aria-label="Instant price calculator">
-      <h2 className="service-detail-calculator__title">Get an instant price</h2>
-
-      <div className="service-detail-calculator__field">
-        <label className="service-detail-calculator__label" htmlFor="service-detail-postcode">
-          Postcode
-        </label>
-        <input
-          id="service-detail-postcode"
-          className="service-detail-calculator__input"
-          type="text"
-          placeholder="e.g. SW1A 1AA"
-          value={postcode}
-          onChange={(event) => setPostcode(event.target.value)}
-          autoComplete="postal-code"
-        />
-      </div>
-
-      <div className="service-detail-calculator__field">
-        <label className="service-detail-calculator__label" htmlFor="service-detail-property-type">
-          Property type
-        </label>
-        <select
-          id="service-detail-property-type"
-          className="service-detail-calculator__select"
-          value={propertyType}
-          onChange={(event) => setPropertyType(event.target.value)}
-        >
-          {PROPERTY_TYPES.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="service-detail-calculator__field">
-        <label className="service-detail-calculator__label" htmlFor="service-detail-floors">
-          Number of floors
-        </label>
-        <select
-          id="service-detail-floors"
-          className="service-detail-calculator__select"
-          value={floors}
-          onChange={(event) => setFloors(event.target.value)}
-        >
-          {FLOOR_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="service-detail-calculator__field">
-        <label className="service-detail-calculator__label" htmlFor="service-detail-sleeping">
-          Sleeping risk
-        </label>
-        <select
-          id="service-detail-sleeping"
-          className="service-detail-calculator__select"
-          value={sleepingRisk}
-          onChange={(event) => setSleepingRisk(event.target.value)}
-        >
-          {SLEEPING_RISK_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <p className="service-detail-calculator__price">
-        Estimated price
-        <strong>{fromPrice || "From £199 + VAT"}</strong>
-      </p>
-
-      <button
-        type="button"
-        className="service-detail-calculator__submit"
-        disabled={disabled}
-        onClick={onSubmit}
-      >
-        See Instant Price
-        <ArrowRight className="h-4 w-4" aria-hidden />
-      </button>
-
-      <p className="service-detail-calculator__secure">
-        <Lock className="service-detail-calculator__secure-icon" aria-hidden />
-        Your details are 100% secure
-      </p>
-    </aside>
-  );
-}
-
 function ServiceDetailFaq({
   faqs,
   onViewAll,
@@ -440,6 +322,7 @@ export function ServiceDetailPage({
   onCustomerLogin,
   onBookService,
   onGetInstantPrice,
+  onInstantPriceSubmit,
   currentUser,
   onLogout,
   onNavigateToDashboard,
@@ -627,11 +510,15 @@ export function ServiceDetailPage({
                   </div>
                 </div>
 
-                <PriceCalculator
-                  fromPrice={displayFromPrice}
-                  disabled={buttonsDisabled}
-                  onSubmit={handleInstantPrice}
-                />
+                {apiService ? (
+                  <ServiceDetailInstantPriceForm
+                    serviceId={apiService.id}
+                    serviceName={apiService.service_name}
+                    fallbackFromPrice={displayFromPrice}
+                    disabled={buttonsDisabled}
+                    onSubmit={onInstantPriceSubmit}
+                  />
+                ) : null}
               </div>
             </div>
           </section>

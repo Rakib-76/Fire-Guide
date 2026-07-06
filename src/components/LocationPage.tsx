@@ -6,7 +6,11 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { useApp } from "../contexts/AppContext";
-import { filterProfessionalForFra, filterProfessionalForAlarm, filterProfessionalForExtinguisher, filterProfessionalForEmergencyLight, filterProfessionalForMarshal, filterProfessionalForConsultation, type FilterProfessionalForAlarmRequest, type FilterProfessionalForExtinguisherRequest } from "../api/servicesService";
+import {
+  convertRadiusToKm,
+  filterProfessionalsByQuestionnaire,
+  milesFromRadiusSelection,
+} from "../lib/filterProfessionalsByQuestionnaire";
 import { useNominatimGeocode } from "../hooks/useNominatimGeocode";
 import { PostcodePreviewMap, radiusValueToMeters } from "./PostcodePreviewMap";
 // selected_services/store is called only when "Book Now" is clicked on Compare Professionals page (with professional_id)
@@ -49,193 +53,40 @@ export function LocationPage({ serviceId, questionnaireData, onContinue, onBack,
   const isValid = postcode.trim().length > 0;
 
   // Convert radius to "8km" / "entire" string for session + Book / selected-service APIs (not sent on filter-professional).
-  const convertRadiusToKm = (radius: string): string => {
-    if (radius === "entire") {
-      return "entire";
-    }
-    // Extract number and convert miles to km (1 mile ≈ 1.609 km, but we'll use the number as-is for km)
-    const match = radius.match(/(\d+)/);
-    if (match) {
-      const miles = parseInt(match[1]);
-      // Convert to km (round to nearest)
-      const km = Math.round(miles * 1.609);
-      return `${km}km`;
-    }
-    return "10km"; // Default
-  };
+  const convertRadiusToKmLocal = convertRadiusToKm;
 
   /** Numeric miles for API fields such as Laravel `miles` validation on filter-professional. */
-  const milesFromRadiusSelection = (radius: string): number => {
-    if (radius === "entire") {
-      // Wide cap when user picks "Entire region" (adjust if backend documents a different sentinel)
-      return 500;
-    }
-    const match = radius.match(/(\d+)/);
-    if (match) return parseInt(match[1], 10);
-    return 10;
-  };
+  const milesFromRadiusSelectionLocal = milesFromRadiusSelection;
 
   const handleFindProfessionals = async () => {
     if (!isValid || !questionnaireData) {
       return;
     }
     setError(null);
-    const searchRadius = convertRadiusToKm(selectedRadius);
-    const miles = milesFromRadiusSelection(selectedRadius);
-    /** Filter-professional APIs expect `miles` only (not `search_radius`). */
-    const filterLocationFields = {
-      post_code: postcode.trim(),
-      miles,
-    };
+    const searchRadius = convertRadiusToKmLocal(selectedRadius);
+    const miles = milesFromRadiusSelectionLocal(selectedRadius);
     const locationData = {
       post_code: postcode.trim(),
       search_radius: searchRadius,
       miles,
       service_id: serviceId,
     };
-    const q = questionnaireData as {
-      is_fire_alarm?: boolean;
-      fire_alarm_smoke_detector_id?: number;
-      fire_alarm_call_point_id?: number;
-      fire_alarm_floor_id?: number;
-      fire_alarm_panel_id?: number;
-      fire_alarm_system_type_id?: number;
-      fire_alarm_last_service_id?: number;
-      is_fire_extinguisher?: boolean;
-      extinguisher_id?: number;
-      floor_id?: number;
-      type_id?: number;
-      last_service_id?: number;
-      emergency_light_id?: number;
-      emergency_floor_id?: number;
-      emergency_light_type_id?: number;
-      emergency_light_test_id?: number;
-      people_id?: number;
-      place_id?: number;
-      building_type_id?: number;
-      experience_id?: number;
-      mode_id?: number;
-      hour_id?: number;
-      property_type_id?: number;
-      approximate_people_id?: number;
-      number_of_floors?: string;
-      number_of_floors_id?: number;
-      duration_id?: number;
-    };
-    // Same payload as selected-service/create — sent only when Find Professional is clicked (not on Book).
     try {
-      if (q.is_fire_alarm) {
-        const alarmPayload: FilterProfessionalForAlarmRequest = {
-          service_id: serviceId,
-          smoke_detector_id: q.fire_alarm_smoke_detector_id ?? 0,
-          call_point_id: q.fire_alarm_call_point_id ?? 0,
-          floor_id: q.fire_alarm_floor_id ?? 0,
-          panel_id: q.fire_alarm_panel_id ?? 0,
-          system_type_id: q.fire_alarm_system_type_id ?? 0,
-          ...filterLocationFields,
-        };
-        const lastServiceId = q.fire_alarm_last_service_id;
-        if (lastServiceId != null && lastServiceId > 0) {
-          alarmPayload.last_service_id = lastServiceId;
-        }
-        const res = await filterProfessionalForAlarm(alarmPayload);
-        setFilteredProfessionalsFromFra(res.data ?? null);
-      } else if (q.is_fire_extinguisher) {
-        const extinguisherPayload: FilterProfessionalForExtinguisherRequest = {
-          service_id: serviceId,
-          extinguisher_id: q.extinguisher_id ?? 0,
-          floor_id: q.floor_id ?? 0,
-          ...filterLocationFields,
-        };
-        if (q.type_id != null && q.type_id > 0) {
-          extinguisherPayload.type_id = q.type_id;
-        }
-        if (q.last_service_id != null && q.last_service_id > 0) {
-          extinguisherPayload.last_service_id = q.last_service_id;
-        }
-        const res = await filterProfessionalForExtinguisher(extinguisherPayload);
-        setFilteredProfessionalsFromFra(res.data ?? null);
-      } else if (
-        serviceId === 39 ||
-        q.emergency_light_id != null ||
-        q.emergency_floor_id != null ||
-        q.emergency_light_type_id != null ||
-        q.emergency_light_test_id != null
-      ) {
-        const resolveElOptionId = (raw: unknown): number | null => {
-          if (raw == null || raw === "") return null;
-          const n = Number(raw);
-          return Number.isFinite(n) && n > 0 ? n : null;
-        };
-        const emergencyLightPayload = {
-          service_id: serviceId,
-          light_id: q.emergency_light_id ?? 1,
-          floor_id: q.emergency_floor_id ?? 1,
-          light_type_id: resolveElOptionId(q.emergency_light_type_id),
-          light_test_id: resolveElOptionId(q.emergency_light_test_id),
-          ...filterLocationFields,
-        };
-        const res = await filterProfessionalForEmergencyLight(emergencyLightPayload);
-        setFilteredProfessionalsFromFra(res.data ?? null);
-      } else if (
-        serviceId === 45 ||
-        q.people_id != null ||
-        q.place_id != null ||
-        q.building_type_id != null ||
-        q.experience_id != null
-      ) {
-        const marshalReq = (questionnaireData as { request_data?: { people_id?: number; place_id?: number; building_type_id?: number; experience_id?: number | null } })?.request_data;
-        const resolveMarshalExperienceId = (raw: unknown): number | null => {
-          if (raw == null || raw === "") return null;
-          const n = Number(raw);
-          return Number.isFinite(n) && n > 0 ? n : null;
-        };
-        const marshalPayload = {
-          service_id: serviceId,
-          people_id: q.people_id ?? marshalReq?.people_id ?? 1,
-          place_id: q.place_id ?? marshalReq?.place_id ?? 1,
-          building_type_id: q.building_type_id ?? marshalReq?.building_type_id ?? 1,
-          experience_id: resolveMarshalExperienceId(q.experience_id ?? marshalReq?.experience_id),
-          ...filterLocationFields,
-        };
-        const res = await filterProfessionalForMarshal(marshalPayload);
-        setFilteredProfessionalsFromFra(res.data ?? null);
-      } else if (
-        serviceId === 46 ||
-        q.mode_id != null ||
-        q.hour_id != null ||
-        (questionnaireData as { consultation_type?: string })?.consultation_type != null
-      ) {
-        const consultReq = (questionnaireData as { request_data?: { mode_id?: number; hour_id?: number } })?.request_data;
-        const consultationPayload = {
-          service_id: serviceId,
-          mode_id: q.mode_id ?? consultReq?.mode_id ?? 1,
-          hour_id: q.hour_id ?? consultReq?.hour_id ?? 1,
-          ...filterLocationFields,
-        };
-        const res = await filterProfessionalForConsultation(consultationPayload);
-        setFilteredProfessionalsFromFra(res.data ?? null);
-      } else {
-        const filterPayload = {
-          service_id: serviceId,
-          property_type_id: questionnaireData.property_type_id,
-          approximate_people_id: questionnaireData.approximate_people_id,
-          duration_id: questionnaireData.duration_id ?? 2,
-          number_of_floors:
-            questionnaireData.number_of_floors_id ??
-            (parseInt(questionnaireData.number_of_floors, 10) || 0),
-          ...filterLocationFields,
-        };
-        const res = await filterProfessionalForFra(filterPayload);
-        setFilteredProfessionalsFromFra(res.data ?? null);
-      }
+      const professionals = await filterProfessionalsByQuestionnaire({
+        serviceId,
+        questionnaireData: questionnaireData as Record<string, unknown>,
+        location: {
+          post_code: postcode.trim(),
+          miles,
+        },
+      });
+      setFilteredProfessionalsFromFra(professionals);
     } catch (e) {
       console.error("Filter professionals failed:", e);
       setFilteredProfessionalsFromFra(null);
     }
     if (onStoreSuccess) {
       onStoreSuccess(0, locationData);
-      // Page saves location data and navigates to Compare Professionals; store API is called on Book Now only
     } else {
       onContinue();
     }
