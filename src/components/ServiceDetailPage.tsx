@@ -384,10 +384,6 @@ export function ServiceDetailPage({
     onGetInstantPrice(apiService.id, apiService.service_name);
   };
 
-  const displayFromPrice =
-    content?.pricing.fromPrice ??
-    (apiService ? `From ${formatServiceFromPrice(apiService).replace(/\.00$/, "")}` : "");
-
   const buttonsDisabled = !apiService;
   const heroBullets = content ? getHeroBullets(content) : [];
   const faqs = content ? getServiceDetailFaqs(content) : [];
@@ -514,7 +510,6 @@ export function ServiceDetailPage({
                   <ServiceDetailInstantPriceForm
                     serviceId={apiService.id}
                     serviceName={apiService.service_name}
-                    fallbackFromPrice={displayFromPrice}
                     disabled={buttonsDisabled}
                     onSubmit={onInstantPriceSubmit}
                   />

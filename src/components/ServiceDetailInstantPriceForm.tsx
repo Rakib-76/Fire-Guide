@@ -1,12 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, Loader2, Lock } from "lucide-react";
 import { getApiToken } from "../lib/auth";
 import { detectServiceQuestionnaireFlags } from "../lib/serviceQuestionnaire";
 import {
   convertRadiusToKm,
   filterProfessionalsByQuestionnaire,
-  formatInstantPriceLabel,
-  getLowestProfessionalPrice,
   milesFromRadiusSelection,
   type LocationSearchData,
 } from "../lib/filterProfessionalsByQuestionnaire";
@@ -53,8 +51,9 @@ export type ServiceDetailInstantPriceResult = {
 interface ServiceDetailInstantPriceFormProps {
   serviceId: number;
   serviceName: string;
-  fallbackFromPrice?: string;
   disabled?: boolean;
+  variant?: "sidebar" | "hero";
+  idPrefix?: string;
   onSubmit: (result: ServiceDetailInstantPriceResult) => void;
 }
 
@@ -123,10 +122,13 @@ function mapPropertyTypes(items: PropertyTypeResponse[]): SelectOption[] {
 export function ServiceDetailInstantPriceForm({
   serviceId,
   serviceName,
-  fallbackFromPrice,
   disabled,
+  variant = "sidebar",
+  idPrefix = "service-detail",
   onSubmit,
 }: ServiceDetailInstantPriceFormProps) {
+  const isHeroVariant = variant === "hero";
+  const submitLabel = isHeroVariant ? "Get Instant Price" : "See Instant Price";
   const flags = useMemo(
     () => detectServiceQuestionnaireFlags(serviceName, serviceId),
     [serviceName, serviceId]
@@ -163,11 +165,8 @@ export function ServiceDetailInstantPriceForm({
   const [consultationModes, setConsultationModes] = useState<ConsultationOptionItem[]>([]);
   const [consultationHours, setConsultationHours] = useState<ConsultationOptionItem[]>([]);
 
-  const [estimatedPrice, setEstimatedPrice] = useState<string | null>(null);
-  const [pricingLoading, setPricingLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -682,55 +681,6 @@ export function ServiceDetailInstantPriceForm({
     return fields.every((field) => Boolean(fieldValues[field.key]));
   }, [fieldValues, fields, loadingOptions, postcode]);
 
-  const fetchEstimatedPrice = useCallback(async () => {
-    const questionnaireData = buildQuestionnairePayload();
-    const locationData = buildLocationData();
-    if (!questionnaireData || !locationData) return;
-
-    setPricingLoading(true);
-    setPriceError(null);
-    try {
-      const professionals = await filterProfessionalsByQuestionnaire({
-        serviceId,
-        questionnaireData,
-        location: {
-          post_code: locationData.post_code,
-          miles: locationData.miles,
-        },
-      });
-      const lowest = getLowestProfessionalPrice(professionals);
-      if (lowest != null) {
-        setEstimatedPrice(formatInstantPriceLabel(lowest));
-      } else if (fallbackFromPrice) {
-        setEstimatedPrice(fallbackFromPrice);
-        setPriceError("No local prices found — showing guide price.");
-      } else {
-        setEstimatedPrice(null);
-        setPriceError("No prices found for this postcode. Try a different area.");
-      }
-    } catch {
-      setEstimatedPrice(fallbackFromPrice ?? null);
-      setPriceError("Could not load price right now.");
-    } finally {
-      setPricingLoading(false);
-    }
-  }, [buildLocationData, buildQuestionnairePayload, fallbackFromPrice, serviceId]);
-
-  useEffect(() => {
-    if (!isFormComplete) {
-      setEstimatedPrice(null);
-      setPriceError(null);
-      return;
-    }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      void fetchEstimatedPrice();
-    }, 600);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [fetchEstimatedPrice, isFormComplete, fieldValues, postcode]);
-
   const handleSubmit = async () => {
     const questionnaireData = buildQuestionnairePayload();
     const locationData = buildLocationData();
@@ -763,18 +713,21 @@ export function ServiceDetailInstantPriceForm({
     }
   };
 
-  const displayPrice = estimatedPrice ?? fallbackFromPrice ?? "Enter details for price";
-
   return (
-    <aside className="service-detail-calculator" aria-label="Instant price calculator">
-      <h2 className="service-detail-calculator__title">Get an instant price</h2>
+    <aside
+      className={`service-detail-calculator${isHeroVariant ? " service-detail-calculator--hero" : ""}`}
+      aria-label="Instant price calculator"
+    >
+      {!isHeroVariant ? (
+        <h2 className="service-detail-calculator__title">Get an instant price</h2>
+      ) : null}
 
       <div className="service-detail-calculator__field">
-        <label className="service-detail-calculator__label" htmlFor="service-detail-postcode">
+        <label className="service-detail-calculator__label" htmlFor={`${idPrefix}-postcode`}>
           Postcode
         </label>
         <input
-          id="service-detail-postcode"
+          id={`${idPrefix}-postcode`}
           className="service-detail-calculator__input"
           type="text"
           placeholder="e.g. SW1A 1AA"
@@ -793,11 +746,11 @@ export function ServiceDetailInstantPriceForm({
       ) : (
         fields.map((field) => (
           <div key={field.key} className="service-detail-calculator__field">
-            <label className="service-detail-calculator__label" htmlFor={`service-detail-${field.key}`}>
+            <label className="service-detail-calculator__label" htmlFor={`${idPrefix}-${field.key}`}>
               {field.label}
             </label>
             <select
-              id={`service-detail-${field.key}`}
+              id={`${idPrefix}-${field.key}`}
               className="service-detail-calculator__select"
               value={fieldValues[field.key] ?? ""}
               onChange={(event) =>
@@ -815,18 +768,6 @@ export function ServiceDetailInstantPriceForm({
         ))
       )}
 
-      <p className="service-detail-calculator__price">
-        Estimated price
-        <strong>
-          {pricingLoading ? (
-            <span className="service-detail-calculator__price-loading">
-              <Loader2 className="h-4 w-4 animate-spin inline-block" aria-hidden />
-            </span>
-          ) : (
-            displayPrice
-          )}
-        </strong>
-      </p>
       {priceError ? <p className="service-detail-calculator__price-note">{priceError}</p> : null}
 
       <button
@@ -842,7 +783,7 @@ export function ServiceDetailInstantPriceForm({
           </>
         ) : (
           <>
-            See Instant Price
+            {submitLabel}
             <ArrowRight className="h-4 w-4" aria-hidden />
           </>
         )}

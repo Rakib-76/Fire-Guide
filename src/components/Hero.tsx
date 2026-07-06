@@ -1,6 +1,6 @@
 import React, { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Check, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowRight, Check, Loader2, Lock, ShieldCheck, Star } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useApp } from "../contexts/AppContext";
 import heroImage1 from "figma:asset/189ec7e3689608dad914f59dd7c02d25da91583d.png";
@@ -17,6 +17,11 @@ import heroImage11 from "figma:asset/564386e01b260c73d9917c802efdd6b9fae211c2.pn
 import { fetchServices, formatServiceFromPrice, type ServiceResponse } from "../api/servicesService";
 import { getLucideIconForService } from "../lib/serviceIcons";
 import { sortActiveServices } from "../lib/serviceNav";
+import {
+  ServiceDetailInstantPriceForm,
+  type ServiceDetailInstantPriceResult,
+} from "./ServiceDetailInstantPriceForm";
+import "./ServiceDetailPage.css";
 import "./Hero.css";
 
 interface HeroProps {
@@ -59,11 +64,12 @@ const FALLBACK_SERVICES: HeroServiceOption[] = [
   { id: 46, name: "Fire Safety Consultation", price: "£85.00", icon: getLucideIconForService("Fire Safety Consultation", "CONSULTATION"), color: "orange" },
 ];
 
-const HERO_BULLETS = [
-  "Compare prices from verified professionals",
-  "Fast, easy booking in under 2 minutes",
-  "Fully compliant with UK fire safety regulations",
-];
+const HERO_TRUST_BADGES = [
+  { icon: ShieldCheck, label: "Qualifications checked" },
+  { icon: Star, label: "Experience reviewed" },
+  { icon: ShieldCheck, label: "Insurance confirmed" },
+  { icon: Lock, label: "Prices shown before booking" },
+] as const;
 
 function HeroBadgeShield() {
   return (
@@ -99,9 +105,26 @@ function mapService(apiService: ServiceResponse, index: number): HeroServiceOpti
   };
 }
 
+function getHeroServiceShortName(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower.includes("risk assessment")) return "Fire Risk Assessment";
+  if (lower.includes("alarm")) return "Fire Alarm";
+  if (lower.includes("extinguisher")) return "Extinguishers";
+  if (lower.includes("emergency") || lower.includes("lighting")) return "Emergency Lighting";
+  if (lower.includes("marshal") || lower.includes("warden")) return "Marshal Training";
+  if (lower.includes("consultation")) return "Fire Safety Consultation";
+  return name;
+}
+
 export const Hero = React.memo(function Hero({ onGetStarted }: HeroProps) {
   const navigate = useNavigate();
-  const { setSelectedService, setSelectedServiceId } = useApp();
+  const {
+    setSelectedService,
+    setSelectedServiceId,
+    setQuestionnaireData,
+    setLocationSearchData,
+    setFilteredProfessionalsFromFra,
+  } = useApp();
   const [services, setServices] = useState<HeroServiceOption[]>([]);
   const [pickedServiceId, setPickedServiceId] = useState<number | null>(null);
   const [isLoadingServices, setIsLoadingServices] = useState(true);
@@ -165,23 +188,24 @@ export const Hero = React.memo(function Hero({ onGetStarted }: HeroProps) {
   }, [loadServices]);
 
   const selectedService = useMemo(
-    () => services.find((s) => s.id === pickedServiceId) ?? services[0],
+    () => services.find((s) => s.id === pickedServiceId) ?? null,
     [services, pickedServiceId]
   );
 
-  const handleNextStep = () => {
-    if (!selectedService) return;
-    setSelectedService(String(selectedService.id));
-    setSelectedServiceId(selectedService.id);
+  const handleInstantPriceSubmit = (result: ServiceDetailInstantPriceResult) => {
+    const { questionnaireData, locationData, professionals } = result;
+    setSelectedService(String(locationData.service_id));
+    setSelectedServiceId(locationData.service_id);
+    setQuestionnaireData(questionnaireData);
+    setLocationSearchData(locationData);
+    setFilteredProfessionalsFromFra(professionals);
     startTransition(() => {
-      navigate(`/services/${selectedService.id}/questionnaire`, {
-        state: { serviceName: selectedService.name },
-      });
+      navigate("/professionals/compare");
     });
   };
 
-  const scrollToPricing = () => {
-    document.getElementById("pricing-preview")?.scrollIntoView({ behavior: "smooth" });
+  const scrollToInstantPrice = () => {
+    document.getElementById("hero-instant-price")?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   return (
@@ -216,44 +240,42 @@ export const Hero = React.memo(function Hero({ onGetStarted }: HeroProps) {
             </div>
 
             <h1 className="hero__title">
-              <span className="hero__title-line">Fire Safety</span>
+              <span className="hero__title-line">The Easier Way to Find Trusted</span>
               <span className="hero__title-line">
-                Made <span className="hero__title-accent">Simple.</span>
+                <span className="hero__title-accent">Fire Safety Experts</span>
               </span>
             </h1>
 
             <p className="hero__subtitle">
-              Book trusted fire safety professionals for assessments, alarms, extinguisher services,
-              training, and more — all in one place.
+              Fire Guide helps you understand what fire safety service you need, compare local professionals, see clear prices and book securely online.
             </p>
 
-            <ul className="hero__bullets">
-              {HERO_BULLETS.map((text) => (
-                <li key={text} className="hero__bullet">
-                  <span className="hero__bullet-icon-wrap" aria-hidden>
-                    <Check className="hero__bullet-icon" strokeWidth={3} />
+            <ul className="hero__trust-badges">
+              {HERO_TRUST_BADGES.map(({ icon: Icon, label }) => (
+                <li key={label} className="hero__trust-badge">
+                  <span className="hero__trust-badge-icon-wrap" aria-hidden>
+                    <Icon className="hero__trust-badge-icon" strokeWidth={1.75} />
                   </span>
-                  <span>{text}</span>
+                  <span className="hero__trust-badge-label">{label}</span>
                 </li>
               ))}
             </ul>
 
             <div className="hero__actions">
-              <button type="button" className="hero__btn-primary" onClick={scrollToPricing}>
-                Get Prices in 30 Seconds
+              <button type="button" className="hero__btn-primary" onClick={scrollToInstantPrice}>
+                Get instant price
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </button>
               <button type="button" className="hero__btn-secondary" onClick={onGetStarted}>
-                Explore Services
+                How it works
               </button>
             </div>
           </div>
         </div>
 
-        <aside className="hero__picker-wrap" aria-label="Select a service">
+        <aside id="hero-instant-price" className="hero__picker-wrap" aria-label="Get your instant price">
           <div className="hero__picker">
-            <h2 className="hero__picker-title">What do you need help with?</h2>
-            <p className="hero__picker-subtitle">Get started by selecting a service</p>
+            <h2 className="hero__picker-title">Get your instant price</h2>
 
             {isLoadingServices ? (
               <div className="hero__picker-loading">
@@ -270,7 +292,13 @@ export const Hero = React.memo(function Hero({ onGetStarted }: HeroProps) {
             ) : (
               <>
                 {servicesError ? <p className="hero__picker-error">{servicesError}</p> : null}
-                <ul className="hero__picker-list">
+
+                <div className="hero__picker-step">
+                  <span className="hero__picker-step-badge">1</span>
+                  <p className="hero__picker-step-label">Choose a service</p>
+                </div>
+
+                <ul className="hero__picker-grid">
                   {services.map((service) => {
                     const Icon = service.icon;
                     const isSelected = service.id === pickedServiceId;
@@ -278,35 +306,44 @@ export const Hero = React.memo(function Hero({ onGetStarted }: HeroProps) {
                       <li key={service.id}>
                         <button
                           type="button"
-                          className={`hero__picker-item${isSelected ? " hero__picker-item--selected" : ""}`}
+                          className={`hero__picker-tile${isSelected ? " hero__picker-tile--selected" : ""}`}
                           onClick={() => setPickedServiceId(service.id)}
                           aria-pressed={isSelected}
                         >
-                          <span className={`hero__picker-icon hero__picker-icon--${service.color}`}>
+                          {isSelected ? (
+                            <span className="hero__picker-tile-check" aria-hidden>
+                              <Check className="h-3 w-3" strokeWidth={3} />
+                            </span>
+                          ) : null}
+                          <span className={`hero__picker-tile-icon hero__picker-icon--${service.color}`}>
                             <Icon strokeWidth={2} aria-hidden />
                           </span>
-                          <span className="hero__picker-copy">
-                            <p className="hero__picker-name">{service.name}</p>
-                            <p className="hero__picker-price">
-                              From {service.price.replace(/\.00$/, "")}
-                            </p>
-                          </span>
-                          <ChevronRight className="hero__picker-chevron" aria-hidden />
+                          <span className="hero__picker-tile-name">{getHeroServiceShortName(service.name)}</span>
                         </button>
                       </li>
                     );
                   })}
                 </ul>
 
-                <button
-                  type="button"
-                  className="hero__picker-next"
-                  onClick={handleNextStep}
-                  disabled={!selectedService}
-                >
-                  Next Step
-                  <ArrowRight className="h-4 w-4" aria-hidden />
-                </button>
+                {selectedService ? (
+                  <div className="hero__picker-questions">
+                    <div className="hero__picker-step">
+                      <span className="hero__picker-step-badge">2</span>
+                      <p className="hero__picker-step-label">Tell us about your requirements</p>
+                    </div>
+
+                    <div className="hero__instant-form">
+                      <ServiceDetailInstantPriceForm
+                        key={selectedService.id}
+                        serviceId={selectedService.id}
+                        serviceName={selectedService.name}
+                        variant="hero"
+                        idPrefix={`hero-instant-${selectedService.id}`}
+                        onSubmit={handleInstantPriceSubmit}
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </>
             )}
           </div>
