@@ -56,7 +56,7 @@ import {
 import { getApiToken, getUserInfo, getUserFullName, getUserEmail } from "../lib/auth";
 import { createReview, updateReview, showReview, fetchReviews } from "../api/reviewsService";
 import { RescheduleCalendarPicker } from "./RescheduleCalendarPicker";
-import { buildBookingServiceDetailsFromApiSelectedService } from "../lib/bookingServiceDetails";
+import { buildBookingServiceDetailsFromApiBooking } from "../lib/bookingServiceDetails";
 import {
   getCustomQuoteRequestDisplayRows,
   loadQuoteRequestDurationLabelMap,
@@ -255,9 +255,7 @@ const transformApiBooking = (apiBooking: CustomerAllBookingItem): Booking => {
     (prof?.number != null && String(prof.number).trim()) ||
     "";
 
-  const selectedServiceDetails = buildBookingServiceDetailsFromApiSelectedService(
-    apiBooking.selected_service ?? null
-  );
+  const selectedServiceDetails = buildBookingServiceDetailsFromApiBooking(apiBooking);
   const customQuoteRequestData = apiBooking.custom_quote_details?.request_data;
   const serviceDetails =
     selectedServiceDetails.length > 0

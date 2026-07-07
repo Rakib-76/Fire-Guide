@@ -137,6 +137,8 @@ export function ServiceDetailInstantPriceForm({
 
   const [loadingOptions, setLoadingOptions] = useState(true);
   const [postcode, setPostcode] = useState("");
+  const [preferredDate, setPreferredDate] = useState("");
+  const [accessNotes, setAccessNotes] = useState("");
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [fields, setFields] = useState<InstantPriceField[]>([]);
 
@@ -167,6 +169,16 @@ export function ServiceDetailInstantPriceForm({
 
   const [submitting, setSubmitting] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
+
+  const minPreferredDate = useMemo(() => new Date().toISOString().split("T")[0], []);
+
+  useEffect(() => {
+    setPostcode("");
+    setPreferredDate("");
+    setAccessNotes("");
+    setFieldValues({});
+    setPriceError(null);
+  }, [serviceId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -379,6 +391,9 @@ export function ServiceDetailInstantPriceForm({
   }, [fields]);
 
   const buildQuestionnairePayload = useCallback((): Record<string, unknown> | null => {
+    const preferred_date = preferredDate.trim();
+    const access_note = accessNotes.trim();
+
     if (flags.isFireAlarmService) {
       const detectors = fieldValues.fireAlarmDetectors;
       const callPoints = fieldValues.fireAlarmCallPoints;
@@ -410,8 +425,8 @@ export function ServiceDetailInstantPriceForm({
         ...(lastServiced && lastServiced !== SKIP_VALUE
           ? { fire_alarm_last_service_id: parseInt(lastServiced, 10) || undefined }
           : {}),
-        preferred_date: "",
-        access_note: "",
+        preferred_date,
+        access_note: access_note || undefined,
         detector_count: optionLabel(
           fireAlarmDetectors.map((o) => ({ id: o.id, value: o.value })),
           detectors
@@ -465,8 +480,8 @@ export function ServiceDetailInstantPriceForm({
         ...(lastServiced && lastServiced !== SKIP_VALUE
           ? { last_service_id: parseInt(lastServiced, 10) || undefined }
           : {}),
-        preferred_date: "",
-        access_note: "",
+        preferred_date,
+        access_note: access_note || undefined,
         extinguisher_count: optionLabel(
           extinguisherCounts.map((o) => ({ id: o.id, value: o.value ?? o.label ?? "" })),
           count
@@ -511,8 +526,8 @@ export function ServiceDetailInstantPriceForm({
         emergency_floor_id: parseInt(floors, 10) || 1,
         emergency_light_type_id: lightTypeId,
         emergency_light_test_id: lightTestId,
-        preferred_date: "",
-        access_note: "",
+        preferred_date,
+        access_note: access_note || undefined,
         emergency_lights_count: optionLabel(
           emergencyLightCounts.map((o) => ({ id: o.id, value: o.value ?? o.label ?? "" })),
           lights
@@ -554,8 +569,8 @@ export function ServiceDetailInstantPriceForm({
         place_id: parseInt(location, 10) || 1,
         building_type_id: parseInt(building, 10) || 1,
         experience_id: experienceId,
-        preferred_date: "",
-        access_note: "",
+        preferred_date,
+        access_note: access_note || undefined,
         training_people_count: optionLabel(
           marshalPeople.map((o) => ({ id: o.id, value: o.value ?? o.label ?? "" })),
           people
@@ -585,8 +600,8 @@ export function ServiceDetailInstantPriceForm({
       return {
         mode_id: parseInt(mode, 10) || 1,
         hour_id: parseInt(hours, 10) || 1,
-        preferred_date: "",
-        access_note: "",
+        preferred_date,
+        access_note: access_note || undefined,
         consultation_type: optionLabel(
           consultationModes.map((o) => ({ id: o.id, value: o.value ?? o.label ?? "" })),
           mode
@@ -617,8 +632,8 @@ export function ServiceDetailInstantPriceForm({
       number_of_floors: String(floorId || floors),
       ...(floorId > 0 ? { number_of_floors_id: floorId } : {}),
       duration_id: durationId > 0 ? durationId : Number(durationOptions[0]?.id ?? 2),
-      preferred_date: "",
-      access_note: "",
+      preferred_date,
+      access_note: access_note || undefined,
       property_type_label: optionLabel(
         propertyTypes.map((p) => ({ id: p.id, value: p.property_type_name })),
         propertyType
@@ -655,10 +670,12 @@ export function ServiceDetailInstantPriceForm({
     fireAlarmPanels,
     fireAlarmSystemTypes,
     flags,
+    accessNotes,
     marshalBuildings,
     marshalExperienceOptions,
     marshalPeople,
     marshalPlaceOptions,
+    preferredDate,
     propertyTypes,
     serviceId,
     serviceName,
@@ -677,9 +694,9 @@ export function ServiceDetailInstantPriceForm({
   }, [postcode, serviceId]);
 
   const isFormComplete = useMemo(() => {
-    if (!postcode.trim() || loadingOptions) return false;
+    if (!postcode.trim() || !preferredDate.trim() || loadingOptions) return false;
     return fields.every((field) => Boolean(fieldValues[field.key]));
-  }, [fieldValues, fields, loadingOptions, postcode]);
+  }, [fieldValues, fields, loadingOptions, postcode, preferredDate]);
 
   const handleSubmit = async () => {
     const questionnaireData = buildQuestionnairePayload();
@@ -767,6 +784,46 @@ export function ServiceDetailInstantPriceForm({
           </div>
         ))
       )}
+
+      {!loadingOptions ? (
+        <>
+          <div className="service-detail-calculator__field">
+            <label className="service-detail-calculator__label" htmlFor={`${idPrefix}-preferred-date`}>
+              Select preferred date
+            </label>
+            <input
+              id={`${idPrefix}-preferred-date`}
+              className="service-detail-calculator__input"
+              type="date"
+              value={preferredDate}
+              min={minPreferredDate}
+              onChange={(event) => setPreferredDate(event.target.value)}
+              disabled={disabled}
+            />
+            {/* <p className="service-detail-calculator__hint">
+              We&apos;ll show you available professionals for this date
+            </p> */}
+          </div>
+
+          <div className="service-detail-calculator__field service-detail-calculator__field--full">
+            <label className="service-detail-calculator__label" htmlFor={`${idPrefix}-access-notes`}>
+              Optional notes for the assessor
+            </label>
+            <textarea
+              id={`${idPrefix}-access-notes`}
+              className="service-detail-calculator__textarea"
+              placeholder="e.g., Gate code required, parking available, building under construction..."
+              value={accessNotes}
+              onChange={(event) => setAccessNotes(event.target.value)}
+              rows={3}
+              disabled={disabled}
+            />
+            <p className="service-detail-calculator__hint">
+              This helps the professional prepare for the visit (optional)
+            </p>
+          </div>
+        </>
+      ) : null}
 
       {priceError ? <p className="service-detail-calculator__price-note">{priceError}</p> : null}
 

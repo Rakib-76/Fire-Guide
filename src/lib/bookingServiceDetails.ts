@@ -88,7 +88,30 @@ const PROFESSIONAL_FLAT_VALUE_LABELS: Record<string, string> = {
   service_type: "Service type",
   mode_value: "Consultation mode",
   hour_value: "Hours needed",
+  number_of_floors_value: "Number of floors",
+  duration_value: "Duration",
 };
+
+const PROFESSIONAL_FLAT_NAME_LABELS: Record<string, string> = {
+  property_type_name: "Property type",
+  approximate_people_name: "Approximate people",
+};
+
+/** Preferred display order for flat FRA fields on professional/admin booking payloads. */
+const PROFESSIONAL_FRA_FLAT_ORDER = [
+  "property_type_name",
+  "approximate_people_name",
+  "number_of_floors_value",
+  "duration_value",
+] as const;
+
+const PROFESSIONAL_FLAT_NAME_SKIP_KEYS = new Set([
+  "first_name",
+  "last_name",
+  "service_name",
+  "professional_name",
+  "full_name",
+]);
 
 function formatProfessionalServiceType(value: string): string {
   const v = value.trim();
@@ -153,8 +176,35 @@ export function buildProfessionalBookingServiceDetails(input: {
   pushRow(PROFESSIONAL_FLAT_VALUE_LABELS.mode_value, input.mode_value);
   pushRow(PROFESSIONAL_FLAT_VALUE_LABELS.hour_value, input.hour_value);
 
+  const serviceType = String(input.service_type ?? "").toLowerCase();
+  if (serviceType === "fra") {
+    for (const key of PROFESSIONAL_FRA_FLAT_ORDER) {
+      const label =
+        PROFESSIONAL_FLAT_NAME_LABELS[key] ??
+        PROFESSIONAL_FLAT_VALUE_LABELS[key] ??
+        key.replace(/_name$|_value$/, "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      pushRow(label, input[key]);
+    }
+  }
+
   for (const [key, raw] of Object.entries(input)) {
     if (key === "service_name" || key === "selected_service" || key.endsWith("_id")) continue;
+    if (PROFESSIONAL_FLAT_NAME_SKIP_KEYS.has(key)) continue;
+    if (serviceType === "fra" && PROFESSIONAL_FRA_FLAT_ORDER.includes(key as (typeof PROFESSIONAL_FRA_FLAT_ORDER)[number])) {
+      continue;
+    }
+    if (!key.endsWith("_name") || typeof raw !== "string") continue;
+    const label =
+      PROFESSIONAL_FLAT_NAME_LABELS[key] ??
+      key.replace(/_name$/, "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    pushRow(label, raw);
+  }
+
+  for (const [key, raw] of Object.entries(input)) {
+    if (key === "service_name" || key === "selected_service" || key.endsWith("_id")) continue;
+    if (serviceType === "fra" && PROFESSIONAL_FRA_FLAT_ORDER.includes(key as (typeof PROFESSIONAL_FRA_FLAT_ORDER)[number])) {
+      continue;
+    }
     if (!key.endsWith("_value") || typeof raw !== "string") continue;
     if (key === "mode_value" || key === "hour_value") continue;
     const base = key.replace(/_value$/, "");
@@ -165,6 +215,19 @@ export function buildProfessionalBookingServiceDetails(input: {
   }
 
   return rows;
+}
+
+/** Nested `selected_service.data` first, then flat booking fields (`*_value`, `*_name`). */
+export function buildBookingServiceDetailsFromApiBooking(input: {
+  selected_service?: ProfessionalBookingSelectedServiceInput;
+  service_type?: string | null;
+  mode_value?: string | null;
+  hour_value?: string | null;
+  [key: string]: unknown;
+}): BookingServiceDetailRow[] {
+  const nested = buildBookingServiceDetailsFromApiSelectedService(input.selected_service ?? null);
+  if (nested.length > 0) return nested;
+  return buildProfessionalBookingServiceDetails(input);
 }
 
 function joinNonEmpty(parts: (string | undefined | null)[], sep: string): string {

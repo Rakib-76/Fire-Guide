@@ -534,7 +534,8 @@
   .hero__instant-form .service-detail-calculator__price-note,
   .hero__instant-form .service-detail-calculator__submit,
   .hero__instant-form .service-detail-calculator__secure,
-  .hero__instant-form .service-detail-calculator__loading {
+  .hero__instant-form .service-detail-calculator__loading,
+  .hero__instant-form .service-detail-calculator__field--full {
     grid-column: 1 / -1;
   }
 }

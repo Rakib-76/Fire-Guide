@@ -34,7 +34,7 @@ import {
   getBookingPaymentStatusKey,
   getBookingPaymentStatusLabel,
 } from "../lib/bookingPaymentStatus";
-import { buildBookingServiceDetailsFromApiSelectedService } from "../lib/bookingServiceDetails";
+import { buildBookingServiceDetailsFromApiBooking } from "../lib/bookingServiceDetails";
 import {
   getCustomQuoteRequestDisplayRows,
   loadQuoteRequestDurationLabelMap,
@@ -207,9 +207,7 @@ export function AdminBookings() {
 
   const mapApiToDisplay = (b: AdminBookingListItem): BookingDisplay => {
     const { date, time } = formatAppointmentDisplay(b.selected_date, b.selected_time);
-    const selectedServiceDetails = buildBookingServiceDetailsFromApiSelectedService(
-      b.selected_service ?? null
-    );
+    const selectedServiceDetails = buildBookingServiceDetailsFromApiBooking(b);
     const customQuoteRequestData = b.custom_quote_details?.request_data;
     const serviceDetails =
       selectedServiceDetails.length > 0
